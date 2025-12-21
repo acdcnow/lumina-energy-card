@@ -91,7 +91,7 @@ background_image: /local/community/lumina-energy-card/lumina_background.jpg
 | `background_image` | string | `/local/community/lumina-energy-card/lumina_background.jpg` | Background asset path |
 | `language` | string | `en` | Accepts `en`, `it`, or `de` |
 | `display_unit` | string | `kW` | Display values in `W` or `kW` |
-| `update_interval` | number | `30` | Refresh cadence (10–60, step 10) |
+| `update_interval` | number | `30` | Refresh cadence (0–60, step 5; 0 disables throttling) |
 | `animation_speed_factor` | number | `1` | Flow animation multiplier (0.25–4) |
 | `header_font_size` | number | `16` | Typography for the header (12–32 px) |
 | `pv_font_size` | number | `16` | Typography for PV text (12–28 px) |
@@ -130,7 +130,7 @@ background_image: /local/community/lumina-energy-card/lumina_background.jpg
 
 ### Changelog (EN)
 
-- **1.1.12 (2025)** – Added smooth flow duration easing with dynamic rate scaling and cleanup guards.
+- **1.1.12 (2025)** – Added smooth flow duration easing with dynamic rate scaling, cleanup guards, and a 0s update interval option for real-time refresh.
 - **1.1.1 (2025)** – Polished localisation text and prepped packaging for the single-file release.
 - **1.1.0 (2025)** – Localised the Lovelace editor labels/helpers for English, Italian, and German while keeping the single-file distribution.
 - **1.0.8 (2025)** – Converted typography controls to simple text inputs alongside EV settings for quicker edits.

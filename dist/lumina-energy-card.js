@@ -38,9 +38,9 @@ class LuminaEnergyCard extends HTMLElement {
     const now = Date.now();
     const configuredInterval = Number(this.config.update_interval);
     const intervalSeconds = Number.isFinite(configuredInterval) ? configuredInterval : 30;
-    const clampedSeconds = Math.min(Math.max(intervalSeconds, 10), 60);
-    const intervalMs = clampedSeconds * 1000;
-    if (this._forceRender || !this._lastRender || now - this._lastRender >= intervalMs) {
+    const clampedSeconds = Math.min(Math.max(intervalSeconds, 0), 60);
+    const intervalMs = clampedSeconds > 0 ? clampedSeconds * 1000 : 0;
+    if (this._forceRender || !this._lastRender || intervalMs === 0 || now - this._lastRender >= intervalMs) {
       this.render();
       this._forceRender = false;
     }
@@ -527,7 +527,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           background_image: { label: 'Background Image Path', helper: 'Path to the background image (e.g., /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Language', helper: 'Choose the editor language.' },
           display_unit: { label: 'Display Unit', helper: 'Unit used when formatting power values.' },
-          update_interval: { label: 'Update Interval', helper: 'Refresh cadence for card updates.' },
+          update_interval: { label: 'Update Interval', helper: 'Refresh cadence for card updates (0 disables throttling).' },
           animation_speed_factor: { label: 'Animation Speed Factor', helper: 'Adjust animation speed multiplier (0.25x-4x).' },
           sensor_pv1: { label: 'PV Sensor 1 (Required)', helper: 'Primary solar production sensor.' },
           sensor_pv2: { label: 'PV Sensor 2' },
@@ -588,7 +588,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           background_image: { label: 'Percorso immagine di sfondo', helper: 'Percorso dell immagine di sfondo (es. /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Lingua', helper: 'Seleziona la lingua dell editor.' },
           display_unit: { label: 'Unita di visualizzazione', helper: 'Unita usata per i valori di potenza.' },
-          update_interval: { label: 'Intervallo di aggiornamento', helper: 'Frequenza di aggiornamento della scheda.' },
+          update_interval: { label: 'Intervallo di aggiornamento', helper: 'Frequenza di aggiornamento della scheda (0 disattiva il limite).' },
           animation_speed_factor: { label: 'Fattore velocita animazioni', helper: 'Regola il moltiplicatore della velocita (0.25x-4x).' },
           sensor_pv1: { label: 'Sensore PV 1 (obbligatorio)', helper: 'Sensore principale di produzione solare.' },
           sensor_pv2: { label: 'Sensore PV 2' },
@@ -649,7 +649,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           background_image: { label: 'Pfad zum Hintergrundbild', helper: 'Pfad zum Hintergrundbild (z. B. /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Sprache', helper: 'Editor-Sprache waehlen.' },
           display_unit: { label: 'Anzeigeeinheit', helper: 'Einheit fuer Leistungswerte.' },
-          update_interval: { label: 'Aktualisierungsintervall', helper: 'Aktualisierungsfrequenz der Karte.' },
+          update_interval: { label: 'Aktualisierungsintervall', helper: 'Aktualisierungsfrequenz der Karte (0 deaktiviert das Limit).' },
           animation_speed_factor: { label: 'Animationsgeschwindigkeit', helper: 'Animationsfaktor zwischen 0.25x und 4x anpassen.' },
           sensor_pv1: { label: 'PV Sensor 1 (Pflicht)', helper: 'Primaerer Solarsensor.' },
           sensor_pv2: { label: 'PV Sensor 2' },
@@ -738,7 +738,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'display_unit', label: fields.display_unit.label, helper: fields.display_unit.helper, selector: { select: { options: optionDefs.display_unit } } }
       ]),
       refresh: define([
-        { name: 'update_interval', label: fields.update_interval.label, helper: fields.update_interval.helper, selector: { number: { min: 10, max: 60, step: 5, mode: 'slider', unit_of_measurement: 's' } } },
+        { name: 'update_interval', label: fields.update_interval.label, helper: fields.update_interval.helper, selector: { number: { min: 0, max: 60, step: 5, mode: 'slider', unit_of_measurement: 's' } } },
         { name: 'animation_speed_factor', label: fields.animation_speed_factor.label, helper: fields.animation_speed_factor.helper, selector: { number: { min: 0.25, max: 4, step: 0.25, mode: 'slider', unit_of_measurement: 'x' } } }
       ]),
       pv: define([
