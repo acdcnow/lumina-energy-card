@@ -1,7 +1,7 @@
 /**
  * Lumina Energy Card
  * Custom Home Assistant card for energy flow visualization
- * Version: 1.0.7
+ * Version: 1.0.8
  * Tested with Home Assistant 2025.12+
  */
 
@@ -353,7 +353,7 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   static get version() {
-    return '1.0.7';
+    return '1.0.8';
   }
 }
 
@@ -433,19 +433,17 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_car_power', label: 'Car Power Sensor', selector: entitySelector },
         { name: 'sensor_car_soc', label: 'Car SOC Sensor', selector: entitySelector },
         { name: 'show_car_soc', label: 'Show Car SOC', selector: { boolean: {} }, default: false },
-        { name: 'car_pct_color', label: 'Car SOC Color', selector: { text: {} }, default: '#00FFFF', helper: 'Hex color for EV SOC text (e.g., #00FFFF).' }
-      ]),
-      typography: define([
-        { name: 'header_font_size', label: 'Header Font Size', selector: { number: { min: 12, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'daily_label_font_size', label: 'Daily Label Font Size', selector: { number: { min: 8, max: 24, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'daily_value_font_size', label: 'Daily Value Font Size', selector: { number: { min: 12, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'pv_font_size', label: 'PV Text Font Size', selector: { number: { min: 12, max: 28, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'battery_soc_font_size', label: 'Battery SOC Font Size', selector: { number: { min: 12, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'battery_power_font_size', label: 'Battery Power Font Size', selector: { number: { min: 10, max: 28, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'load_font_size', label: 'Load Font Size', selector: { number: { min: 10, max: 28, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'grid_font_size', label: 'Grid Font Size', selector: { number: { min: 10, max: 28, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'car_power_font_size', label: 'Car Power Font Size', selector: { number: { min: 10, max: 28, step: 1, mode: 'slider', unit_of_measurement: 'px' } } },
-        { name: 'car_soc_font_size', label: 'Car SOC Font Size', selector: { number: { min: 8, max: 24, step: 1, mode: 'slider', unit_of_measurement: 'px' } } }
+        { name: 'car_pct_color', label: 'Car SOC Color', selector: { text: {} }, default: '#00FFFF', helper: 'Hex color for EV SOC text (e.g., #00FFFF).' },
+        { name: 'header_font_size', label: 'Header Font Size (px)', selector: { text: {} }, helper: 'Default 16' },
+        { name: 'daily_label_font_size', label: 'Daily Label Font Size (px)', selector: { text: {} }, helper: 'Default 12' },
+        { name: 'daily_value_font_size', label: 'Daily Value Font Size (px)', selector: { text: {} }, helper: 'Default 20' },
+        { name: 'pv_font_size', label: 'PV Text Font Size (px)', selector: { text: {} }, helper: 'Default 16' },
+        { name: 'battery_soc_font_size', label: 'Battery SOC Font Size (px)', selector: { text: {} }, helper: 'Default 20' },
+        { name: 'battery_power_font_size', label: 'Battery Power Font Size (px)', selector: { text: {} }, helper: 'Default 14' },
+        { name: 'load_font_size', label: 'Load Font Size (px)', selector: { text: {} }, helper: 'Default 15' },
+        { name: 'grid_font_size', label: 'Grid Font Size (px)', selector: { text: {} }, helper: 'Default 15' },
+        { name: 'car_power_font_size', label: 'Car Power Font Size (px)', selector: { text: {} }, helper: 'Default 15' },
+        { name: 'car_soc_font_size', label: 'Car SOC Font Size (px)', selector: { text: {} }, helper: 'Default 12' }
       ])
     };
   }
@@ -558,8 +556,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { title: 'PV (Solar) Sensors', helper: 'Configure up to six PV or input_number entities.', schema: this._schemas.pv },
       { title: 'Battery Sensors', helper: 'Provide SOC and power sensors for each battery.', schema: this._schemas.battery },
       { title: 'Other Sensors', helper: 'Home load, grid, and inversion options.', schema: this._schemas.other },
-      { title: 'EV Car (Optional)', helper: 'Optional EV metrics and styling.', schema: this._schemas.ev },
-      { title: 'Typography', helper: 'Tune font sizes for each text block.', schema: this._schemas.typography }
+      { title: 'EV & Typography', helper: 'Optional EV metrics, styling, and typography tuning.', schema: this._schemas.ev }
     ];
 
     sections.forEach((section) => {
