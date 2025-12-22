@@ -51,6 +51,9 @@ const FLOW_STYLE_PATTERNS = {
 const FLOW_BASE_LOOP_RATE = 0.0025;
 const FLOW_MIN_GLOW_SCALE = 0.2;
 const DEFAULT_GRID_ACTIVITY_THRESHOLD = 100;
+const DEFAULT_BATTERY_FILL_HIGH_COLOR = '#00ffff';
+const DEFAULT_BATTERY_FILL_LOW_COLOR = '#ff0000';
+const DEFAULT_BATTERY_LOW_THRESHOLD = 25;
 
 const buildArrowGroupSvg = (key, flowState) => {
   const color = flowState && (flowState.glowColor || flowState.stroke) ? (flowState.glowColor || flowState.stroke) : '#00FFFF';
@@ -145,11 +148,26 @@ class LuminaEnergyCard extends HTMLElement {
       sensor_grid_power: '',
       sensor_grid_import: '',
       sensor_grid_export: '',
+      pv_primary_color: '#0080ff',
+      pv_secondary_color: '#80ffff',
+      load_flow_color: '#0080ff',
+      load_threshold_warning: null,
+      load_warning_color: '#ff8000',
+      load_threshold_critical: null,
+      load_critical_color: '#ff0000',
+      battery_charge_color: '#00FFFF',
+      battery_discharge_color: '#FFFFFF',
+      grid_import_color: '#FF3333',
+      grid_export_color: '#00ff00',
+      car_flow_color: '#00FFFF',
+      battery_fill_high_color: DEFAULT_BATTERY_FILL_HIGH_COLOR,
+      battery_fill_low_color: DEFAULT_BATTERY_FILL_LOW_COLOR,
+      battery_fill_low_threshold: DEFAULT_BATTERY_LOW_THRESHOLD,
       grid_activity_threshold: DEFAULT_GRID_ACTIVITY_THRESHOLD,
       grid_threshold_warning: null,
-      grid_warning_color: '',
+      grid_warning_color: '#ff8000',
       grid_threshold_critical: null,
-      grid_critical_color: '',
+      grid_critical_color: '#ff0000',
       show_pv_strings: false,
       display_unit: 'kW',
       update_interval: 30
@@ -920,8 +938,15 @@ class LuminaEnergyCard extends HTMLElement {
     const gridCriticalThreshold = gridCriticalThresholdRaw !== null ? gridCriticalThresholdRaw * thresholdMultiplier : null;
     const gridWarningColor = typeof config.grid_warning_color === 'string' && config.grid_warning_color ? config.grid_warning_color : null;
     const gridCriticalColor = typeof config.grid_critical_color === 'string' && config.grid_critical_color ? config.grid_critical_color : null;
+    const loadWarningThresholdRaw = toNumber(config.load_threshold_warning);
+    const loadCriticalThresholdRaw = toNumber(config.load_threshold_critical);
+    const loadWarningThreshold = loadWarningThresholdRaw !== null ? loadWarningThresholdRaw * thresholdMultiplier : null;
+    const loadCriticalThreshold = loadCriticalThresholdRaw !== null ? loadCriticalThresholdRaw * thresholdMultiplier : null;
+    const loadWarningColor = typeof config.load_warning_color === 'string' && config.load_warning_color ? config.load_warning_color : null;
+    const loadCriticalColor = typeof config.load_critical_color === 'string' && config.load_critical_color ? config.load_critical_color : null;
     const gridDirectionSign = gridDirection >= 0 ? 1 : -1;
     const load = this.getStateSafe(config.sensor_home_load);
+    const loadValue = Number.isFinite(load) ? load : 0;
     const daily_raw = this.getStateSafe(config.sensor_daily);
     const total_daily_kwh = (daily_raw / 1000).toFixed(1);
 
@@ -933,6 +958,13 @@ class LuminaEnergyCard extends HTMLElement {
     // Display settings
     const bg_img = config.background_image || '/local/community/lumina-energy-card/lumina_background.jpg';
     const title_text = config.card_title || 'LUMINA ENERGY';
+
+    const resolveColor = (value, fallback) => {
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+      return fallback;
+    };
 
     const clampValue = (value, min, max, fallback) => {
       const num = Number(value);
@@ -971,9 +1003,45 @@ class LuminaEnergyCard extends HTMLElement {
     const C_BLUE = '#0088FF';
     const C_WHITE = '#FFFFFF';
     const C_RED = '#FF3333';
-    const bat_col = (total_bat_w >= 0) ? C_CYAN : C_WHITE;
+    const pvPrimaryColor = resolveColor(config.pv_primary_color, C_CYAN);
+    const pvSecondaryColor = resolveColor(config.pv_secondary_color, C_BLUE);
+    const loadFlowColor = resolveColor(config.load_flow_color, C_CYAN);
+    const batteryChargeColor = resolveColor(config.battery_charge_color, C_CYAN);
+    const batteryDischargeColor = resolveColor(config.battery_discharge_color, C_WHITE);
+    const gridImportColor = resolveColor(config.grid_import_color, C_RED);
+    const gridExportColor = resolveColor(config.grid_export_color, C_CYAN);
+    const carFlowColor = resolveColor(config.car_flow_color, C_CYAN);
+    const batteryFillHighColor = resolveColor(config.battery_fill_high_color, DEFAULT_BATTERY_FILL_HIGH_COLOR);
+    const batteryFillLowColor = resolveColor(config.battery_fill_low_color, DEFAULT_BATTERY_FILL_LOW_COLOR);
+    const batteryLowThreshold = (() => {
+      const raw = toNumber(config.battery_fill_low_threshold);
+      if (raw === null) {
+        return DEFAULT_BATTERY_LOW_THRESHOLD;
+      }
+      return Math.min(Math.max(raw, 0), 100);
+    })();
+    const loadMagnitude = Math.abs(loadValue);
+    const effectiveLoadFlowColor = (() => {
+      if (loadCriticalColor && loadCriticalThreshold !== null && loadMagnitude >= loadCriticalThreshold) {
+        return loadCriticalColor;
+      }
+      if (loadWarningColor && loadWarningThreshold !== null && loadMagnitude >= loadWarningThreshold) {
+        return loadWarningColor;
+      }
+      return loadFlowColor;
+    })();
+    const effectiveLoadTextColor = (() => {
+      if (loadCriticalColor && loadCriticalThreshold !== null && loadMagnitude >= loadCriticalThreshold) {
+        return loadCriticalColor;
+      }
+      if (loadWarningColor && loadWarningThreshold !== null && loadMagnitude >= loadWarningThreshold) {
+        return loadWarningColor;
+      }
+      return C_WHITE;
+    })();
+    const bat_col = (total_bat_w >= 0) ? batteryChargeColor : batteryDischargeColor;
     const batteryDirectionSign = total_bat_w >= 0 ? 1 : -1;
-    const base_grid_color = gridDirectionSign >= 0 ? C_RED : C_CYAN;
+    const base_grid_color = gridDirectionSign >= 0 ? gridImportColor : gridExportColor;
     const effectiveGridColor = (() => {
       const magnitude = gridMagnitude;
       if (gridCriticalColor && gridCriticalThreshold !== null && magnitude >= gridCriticalThreshold) {
@@ -985,21 +1053,22 @@ class LuminaEnergyCard extends HTMLElement {
       return base_grid_color;
     })();
     const gridAnimationDirection = -gridDirectionSign;
-    const liquid_fill = (avg_soc < 25) ? 'rgba(255, 50, 50, 0.85)' : 'rgba(0, 255, 255, 0.85)';
+    const liquid_fill = (avg_soc <= batteryLowThreshold) ? batteryFillLowColor : batteryFillHighColor;
     const show_double_flow = (pvStringValues.length >= 2 && total_pv_w > 10);
     const pvLinesRaw = [];
     if (showPvStrings) {
-      pvLinesRaw.push({ key: 'pv-total', text: `${label_pv_tot}: ${this.formatPower(total_pv_w, use_kw)}`, fill: C_CYAN });
+      pvLinesRaw.push({ key: 'pv-total', text: `${label_pv_tot}: ${this.formatPower(total_pv_w, use_kw)}`, fill: pvPrimaryColor });
       pvStringValues.forEach((value, index) => {
-        pvLinesRaw.push({ key: `pv-string-${index + 1}`, text: `S${index + 1}: ${this.formatPower(value, use_kw)}`, fill: C_BLUE });
+        const lineColor = index === 0 ? pvPrimaryColor : pvSecondaryColor;
+        pvLinesRaw.push({ key: `pv-string-${index + 1}`, text: `S${index + 1}: ${this.formatPower(value, use_kw)}`, fill: lineColor });
       });
     } else if (pvStringValues.length === 2) {
-      pvLinesRaw.push({ key: 'pv-string-1', text: `S1: ${this.formatPower(pvStringValues[0], use_kw)}`, fill: C_CYAN });
-      pvLinesRaw.push({ key: 'pv-string-2', text: `S2: ${this.formatPower(pvStringValues[1], use_kw)}`, fill: C_BLUE });
+      pvLinesRaw.push({ key: 'pv-string-1', text: `S1: ${this.formatPower(pvStringValues[0], use_kw)}`, fill: pvPrimaryColor });
+      pvLinesRaw.push({ key: 'pv-string-2', text: `S2: ${this.formatPower(pvStringValues[1], use_kw)}`, fill: pvSecondaryColor });
     } else if (pvStringValues.length > 2) {
-      pvLinesRaw.push({ key: 'pv-total', text: `${label_pv_tot}: ${this.formatPower(total_pv_w, use_kw)}`, fill: C_CYAN });
+      pvLinesRaw.push({ key: 'pv-total', text: `${label_pv_tot}: ${this.formatPower(total_pv_w, use_kw)}`, fill: pvPrimaryColor });
     } else {
-      pvLinesRaw.push({ key: 'pv-total', text: this.formatPower(total_pv_w, use_kw), fill: C_CYAN });
+      pvLinesRaw.push({ key: 'pv-total', text: this.formatPower(total_pv_w, use_kw), fill: pvPrimaryColor });
     }
 
     const lineCount = Math.min(pvLinesRaw.length, MAX_PV_LINES);
@@ -1019,12 +1088,12 @@ class LuminaEnergyCard extends HTMLElement {
     });
 
     const flows = {
-      pv1: { stroke: C_CYAN, glowColor: C_CYAN, active: total_pv_w > 10 },
-      pv2: { stroke: C_BLUE, glowColor: C_BLUE, active: show_double_flow },
+      pv1: { stroke: pvPrimaryColor, glowColor: pvPrimaryColor, active: total_pv_w > 10 },
+      pv2: { stroke: pvSecondaryColor, glowColor: pvSecondaryColor, active: show_double_flow },
       bat: { stroke: bat_col, glowColor: bat_col, active: Math.abs(total_bat_w) > 10, direction: batteryDirectionSign },
-      load: { stroke: C_CYAN, glowColor: C_CYAN, active: load > 10, direction: 1 },
+      load: { stroke: effectiveLoadFlowColor, glowColor: effectiveLoadFlowColor, active: loadMagnitude > 10, direction: 1 },
       grid: { stroke: effectiveGridColor, glowColor: effectiveGridColor, active: gridActive, direction: gridAnimationDirection },
-      car: { stroke: C_CYAN, glowColor: C_CYAN, active: Math.abs(car_w) > 10, direction: 1 }
+      car: { stroke: carFlowColor, glowColor: carFlowColor, active: Math.abs(car_w) > 10, direction: 1 }
     };
 
     flows.pv1.direction = 1;
@@ -1043,7 +1112,7 @@ class LuminaEnergyCard extends HTMLElement {
       battery: { levelOffset: BATTERY_GEOMETRY.MAX_HEIGHT - current_h, fill: liquid_fill },
       batterySoc: { text: `${Math.floor(avg_soc)}%`, fontSize: battery_soc_font_size, fill: C_WHITE },
       batteryPower: { text: this.formatPower(Math.abs(total_bat_w), use_kw), fontSize: battery_power_font_size, fill: bat_col },
-      load: { text: this.formatPower(load, use_kw), fontSize: load_font_size, fill: C_WHITE },
+      load: { text: this.formatPower(loadValue, use_kw), fontSize: load_font_size, fill: effectiveLoadTextColor },
       grid: { text: this.formatPower(Math.abs(gridNet), use_kw), fontSize: grid_font_size, fill: effectiveGridColor },
       carPower: {
         text: showCarInfo ? this.formatPower(car_w, use_kw) : '',
@@ -1486,9 +1555,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
       : {};
     this._strings = this._buildStrings();
     this._sectionOpenState = {};
-    if (window.loadCardHelpers) {
-      window.loadCardHelpers();
-    }
   }
 
   _buildStrings() {
@@ -1530,6 +1596,21 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_power: { label: 'Grid Power', helper: 'Positive/negative grid flow sensor.' },
           sensor_grid_import: { label: 'Grid Import Sensor', helper: 'Optional entity reporting grid import (positive) power.' },
           sensor_grid_export: { label: 'Grid Export Sensor', helper: 'Optional entity reporting grid export (positive) power.' },
+          pv_primary_color: { label: 'PV 1 Flow Color', helper: 'Colour used for the primary PV animation line.' },
+          pv_secondary_color: { label: 'PV 2 Flow Color', helper: 'Colour used for the secondary PV animation line when available.' },
+          load_flow_color: { label: 'Load Flow Color', helper: 'Colour applied to the home load animation line.' },
+          load_threshold_warning: { label: 'Load Warning Threshold', helper: 'Change load color when magnitude equals or exceeds this value. Uses the selected display unit.' },
+          load_warning_color: { label: 'Load Warning Color', helper: 'Hex or CSS color applied at the load warning threshold.' },
+          load_threshold_critical: { label: 'Load Critical Threshold', helper: 'Change load color when magnitude equals or exceeds this value. Uses the selected display unit.' },
+          load_critical_color: { label: 'Load Critical Color', helper: 'Hex or CSS color applied at the load critical threshold.' },
+          battery_charge_color: { label: 'Battery Charge Flow Color', helper: 'Colour used when energy is flowing into the battery.' },
+          battery_discharge_color: { label: 'Battery Discharge Flow Color', helper: 'Colour used when energy is flowing from the battery.' },
+          grid_import_color: { label: 'Grid Import Flow Color', helper: 'Base colour before thresholds when importing from the grid.' },
+          grid_export_color: { label: 'Grid Export Flow Color', helper: 'Base colour before thresholds when exporting to the grid.' },
+          car_flow_color: { label: 'EV Flow Color', helper: 'Colour applied to the electric vehicle animation line.' },
+          battery_fill_high_color: { label: 'Battery Fill (Normal) Color', helper: 'Liquid fill colour when the battery SOC is above the low threshold.' },
+          battery_fill_low_color: { label: 'Battery Fill (Low) Color', helper: 'Liquid fill colour when the battery SOC is at or below the low threshold.' },
+          battery_fill_low_threshold: { label: 'Battery Low Fill Threshold (%)', helper: 'Use the low fill colour when SOC is at or below this percentage.' },
           grid_activity_threshold: { label: 'Grid Animation Threshold (W)', helper: 'Ignore grid flows whose absolute value is below this wattage before animating.' },
           grid_threshold_warning: { label: 'Grid Warning Threshold', helper: 'Change grid color when magnitude equals or exceeds this value. Uses the selected display unit.' },
           grid_warning_color: { label: 'Grid Warning Color', helper: 'Hex or CSS color applied at the warning threshold.' },
@@ -1605,6 +1686,21 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_power: { label: 'Potenza rete', helper: 'Sensore flusso rete positivo/negativo.' },
           sensor_grid_import: { label: 'Sensore import rete', helper: 'Entita opzionale che riporta la potenza di import.' },
           sensor_grid_export: { label: 'Sensore export rete', helper: 'Entita opzionale che riporta la potenza di export.' },
+          pv_primary_color: { label: 'Colore flusso FV 1', helper: 'Colore utilizzato per l animazione FV principale.' },
+          pv_secondary_color: { label: 'Colore flusso FV 2', helper: 'Colore utilizzato per la seconda linea FV quando presente.' },
+          load_flow_color: { label: 'Colore flusso carico', helper: 'Colore applicato all animazione del carico della casa.' },
+          load_threshold_warning: { label: 'Soglia avviso carico', helper: 'Cambia colore quando il carico raggiunge questa soglia. Usa l unita di visualizzazione selezionata.' },
+          load_warning_color: { label: 'Colore avviso carico', helper: 'Colore applicato alla soglia di avviso del carico.' },
+          load_threshold_critical: { label: 'Soglia critica carico', helper: 'Cambia colore quando il carico raggiunge questa soglia critica. Usa l unita di visualizzazione selezionata.' },
+          load_critical_color: { label: 'Colore critico carico', helper: 'Colore applicato alla soglia critica del carico.' },
+          battery_charge_color: { label: 'Colore flusso carica batteria', helper: 'Colore quando l energia entra nella batteria.' },
+          battery_discharge_color: { label: 'Colore flusso scarica batteria', helper: 'Colore quando l energia esce dalla batteria.' },
+          grid_import_color: { label: 'Colore import da rete', helper: 'Colore base (prima delle soglie) quando si importa dalla rete.' },
+          grid_export_color: { label: 'Colore export verso rete', helper: 'Colore base (prima delle soglie) quando si esporta verso la rete.' },
+          car_flow_color: { label: 'Colore flusso EV', helper: 'Colore applicato all animazione del veicolo elettrico.' },
+          battery_fill_high_color: { label: 'Colore riempimento batteria (normale)', helper: 'Colore del liquido batteria quando la SOC supera la soglia bassa.' },
+          battery_fill_low_color: { label: 'Colore riempimento batteria (basso)', helper: 'Colore del liquido batteria quando la SOC è uguale o inferiore alla soglia bassa.' },
+          battery_fill_low_threshold: { label: 'Soglia SOC bassa batteria (%)', helper: 'Usa il colore di riempimento basso quando la SOC è uguale o inferiore a questa percentuale.' },
           grid_activity_threshold: { label: 'Soglia animazione rete (W)', helper: 'Ignora i flussi rete con magnitudine inferiore a questo valore prima di animarli.' },
           grid_threshold_warning: { label: 'Soglia avviso rete', helper: 'Cambia colore quando la magnitudine raggiunge questa soglia. Usa l unita di visualizzazione selezionata.' },
           grid_warning_color: { label: 'Colore avviso rete', helper: 'Colore applicato alla soglia di avviso.' },
@@ -1680,6 +1776,21 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_power: { label: 'Netzleistung', helper: 'Sensor fuer positiven/negativen Netzfluss.' },
           sensor_grid_import: { label: 'Netzimport Sensor', helper: 'Optionale Entitaet fuer positiven Netzimport.' },
           sensor_grid_export: { label: 'Netzexport Sensor', helper: 'Optionale Entitaet fuer positiven Netzexport.' },
+          pv_primary_color: { label: 'PV 1 Flussfarbe', helper: 'Farbe fuer die primaere PV-Animationslinie.' },
+          pv_secondary_color: { label: 'PV 2 Flussfarbe', helper: 'Farbe fuer die zweite PV-Linie (falls vorhanden).' },
+          load_flow_color: { label: 'Lastflussfarbe', helper: 'Farbe fuer die Hausverbrauch-Animationslinie.' },
+          load_threshold_warning: { label: 'Last Warnschwelle', helper: 'Farbe wechseln, wenn der Verbrauch diese Magnitude erreicht. Verwendet die ausgewaehlte Anzeigeeinheit.' },
+          load_warning_color: { label: 'Last Warnfarbe', helper: 'Farbe bei Erreichen der Warnschwelle des Hausverbrauchs.' },
+          load_threshold_critical: { label: 'Last Kritische Schwelle', helper: 'Farbe wechseln, wenn der Verbrauch diese kritische Magnitude erreicht. Verwendet die ausgewaehlte Anzeigeeinheit.' },
+          load_critical_color: { label: 'Last Kritische Farbe', helper: 'Farbe bei Erreichen der kritischen Hausverbrauchsschwelle.' },
+          battery_charge_color: { label: 'Batterie Ladeflussfarbe', helper: 'Farbe wenn Energie in die Batterie fliesst.' },
+          battery_discharge_color: { label: 'Batterie Entladeflussfarbe', helper: 'Farbe wenn Energie aus der Batterie fliesst.' },
+          grid_import_color: { label: 'Netzimport Flussfarbe', helper: 'Basisfarbe (vor Schwellwerten) beim Netzimport.' },
+          grid_export_color: { label: 'Netzexport Flussfarbe', helper: 'Basisfarbe (vor Schwellwerten) beim Netzexport.' },
+          car_flow_color: { label: 'EV Flussfarbe', helper: 'Farbe fuer die EV-Animationslinie.' },
+          battery_fill_high_color: { label: 'Batterie Fuellfarbe (normal)', helper: 'Fluessigkeitsfarbe wenn die Batterie-SOC ueber dem niedrigen Schwellwert liegt.' },
+          battery_fill_low_color: { label: 'Batterie Fuellfarbe (niedrig)', helper: 'Fluessigkeitsfarbe wenn die Batterie-SOC dem niedrigen Schwellwert entspricht oder darunter liegt.' },
+          battery_fill_low_threshold: { label: 'Niedriger SOC-Schwellenwert (%)', helper: 'Verwende die niedrige Fuellfarbe, wenn die Batterie-SOC diesen Prozentsatz erreicht oder unterschreitet.' },
           grid_activity_threshold: { label: 'Netz Animationsschwelle (W)', helper: 'Ignoriere Netzfluesse mit geringerer Absolutleistung, bevor animiert wird.' },
           grid_threshold_warning: { label: 'Netz Warnschwelle', helper: 'Farbe wechseln, wenn diese Magnitude erreicht wird. Verwendet die ausgewaehlte Anzeigeeinheit.' },
           grid_warning_color: { label: 'Netz Warnfarbe', helper: 'Farbe bei Erreichen der Warnschwelle.' },
@@ -1752,6 +1863,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
       }
       return result;
     });
+    const configWithDefaults = this._configWithDefaults();
+    const displayUnitValue = (configWithDefaults.display_unit || 'kW').toUpperCase();
+    const buildThresholdSelector = () => (
+      displayUnitValue === 'KW'
+        ? { number: { min: 0, max: 100, step: 0.05, unit_of_measurement: 'kW' } }
+        : { number: { min: 0, max: 100000, step: 50, unit_of_measurement: 'W' } }
+    );
 
     return {
       general: define([
@@ -1791,12 +1909,27 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'show_car_soc', label: fields.show_car_soc.label, helper: fields.show_car_soc.helper, selector: { boolean: {} }, default: false }
       ]),
       colors: define([
+        { name: 'pv_primary_color', label: fields.pv_primary_color.label, helper: fields.pv_primary_color.helper, selector: { color_picker: {} } },
+        { name: 'pv_secondary_color', label: fields.pv_secondary_color.label, helper: fields.pv_secondary_color.helper, selector: { color_picker: {} } },
+        { name: 'load_flow_color', label: fields.load_flow_color.label, helper: fields.load_flow_color.helper, selector: { color_picker: {} } },
+        { name: 'load_threshold_warning', label: fields.load_threshold_warning.label, helper: fields.load_threshold_warning.helper, selector: buildThresholdSelector(), default: null },
+        { name: 'load_warning_color', label: fields.load_warning_color.label, helper: fields.load_warning_color.helper, selector: { color_picker: {} } },
+        { name: 'load_threshold_critical', label: fields.load_threshold_critical.label, helper: fields.load_threshold_critical.helper, selector: buildThresholdSelector(), default: null },
+        { name: 'load_critical_color', label: fields.load_critical_color.label, helper: fields.load_critical_color.helper, selector: { color_picker: {} } },
+        { name: 'battery_charge_color', label: fields.battery_charge_color.label, helper: fields.battery_charge_color.helper, selector: { color_picker: {} } },
+        { name: 'battery_discharge_color', label: fields.battery_discharge_color.label, helper: fields.battery_discharge_color.helper, selector: { color_picker: {} } },
+        { name: 'grid_import_color', label: fields.grid_import_color.label, helper: fields.grid_import_color.helper, selector: { color_picker: {} } },
+        { name: 'grid_export_color', label: fields.grid_export_color.label, helper: fields.grid_export_color.helper, selector: { color_picker: {} } },
+        { name: 'car_flow_color', label: fields.car_flow_color.label, helper: fields.car_flow_color.helper, selector: { color_picker: {} } },
+        { name: 'battery_fill_high_color', label: fields.battery_fill_high_color.label, helper: fields.battery_fill_high_color.helper, selector: { color_picker: {} } },
+        { name: 'battery_fill_low_color', label: fields.battery_fill_low_color.label, helper: fields.battery_fill_low_color.helper, selector: { color_picker: {} } },
+        { name: 'battery_fill_low_threshold', label: fields.battery_fill_low_threshold.label, helper: fields.battery_fill_low_threshold.helper, selector: { number: { min: 0, max: 100, step: 1, unit_of_measurement: '%' } }, default: DEFAULT_BATTERY_LOW_THRESHOLD },
         { name: 'grid_activity_threshold', label: fields.grid_activity_threshold.label, helper: fields.grid_activity_threshold.helper, selector: { number: { min: 0, max: 100000, step: 10 } }, default: DEFAULT_GRID_ACTIVITY_THRESHOLD },
-        { name: 'grid_threshold_warning', label: fields.grid_threshold_warning.label, helper: fields.grid_threshold_warning.helper, selector: { number: { min: 0, max: 100000, step: 50 } }, default: null },
-        { name: 'grid_warning_color', label: fields.grid_warning_color.label, helper: fields.grid_warning_color.helper, selector: { color: {} } },
-        { name: 'grid_threshold_critical', label: fields.grid_threshold_critical.label, helper: fields.grid_threshold_critical.helper, selector: { number: { min: 0, max: 100000, step: 50 } }, default: null },
-        { name: 'grid_critical_color', label: fields.grid_critical_color.label, helper: fields.grid_critical_color.helper, selector: { color: {} } },
-        { name: 'car_pct_color', label: fields.car_pct_color.label, helper: fields.car_pct_color.helper, selector: { color: {} }, default: '#00FFFF' }
+        { name: 'grid_threshold_warning', label: fields.grid_threshold_warning.label, helper: fields.grid_threshold_warning.helper, selector: buildThresholdSelector(), default: null },
+        { name: 'grid_warning_color', label: fields.grid_warning_color.label, helper: fields.grid_warning_color.helper, selector: { color_picker: {} } },
+        { name: 'grid_threshold_critical', label: fields.grid_threshold_critical.label, helper: fields.grid_threshold_critical.helper, selector: buildThresholdSelector(), default: null },
+        { name: 'grid_critical_color', label: fields.grid_critical_color.label, helper: fields.grid_critical_color.helper, selector: { color_picker: {} } },
+        { name: 'car_pct_color', label: fields.car_pct_color.label, helper: fields.car_pct_color.helper, selector: { color_picker: {} }, default: '#00FFFF' }
       ]),
       typography: define([
         { name: 'header_font_size', label: fields.header_font_size.label, helper: fields.header_font_size.helper, selector: { text: {} } },
@@ -1958,6 +2091,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
   }
 
   _createForm(schema) {
+    const hasColorFields = schema.some(field => field.selector && field.selector.color_picker);
+    
+    if (hasColorFields) {
+      return this._createCustomForm(schema);
+    }
+    
     const form = document.createElement('ha-form');
     form.hass = this._hass;
     form.data = this._configWithDefaults();
@@ -1973,6 +2112,137 @@ class LuminaEnergyCardEditor extends HTMLElement {
     return form;
   }
 
+  _createCustomForm(schema) {
+    const container = document.createElement('div');
+    container.className = 'custom-form';
+    const data = this._configWithDefaults();
+
+    schema.forEach(field => {
+      if (field.selector && field.selector.color_picker) {
+        container.appendChild(this._createColorPickerField(field, data[field.name] || field.default || ''));
+      } else {
+        container.appendChild(this._createStandardField(field, data[field.name] || field.default));
+      }
+    });
+
+    return container;
+  }
+
+  _createColorPickerField(field, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'color-field-wrapper';
+
+    const label = document.createElement('label');
+    label.className = 'color-field-label';
+    label.textContent = field.label || field.name;
+    wrapper.appendChild(label);
+
+    if (field.helper) {
+      const helper = document.createElement('div');
+      helper.className = 'color-field-helper';
+      helper.textContent = field.helper;
+      wrapper.appendChild(helper);
+    }
+
+    const inputWrapper = document.createElement('div');
+    inputWrapper.className = 'color-input-wrapper';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.className = 'color-text-input';
+    textInput.value = value || '';
+    textInput.placeholder = '#RRGGBB or CSS color';
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.className = 'color-picker-input';
+    colorInput.value = this._normalizeColorForPicker(value);
+
+    textInput.addEventListener('input', (e) => {
+      const color = e.target.value;
+      const normalized = this._normalizeColorForPicker(color);
+      if (normalized) {
+        colorInput.value = normalized;
+      }
+      this._updateFieldValue(field.name, color);
+    });
+
+    colorInput.addEventListener('input', (e) => {
+      textInput.value = e.target.value;
+      this._updateFieldValue(field.name, e.target.value);
+    });
+
+    inputWrapper.appendChild(colorInput);
+    inputWrapper.appendChild(textInput);
+    wrapper.appendChild(inputWrapper);
+
+    return wrapper;
+  }
+
+  _createStandardField(field, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'standard-field-wrapper';
+
+    const label = document.createElement('label');
+    label.textContent = field.label || field.name;
+    wrapper.appendChild(label);
+
+    if (field.helper) {
+      const helper = document.createElement('div');
+      helper.className = 'field-helper';
+      helper.textContent = field.helper;
+      wrapper.appendChild(helper);
+    }
+
+    const form = document.createElement('ha-form');
+    form.hass = this._hass;
+    form.data = { [field.name]: value };
+    form.schema = [field];
+    form.computeLabel = () => '';
+    form.computeHelper = () => '';
+    form.addEventListener('value-changed', (ev) => {
+      if (ev.target !== form) {
+        return;
+      }
+      const newValue = ev.detail.value[field.name];
+      this._updateFieldValue(field.name, newValue);
+    });
+
+    wrapper.appendChild(form);
+    return wrapper;
+  }
+
+  _normalizeColorForPicker(color) {
+    if (!color) return '#000000';
+    if (color.startsWith('#')) {
+      const hex = color.length === 7 ? color : '#000000';
+      return hex;
+    }
+    const tempDiv = document.createElement('div');
+    tempDiv.style.color = color;
+    document.body.appendChild(tempDiv);
+    const computed = window.getComputedStyle(tempDiv).color;
+    document.body.removeChild(tempDiv);
+    
+    const match = computed.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (match) {
+      const r = parseInt(match[1]).toString(16).padStart(2, '0');
+      const g = parseInt(match[2]).toString(16).padStart(2, '0');
+      const b = parseInt(match[3]).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    }
+    return '#000000';
+  }
+
+  _updateFieldValue(fieldName, value) {
+    if (!this._config) {
+      this._config = {};
+    }
+    const newConfig = { ...this._config, [fieldName]: value };
+    this._config = newConfig;
+    this.configChanged(newConfig);
+  }
+
   _onFormValueChanged(ev, schema) {
     ev.stopPropagation();
     if (!this._config) {
@@ -1983,6 +2253,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
       return;
     }
 
+    const prevDisplayUnit = (this._config && this._config.display_unit ? this._config.display_unit : this._defaults.display_unit || 'kW').toUpperCase();
     const newConfig = { ...this._config };
     schema.forEach((field) => {
       if (!field.name) {
@@ -2002,10 +2273,54 @@ class LuminaEnergyCardEditor extends HTMLElement {
       }
     });
 
+    const nextDisplayUnit = (newConfig.display_unit || prevDisplayUnit).toUpperCase();
+    if (nextDisplayUnit !== prevDisplayUnit) {
+      this._convertThresholdValues(newConfig, prevDisplayUnit, nextDisplayUnit);
+    }
+
     this._config = newConfig;
     this.configChanged(newConfig);
     this._rendered = false;
     this.render();
+  }
+
+  _convertThresholdValues(config, fromUnit, toUnit) {
+    const normalizeUnit = (unit) => (unit || 'kW').toUpperCase();
+    const sourceUnit = normalizeUnit(fromUnit);
+    const targetUnit = normalizeUnit(toUnit);
+    if (sourceUnit === targetUnit) {
+      return;
+    }
+
+    let factor = null;
+    if (sourceUnit === 'W' && targetUnit === 'KW') {
+      factor = 1 / 1000;
+    } else if (sourceUnit === 'KW' && targetUnit === 'W') {
+      factor = 1000;
+    }
+    if (factor === null) {
+      return;
+    }
+
+    const fieldsToConvert = ['load_threshold_warning', 'load_threshold_critical', 'grid_threshold_warning', 'grid_threshold_critical'];
+    fieldsToConvert.forEach((name) => {
+      const hasOwn = Object.prototype.hasOwnProperty.call(config, name);
+      const currentValue = hasOwn ? config[name] : (this._config ? this._config[name] : undefined);
+      if (currentValue === undefined || currentValue === null || currentValue === '') {
+        if (hasOwn) {
+          config[name] = currentValue;
+        }
+        return;
+      }
+      const numeric = Number(currentValue);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      const converted = numeric * factor;
+      const precision = factor < 1 ? 3 : 0;
+      const rounded = precision > 0 ? Number(converted.toFixed(precision)) : Math.round(converted);
+      config[name] = rounded;
+    });
   }
 
   _buildConfigContent() {
@@ -2083,6 +2398,53 @@ class LuminaEnergyCardEditor extends HTMLElement {
       }
       ha-form {
         width: 100%;
+      }
+      .custom-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .color-field-wrapper,
+      .standard-field-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .color-field-label {
+        font-weight: 500;
+        font-size: 0.95em;
+        color: var(--primary-text-color);
+      }
+      .color-field-helper,
+      .field-helper {
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
+      }
+      .color-input-wrapper {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .color-picker-input {
+        width: 48px;
+        height: 32px;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        cursor: pointer;
+        padding: 2px;
+      }
+      .color-text-input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 0.95em;
+      }
+      .color-text-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
       }
       .about-content {
         display: flex;

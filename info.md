@@ -9,6 +9,7 @@ Animated Home Assistant card that visualises PV, battery, grid, load, and EV ene
 - Up to six PV strings and four batteries with automatic aggregation
 - Optional EV charging block with power and SOC readouts
 - Animated SVG flows with dynamic coloration, selectable dash/dot/arrow styles, speed scaling, and throttled refresh logic
+- Load warning/critical colour overrides plus a configurable low SOC threshold for the battery liquid fill
 - Multi-language UI strings (English, Italiano, Deutsch)
 - Customisable card title, typography, units (W or kW), background image, and update interval
 
@@ -51,5 +52,6 @@ background_image: /local/community/lumina-energy-card/lumina_background.jpg
 - `grid_activity_threshold`: minimum grid magnitude (W) before grid flow animates (default 100)
 - `grid_threshold_warning` / `grid_threshold_critical`: change grid colours when magnitude reaches warning/critical levels
 - `invert_grid`: flips grid import/export sign if needed
+- `battery_fill_low_threshold`: SOC percentage that switches the liquid fill to the low colour
 - `sensor_car_power` and `sensor_car_soc`: enable EV panel when provided
 - `show_car_soc`: toggle the Electric Vehicle panel (power + SOC)

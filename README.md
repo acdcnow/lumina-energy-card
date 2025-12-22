@@ -39,6 +39,7 @@ Lumina Energy Card is a Home Assistant custom Lovelace card that renders animate
 - Adjustable animation speed multiplier (-3x to 3x, default 1x, pause/reverse supported) and per-flow visibility thresholds
 - Optional EV panel with power and SOC display, configurable colour, and typography
 - Daily production badge plus full typography controls for header, PV, battery, load, grid, and EV text
+- Load warning/critical colour overrides and a configurable low SOC threshold for the battery liquid fill
 - Update interval slider (0–60 s, default 30 s) with optional real-time refresh when set to 0
 
 ### Installation (EN)
@@ -118,11 +119,26 @@ background_image: /local/community/lumina-energy-card/lumina_background.jpg
 | `sensor_grid_power` | entity | — | Grid import/export sensor (required) |
 | `sensor_grid_import` | entity | — | Optional import-only sensor (positive values) |
 | `sensor_grid_export` | entity | — | Optional export-only sensor (positive values) |
+| `pv_primary_color` | string | `#0080ff` | PV 1 flow animation colour |
+| `pv_secondary_color` | string | `#80ffff` | PV 2 flow animation colour |
+| `load_flow_color` | string | `#0080ff` | Home load flow animation colour |
+| `load_threshold_warning` | number | — | Load warning threshold (W or kW based on display unit) |
+| `load_warning_color` | string | `#ff8000` | Load warning colour (orange) |
+| `load_threshold_critical` | number | — | Load critical threshold (W or kW based on display unit) |
+| `load_critical_color` | string | `#ff0000` | Load critical colour (red) |
+| `battery_charge_color` | string | `#00FFFF` | Battery charge flow colour (cyan) |
+| `battery_discharge_color` | string | `#FFFFFF` | Battery discharge flow colour (white) |
+| `grid_import_color` | string | `#FF3333` | Grid import flow colour (red) |
+| `grid_export_color` | string | `#00ff00` | Grid export flow colour (green) |
+| `car_flow_color` | string | `#00FFFF` | EV flow animation colour (cyan) |
+| `battery_fill_high_color` | string | `#00ffff` | Battery liquid fill colour when SOC is above low threshold (cyan) |
+| `battery_fill_low_color` | string | `#ff0000` | Battery liquid fill colour when SOC is at or below low threshold (red) |
+| `battery_fill_low_threshold` | number | `25` | SOC percentage where the battery liquid switches to the low colour |
 | `grid_activity_threshold` | number | `100` | Minimum absolute grid power (W) before grid flow animates |
 | `grid_threshold_warning` | number | — | Trigger warning colour when grid magnitude meets this value (W or kW) |
-| `grid_warning_color` | string | — | Warning colour applied at the warning threshold |
+| `grid_warning_color` | string | `#ff8000` | Grid warning colour (orange) |
 | `grid_threshold_critical` | number | — | Trigger critical colour when magnitude meets this value (W or kW) |
-| `grid_critical_color` | string | — | Critical colour applied at the critical threshold |
+| `grid_critical_color` | string | `#ff0000` | Grid critical colour (red) |
 | `invert_grid` | boolean | `false` | Flip grid sign if needed |
 | `sensor_car_power` | entity | — | Optional EV charging power |
 | `sensor_car_soc` | entity | — | Optional EV SOC sensor |
@@ -175,6 +191,7 @@ Lumina Energy Card è una scheda Lovelace per Home Assistant che offre grafica a
 - Moltiplicatore di velocità per regolare le animazioni dei flussi (-3x a 3x, default 1x, pausa/inversione)
 - Pannello EV opzionale con potenza e SOC personalizzabili
 - Badge produzione giornaliera, titolo, sfondo e unità configurabili
+- Colori di avviso/critico per il carico e soglia SOC bassa della batteria configurabile per il riempimento
 - Controlli tipografici per titolo, FV, batterie, carichi, rete ed EV
 - Slider intervallo aggiornamento (0–60 s) con refresh continuo se impostato a 0
 
@@ -234,6 +251,7 @@ Die Lumina Energy Card zeigt animierte Energieflüsse in Home Assistant, unterst
 - Einstellbarer Animationsfaktor für schnellere oder langsamere Flussvisualisierung (-3x bis 3x, Standard 1x, Pause/Rücklauf)
 - Optionales EV-Panel inklusive SOC-Farbe
 - Tagesertrag, Kartentitel, Hintergrund und Einheiten anpassbar
+- Warn- und kritische Lastfarben sowie ein konfigurierbarer niedriger SOC-Schwellwert fuer die Batteriefuellung
 - Typografie-Regler für Titel, PV, Batterie, Last, Netz und EV-Text
 - Update-Intervall-Regler (0–60 s) ermöglicht Live-Refresh bei 0 s
 
