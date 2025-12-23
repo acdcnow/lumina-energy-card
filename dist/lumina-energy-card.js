@@ -181,7 +181,7 @@ class LuminaEnergyCard extends HTMLElement {
   static getStubConfig() {
     return {
       language: 'en',
-      card_title: 'LUMINA ENERGY',
+      card_title: '',
       background_image: '/local/community/lumina-energy-card/lumina_background.jpg',
       header_font_size: 16,
       daily_label_font_size: 12,
@@ -1076,7 +1076,7 @@ class LuminaEnergyCard extends HTMLElement {
 
     // Display settings
     const bg_img = config.background_image || '/local/community/lumina-energy-card/lumina_background.jpg';
-    const title_text = config.card_title || 'LUMINA ENERGY';
+    const title_text = (typeof config.card_title === 'string' && config.card_title.trim()) ? config.card_title.trim() : null;
 
     const resolveColor = (value, fallback) => {
       if (typeof value === 'string' && value.trim()) {
@@ -1420,8 +1420,10 @@ class LuminaEnergyCard extends HTMLElement {
             ${DEBUG_GRID_CONTENT}
           </g>
 
+          ${viewState.title && viewState.title.text ? `
           <rect x="290" y="10" width="220" height="32" rx="6" ry="6" fill="rgba(0, 20, 40, 0.85)" stroke="#00FFFF" stroke-width="1.5"/>
           <text data-role="title-text" x="400" y="32" class="title-text" font-size="${viewState.title.fontSize}">${viewState.title.text}</text>
+          ` : ''}
 
           <g transform="translate(600, 370)">
             <rect x="0" y="0" width="180" height="60" rx="10" ry="10" class="alive-box" />
@@ -1913,7 +1915,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           about: { title: 'About', helper: 'Credits, version, and helpful links.' }
         },
         fields: {
-          card_title: { label: 'Card Title', helper: 'Title displayed at the top of the card.' },
+          card_title: { label: 'Card Title', helper: 'Title displayed at the top of the card. Leave blank to disable.' },
           background_image: { label: 'Background Image Path', helper: 'Path to the background image (e.g., /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Language', helper: 'Choose the editor language.' },
           display_unit: { label: 'Display Unit', helper: 'Unit used when formatting power values.' },
@@ -1936,8 +1938,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_pv_array2_4: { label: 'PV String 4 (Array 2)', helper: 'Array 2 solar production sensor.' },
           sensor_pv_array2_5: { label: 'PV String 5 (Array 2)', helper: 'Array 2 solar production sensor.' },
           sensor_pv_array2_6: { label: 'PV String 6 (Array 2)', helper: 'Array 2 solar production sensor.' },
-          solar_array2_activation_helper: { label: 'Wenn der PV-Gesamt-Sensor (WR 2) gesetzt ist oder die PV-String-Werte angegeben sind, wird Array 2 aktiviert und der zweite Wechselrichter eingeschaltet. Sie m\u00fcssen au\u00dferdem den Tagesproduktionssensor (Array 2) und den Hausverbrauch (WR 2) aktivieren.' },
-          solar_array2_activation_helper: { label: 'Se \u00e8 impostato il Sensore PV Totale (Inverter 2) o sono forniti i valori delle stringhe PV, Array 2 diventer\u00e0 attivo e abiliter\u00e0 il secondo inverter. \u00c8 inoltre necessario abilitare il Sensore produzione giornaliera (Array 2) e Carico casa (Inverter 2).' },
           solar_array2_activation_helper: { label: 'If PV Total Sensor (Inverter 2) is set or the PV String values are provided, Array 2 will become active and enable the second inverter. You must also enable Daily Production Sensor (Array 2) and Home Load (Inverter 2).' },
           show_pv_strings: { label: 'Show Individual PV Strings', helper: 'Toggle to display the total plus each PV string on separate lines.' },
           sensor_daily: { label: 'Daily Production Sensor (Required)', helper: 'Sensor reporting daily production totals. Either the PV total sensor or your PV string arrays need to be specified as a minimum.' },
@@ -2043,7 +2043,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           about: { title: 'Informazioni', helper: 'Crediti, versione e link utili.' }
         },
         fields: {
-          card_title: { label: 'Titolo scheda', helper: 'Titolo mostrato nella parte superiore della scheda.' },
+          card_title: { label: 'Titolo scheda', helper: 'Titolo mostrato nella parte superiore della scheda. Lasciare vuoto per disabilitare.' },
           background_image: { label: 'Percorso immagine di sfondo', helper: 'Percorso dell immagine di sfondo (es. /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Lingua', helper: 'Seleziona la lingua dell editor.' },
           display_unit: { label: 'Unita di visualizzazione', helper: 'Unita usata per i valori di potenza.' },
@@ -2164,7 +2164,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           about: { title: 'Info', helper: 'Credits, Version und nuetzliche Links.' }
         },
         fields: {
-          card_title: { label: 'Kartentitel', helper: 'Titel oben auf der Karte.' },
+          card_title: { label: 'Kartentitel', helper: 'Titel oben auf der Karte. Leer lassen, um zu deaktivieren.' },
           background_image: { label: 'Pfad zum Hintergrundbild', helper: 'Pfad zum Hintergrundbild (z. B. /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Sprache', helper: 'Editor-Sprache waehlen.' },
           display_unit: { label: 'Anzeigeeinheit', helper: 'Einheit fuer Leistungswerte.' },
@@ -2281,7 +2281,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           about: { title: 'À propos', helper: 'Crédits, version et liens utiles.' }
         },
         fields: {
-          card_title: { label: 'Titre de la carte', helper: 'Titre affiché en haut de la carte.' },
+          card_title: { label: 'Titre de la carte', helper: 'Titre affiché en haut de la carte. Laisser vide pour désactiver.' },
           background_image: { label: 'Chemin image d arrière-plan', helper: 'Chemin vers l image d arrière-plan (ex. /local/community/lumina-energy-card/lumina_background.jpg).' },
           language: { label: 'Langue', helper: 'Choisissez la langue de l éditeur.' },
           display_unit: { label: 'Unité d affichage', helper: 'Unité utilisée pour formater les valeurs de puissance.' },
