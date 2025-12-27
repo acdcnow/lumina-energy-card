@@ -1490,7 +1490,7 @@ class LuminaEnergyCard extends HTMLElement {
         .debug-grid line { pointer-events: none; }
         .debug-grid text { pointer-events: none; font-family: sans-serif; }
         @keyframes pulse-cyan { 0% { filter: drop-shadow(0 0 2px #00FFFF); opacity: 0.9; } 50% { filter: drop-shadow(0 0 10px #00FFFF); opacity: 1; } 100% { filter: drop-shadow(0 0 2px #00FFFF); opacity: 0.9; } }
-        .alive-box { animation: pulse-cyan 3s infinite ease-in-out; stroke: #00FFFF; stroke-width: 2px; fill: rgba(0, 20, 40, 0.7); }
+        .alive-box { animation: pulse-cyan 3s infinite ease-in-out; stroke: #00FFFF; stroke-width: 2px; fill: #001428; }
         .alive-text { animation: pulse-cyan 3s infinite ease-in-out; fill: #00FFFF; text-shadow: 0 0 5px #00FFFF; }
         @keyframes wave-slide { 0% { transform: translateX(0); } 100% { transform: translateX(-80px); } }
         .liquid-shape { animation: wave-slide 2s linear infinite; }
@@ -1605,6 +1605,20 @@ class LuminaEnergyCard extends HTMLElement {
             <text data-role="pv-popup-line-5" x="400" y="300" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
           </g>
 
+          <polygon data-role="pv-clickable-area" points="75,205 200,195 275,245 145,275 75,205" fill="transparent" style="cursor:pointer;" />
+
+          <g data-role="battery-popup" style="display:none; cursor:pointer;">
+            <rect x="300" y="200" width="200" height="120" rx="10" ry="10" class="alive-box" />
+            <text data-role="battery-popup-line-0" x="400" y="225" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="battery-popup-line-1" x="400" y="240" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="battery-popup-line-2" x="400" y="255" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="battery-popup-line-3" x="400" y="270" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="battery-popup-line-4" x="400" y="285" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="battery-popup-line-5" x="400" y="300" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+          </g>
+
+          <polygon data-role="battery-clickable-area" points="325,400 350,375 350,275 275,250 250,250 250,350 325,400" fill="transparent" style="cursor:pointer;" />
+
           <polygon data-role="house-clickable-area" points="300,200 300,150 350,100 450,75 500,150 500,200 395,250" fill="transparent" style="cursor:pointer;" />
 
           <g data-role="house-popup" style="display:none; cursor:pointer;">
@@ -1654,9 +1668,13 @@ class LuminaEnergyCard extends HTMLElement {
       car2Soc: root.querySelector('[data-role="car2-soc"]'),
       pvPopup: root.querySelector('[data-role="pv-popup"]'),
       pvPopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="pv-popup-line-${index}"]`)),
+      pvClickableArea: root.querySelector('[data-role="pv-clickable-area"]'),
+      batteryPopup: root.querySelector('[data-role="battery-popup"]'),
+      batteryPopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="battery-popup-line-${index}"]`)),
       housePopup: root.querySelector('[data-role="house-popup"]'),
       housePopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="house-popup-line-${index}"]`)),
       houseClickableArea: root.querySelector('[data-role="house-clickable-area"]'),
+      batteryClickableArea: root.querySelector('[data-role="battery-clickable-area"]'),
 
       flows: {
         pv1: root.querySelector('[data-flow-key="pv1"]'),
@@ -1822,6 +1840,121 @@ class LuminaEnergyCard extends HTMLElement {
   async _hidePvPopup() {
     if (!this._domRefs || !this._domRefs.pvPopup) return;
     const popup = this._domRefs.pvPopup;
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
+        popup.style.display = 'none';
+      }});
+    } else {
+      popup.style.display = 'none';
+    }
+  }
+
+  _toggleBatteryPopup() {
+    if (!this._domRefs || !this._domRefs.batteryPopup) return;
+
+    const config = this._config || this.config || {};
+    const hasContent = config.sensor_popup_bat_1 || config.sensor_popup_bat_2 ||
+                      config.sensor_popup_bat_3 || config.sensor_popup_bat_4 ||
+                      config.sensor_popup_bat_5 || config.sensor_popup_bat_6;
+    if (!hasContent) return;
+
+    const popup = this._domRefs.batteryPopup;
+    const isVisible = popup.style.display !== 'none';
+    if (isVisible) {
+      this._hideBatteryPopup();
+    } else {
+      this._hidePvPopup(); // hide other popups
+      this._hideHousePopup();
+      this._showBatteryPopup();
+    }
+  }
+
+  async _showBatteryPopup() {
+    if (!this._domRefs || !this._domRefs.batteryPopup) return;
+    const popup = this._domRefs.batteryPopup;
+
+    const config = this._config || this.config || {};
+    const use_kw = config.display_unit === 'kW';
+    const popupBatValues = [
+      config.sensor_popup_bat_1 ? this.getStateSafe(config.sensor_popup_bat_1) : null,
+      config.sensor_popup_bat_2 ? this.getStateSafe(config.sensor_popup_bat_2) : null,
+      config.sensor_popup_bat_3 ? this.getStateSafe(config.sensor_popup_bat_3) : null,
+      config.sensor_popup_bat_4 ? this.getStateSafe(config.sensor_popup_bat_4) : null,
+      config.sensor_popup_bat_5 ? this.getStateSafe(config.sensor_popup_bat_5) : null,
+      config.sensor_popup_bat_6 ? this.getStateSafe(config.sensor_popup_bat_6) : null
+    ];
+
+    const popupBatNames = [
+      config.sensor_popup_bat_1_name && config.sensor_popup_bat_1_name.trim() ? config.sensor_popup_bat_1_name.trim() : this.getEntityName(config.sensor_popup_bat_1),
+      config.sensor_popup_bat_2_name && config.sensor_popup_bat_2_name.trim() ? config.sensor_popup_bat_2_name.trim() : this.getEntityName(config.sensor_popup_bat_2),
+      config.sensor_popup_bat_3_name && config.sensor_popup_bat_3_name.trim() ? config.sensor_popup_bat_3_name.trim() : this.getEntityName(config.sensor_popup_bat_3),
+      config.sensor_popup_bat_4_name && config.sensor_popup_bat_4_name.trim() ? config.sensor_popup_bat_4_name.trim() : this.getEntityName(config.sensor_popup_bat_4),
+      config.sensor_popup_bat_5_name && config.sensor_popup_bat_5_name.trim() ? config.sensor_popup_bat_5_name.trim() : this.getEntityName(config.sensor_popup_bat_5),
+      config.sensor_popup_bat_6_name && config.sensor_popup_bat_6_name.trim() ? config.sensor_popup_bat_6_name.trim() : this.getEntityName(config.sensor_popup_bat_6)
+    ];
+
+    const lines = popupBatValues.map((v, i) => v !== null ? `${popupBatNames[i]}: ${this.formatPower(v, use_kw)}` : '').filter(line => line);
+    if (!lines.length) return;
+
+    const maxLineLength = Math.max(...lines.map(line => line.length));
+    const maxFontSize = Math.max(...lines.map((_, index) => {
+      const fontSizeKey = `sensor_popup_bat_${index + 1}_font_size`;
+      return config[fontSizeKey] || 16;
+    }));
+    const estimatedCharWidth = maxFontSize * 0.6;
+    // Use a 40px margin on each side (80px total) to match design requirement
+    const popupWidth = Math.max(200, Math.min(700, maxLineLength * estimatedCharWidth + 80));
+    const popupHeight = 25 + lines.length * 15;
+    const popupX = (800 - popupWidth) / 2;
+    const popupY = (450 - popupHeight) / 2;
+
+    const rect = popup.querySelector('rect');
+    if (rect) {
+      rect.setAttribute('x', popupX);
+      rect.setAttribute('y', popupY);
+      rect.setAttribute('width', popupWidth);
+      rect.setAttribute('height', popupHeight);
+      // Ensure popup background is opaque and shows glowing border
+      rect.setAttribute('fill', '#001428');
+      rect.setAttribute('stroke', '#00FFFF');
+      rect.setAttribute('stroke-width', '2');
+    }
+
+    const lineElements = this._domRefs.batteryPopupLines || [];
+    lines.forEach((line, index) => {
+      const element = lineElements[index];
+      if (element) {
+        element.setAttribute('x', popupX + popupWidth / 2);
+        element.setAttribute('y', popupY + 25 + index * 15);
+        element.textContent = line;
+        element.style.display = 'inline';
+        const fontSizeKey = `sensor_popup_bat_${index + 1}_font_size`;
+        const fontSize = config[fontSizeKey] || 16;
+        element.setAttribute('font-size', fontSize);
+        const colorKey = `sensor_popup_bat_${index + 1}_color`;
+        const color = config[colorKey] || '#80ffff';
+        element.setAttribute('fill', color);
+      }
+    });
+
+    for (let i = lines.length; i < lineElements.length; i++) {
+      const element = lineElements[i];
+      if (element) {
+        element.style.display = 'none';
+      }
+    }
+
+    popup.style.display = 'inline';
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
+    }
+  }
+
+  async _hideBatteryPopup() {
+    if (!this._domRefs || !this._domRefs.batteryPopup) return;
+    const popup = this._domRefs.batteryPopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
@@ -2344,10 +2477,34 @@ class LuminaEnergyCard extends HTMLElement {
       });
     }
 
+    // Attach click listener to PV clickable area for PV popup
+    if (this._domRefs.pvClickableArea) {
+      this._domRefs.pvClickableArea.addEventListener('click', () => {
+        console.debug('Lumina Energy Card: PV clickable area clicked');
+        this._togglePvPopup();
+      });
+    }
+
+    // Attach click listener to battery clickable area for battery popup
+    if (this._domRefs.batteryClickableArea) {
+      this._domRefs.batteryClickableArea.addEventListener('click', () => {
+        console.debug('Lumina Energy Card: battery clickable area clicked');
+        this._toggleBatteryPopup();
+      });
+    }
+
     // Attach click listener to popup for closing
     if (this._domRefs.pvPopup) {
       this._domRefs.pvPopup.addEventListener('click', () => {
         this._hidePvPopup();
+      });
+    }
+
+    // Attach click listener to battery popup for closing
+    if (this._domRefs.batteryPopup) {
+      this._domRefs.batteryPopup.addEventListener('click', () => {
+        console.debug('Lumina Energy Card: battery popup clicked');
+        this._hideBatteryPopup();
       });
     }
 
@@ -2410,6 +2567,17 @@ class LuminaEnergyCardEditor extends HTMLElement {
       ? { ...LuminaEnergyCard.getStubConfig() }
       : {};
     this._strings = this._buildStrings();
+    // If an embedded locales bundle was provided (embedded-locales.js), merge it now
+    try {
+      if (typeof window !== 'undefined' && window.LUMINA_EMBEDDED_LOCALES) {
+        for (const [lang, data] of Object.entries(window.LUMINA_EMBEDDED_LOCALES)) {
+          this._strings[lang] = Object.assign({}, this._strings[lang] || {}, data);
+        }
+      }
+    } catch (e) {
+      // swallow to avoid breaking editor construction if embedded data malformed
+      console.debug('lumina: failed merging embedded locales', e);
+    }
     this._externalLocales = null;
     this._localesBase = null;
     this._loadExternalLocales();
@@ -2424,6 +2592,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           entities: { title: 'Entity Selection', helper: 'Choose the PV, battery, grid, load, and EV entities used by the card. Either the PV total sensor or your PV string arrays need to be specified as a minimum.' },
           pvPopup: { title: 'PV Popup', helper: 'Configure entities for the PV popup display.' },
           housePopup: { title: 'House Popup', helper: 'Configure entities for the house popup display.' },
+          batteryPopup: { title: 'Battery Popup', helper: 'Configure battery popup display.' },
           colors: { title: 'Color & Thresholds', helper: 'Configure grid thresholds and accent colours for flows and EV display.' },
           typography: { title: 'Typography', helper: 'Fine tune the font sizes used across the card.' },
           about: { title: 'About', helper: 'Credits, version, and helpful links.' }
@@ -2614,6 +2783,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           entities: { title: 'Selezione entita', helper: 'Scegli le entita PV, batteria, rete, carico ed EV utilizzate dalla scheda. Come minimo deve essere specificato il sensore PV totale oppure gli array di stringhe PV.' },
           pvPopup: { title: 'PV Popup', helper: 'Configura le entita per la visualizzazione del popup PV.' },
           housePopup: { title: 'House Popup', helper: 'Configura le entita per la visualizzazione del popup casa.' },
+          batteryPopup: { title: 'Popup Batteria', helper: 'Configura il popup della batteria.' },
           colors: { title: 'Colori e soglie', helper: 'Configura soglie della rete e colori di accento per i flussi.' },
           typography: { title: 'Tipografia', helper: 'Regola le dimensioni dei caratteri utilizzate nella scheda.' },
           about: { title: 'Informazioni', helper: 'Crediti, versione e link utili.' }
@@ -2797,6 +2967,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           entities: { title: 'Entitaetenauswahl', helper: 'PV-, Batterie-, Netz-, Verbrauchs- und optionale EV-Entitaeten waehlen. Entweder der PV-Gesamt-Sensor oder Ihre PV-String-Arrays muessen mindestens angegeben werden.' },
           pvPopup: { title: 'PV Popup', helper: 'Entitaeten fuer die PV-Popup-Anzeige konfigurieren.' },
           housePopup: { title: 'House Popup', helper: 'Entitaeten fuer die House-Popup-Anzeige konfigurieren.' },
+          batteryPopup: { title: 'Batterie-Popup', helper: 'Konfigurieren Sie die Batterie-Popup-Anzeige.' },
           colors: { title: 'Farben & Schwellwerte', helper: 'Grenzwerte und Farben fuer Netz- und EV-Anzeige einstellen.' },
           typography: { title: 'Typografie', helper: 'Schriftgroessen der Karte feinjustieren.' },
           about: { title: 'Info', helper: 'Credits, Version und nuetzliche Links.' }
@@ -2976,6 +3147,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           entities: { title: 'Sélection d entités', helper: 'Choisissez les entités PV, batterie, réseau, charge et EV utilisées par la carte. Soit le capteur PV total, soit vos tableaux de chaînes PV doivent être spécifiés au minimum.' },
           pvPopup: { title: 'Popup PV', helper: 'Configurer les entités pour l\'affichage du popup PV.' },
           housePopup: { title: 'Popup Maison', helper: 'Configurer les entités pour l\'affichage du popup maison.' },
+          batteryPopup: { title: 'Popup Batterie', helper: 'Configurer l\'affichage du popup batterie.' },
           colors: { title: 'Couleurs & Seuils', helper: 'Configurez les seuils réseau et les couleurs d accent pour les flux et l affichage EV.' },
           typography: { title: 'Typographie', helper: 'Ajustez les tailles de police utilisées dans la carte.' },
           about: { title: 'À propos', helper: 'Crédits, version et liens utiles.' }
@@ -3161,8 +3333,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
           general: { title: 'Algemene instellingen', helper: 'Metadata van de kaart, achtergrond, taal en update frequentie.' },
           entities: { title: 'Entiteit selectie', helper: 'Kies de PV, batterij, grid, load en EV entiteiten gebruikt door de kaart. Of de totale PV sensor, of uw PV string arrays moeten minimaal worden gespecificeerd.' },
           pvPopup: { title: 'PV Popup', helper: 'Configureer entiteiten voor de PV popup weergave.' },
-          housePopup: { title: 'House Popup', helper: 'Configureer entiteiten voor de house popup weergave.' },
-          colors: { title: 'Kleuren & Drempels', helper: 'Configureer grid drempels en accent kleuren voor flows en EV weergave.' },
+          housePopup: { title: 'House Popup', helper: 'Configureer entiteiten voor de House popup weergave.' },
+          batteryPopup: { title: 'Batterij-popup', helper: 'Configureer de batterij popup weergave.' },
+          colors: { title: 'Kleuren & Drempels', helper: 'Configureer netwerkdrempels en accentkleuren voor stromen en EV-weergave.' },
           typography: { title: 'Typografie', helper: 'Pas de lettergrootte aan gebruikt in de kaart.' },
           about: { title: 'Over', helper: 'Credits, versie en nuttige links.' }
         },
@@ -3677,18 +3850,24 @@ class LuminaEnergyCardEditor extends HTMLElement {
         ,{ name: 'car2_name_color', label: fields.car2_name_color.label, helper: fields.car2_name_color.helper, selector: { color_picker: {} }, default: '#FFFFFF' }
         ,{ name: 'car1_color', label: fields.car1_color.label, helper: fields.car1_color.helper, selector: { color_picker: {} }, default: '#FFFFFF' }
         ,{ name: 'car2_color', label: fields.car2_color.label, helper: fields.car2_color.helper, selector: { color_picker: {} }, default: '#FFFFFF' }
-        ,{ name: 'sensor_popup_pv_1_color', label: fields.sensor_popup_pv_1_color.label, helper: fields.sensor_popup_pv_1_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_pv_2_color', label: fields.sensor_popup_pv_2_color.label, helper: fields.sensor_popup_pv_2_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_pv_3_color', label: fields.sensor_popup_pv_3_color.label, helper: fields.sensor_popup_pv_3_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_pv_4_color', label: fields.sensor_popup_pv_4_color.label, helper: fields.sensor_popup_pv_4_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_pv_5_color', label: fields.sensor_popup_pv_5_color.label, helper: fields.sensor_popup_pv_5_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_pv_6_color', label: fields.sensor_popup_pv_6_color.label, helper: fields.sensor_popup_pv_6_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_1_color', label: fields.sensor_popup_house_1_color.label, helper: fields.sensor_popup_house_1_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_2_color', label: fields.sensor_popup_house_2_color.label, helper: fields.sensor_popup_house_2_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_3_color', label: fields.sensor_popup_house_3_color.label, helper: fields.sensor_popup_house_3_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_4_color', label: fields.sensor_popup_house_4_color.label, helper: fields.sensor_popup_house_4_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_5_color', label: fields.sensor_popup_house_5_color.label, helper: fields.sensor_popup_house_5_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
-        ,{ name: 'sensor_popup_house_6_color', label: fields.sensor_popup_house_6_color.label, helper: fields.sensor_popup_house_6_color.helper, selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_1_color', label: (fields.sensor_popup_pv_1_color && fields.sensor_popup_pv_1_color.label) || '', helper: (fields.sensor_popup_pv_1_color && fields.sensor_popup_pv_1_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_2_color', label: (fields.sensor_popup_pv_2_color && fields.sensor_popup_pv_2_color.label) || '', helper: (fields.sensor_popup_pv_2_color && fields.sensor_popup_pv_2_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_3_color', label: (fields.sensor_popup_pv_3_color && fields.sensor_popup_pv_3_color.label) || '', helper: (fields.sensor_popup_pv_3_color && fields.sensor_popup_pv_3_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_4_color', label: (fields.sensor_popup_pv_4_color && fields.sensor_popup_pv_4_color.label) || '', helper: (fields.sensor_popup_pv_4_color && fields.sensor_popup_pv_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_5_color', label: (fields.sensor_popup_pv_5_color && fields.sensor_popup_pv_5_color.label) || '', helper: (fields.sensor_popup_pv_5_color && fields.sensor_popup_pv_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_pv_6_color', label: (fields.sensor_popup_pv_6_color && fields.sensor_popup_pv_6_color.label) || '', helper: (fields.sensor_popup_pv_6_color && fields.sensor_popup_pv_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_1_color', label: (fields.sensor_popup_house_1_color && fields.sensor_popup_house_1_color.label) || '', helper: (fields.sensor_popup_house_1_color && fields.sensor_popup_house_1_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_2_color', label: (fields.sensor_popup_house_2_color && fields.sensor_popup_house_2_color.label) || '', helper: (fields.sensor_popup_house_2_color && fields.sensor_popup_house_2_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_3_color', label: (fields.sensor_popup_house_3_color && fields.sensor_popup_house_3_color.label) || '', helper: (fields.sensor_popup_house_3_color && fields.sensor_popup_house_3_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_4_color', label: (fields.sensor_popup_house_4_color && fields.sensor_popup_house_4_color.label) || '', helper: (fields.sensor_popup_house_4_color && fields.sensor_popup_house_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_5_color', label: (fields.sensor_popup_house_5_color && fields.sensor_popup_house_5_color.label) || '', helper: (fields.sensor_popup_house_5_color && fields.sensor_popup_house_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_house_6_color', label: (fields.sensor_popup_house_6_color && fields.sensor_popup_house_6_color.label) || '', helper: (fields.sensor_popup_house_6_color && fields.sensor_popup_house_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_1_color', label: (fields.sensor_popup_bat_1_color && fields.sensor_popup_bat_1_color.label) || '', helper: (fields.sensor_popup_bat_1_color && fields.sensor_popup_bat_1_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_2_color', label: (fields.sensor_popup_bat_2_color && fields.sensor_popup_bat_2_color.label) || '', helper: (fields.sensor_popup_bat_2_color && fields.sensor_popup_bat_2_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_3_color', label: (fields.sensor_popup_bat_3_color && fields.sensor_popup_bat_3_color.label) || '', helper: (fields.sensor_popup_bat_3_color && fields.sensor_popup_bat_3_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_4_color', label: (fields.sensor_popup_bat_4_color && fields.sensor_popup_bat_4_color.label) || '', helper: (fields.sensor_popup_bat_4_color && fields.sensor_popup_bat_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_5_color', label: (fields.sensor_popup_bat_5_color && fields.sensor_popup_bat_5_color.label) || '', helper: (fields.sensor_popup_bat_5_color && fields.sensor_popup_bat_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_bat_6_color', label: (fields.sensor_popup_bat_6_color && fields.sensor_popup_bat_6_color.label) || '', helper: (fields.sensor_popup_bat_6_color && fields.sensor_popup_bat_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
       ]),
       typography: define([
         { name: 'header_font_size', label: fields.header_font_size.label, helper: fields.header_font_size.helper, selector: { text: { mode: 'blur' } } },
@@ -3700,51 +3879,67 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'load_font_size', label: fields.load_font_size.label, helper: fields.load_font_size.helper, selector: { text: { mode: 'blur' } } },
         { name: 'grid_font_size', label: fields.grid_font_size.label, helper: fields.grid_font_size.helper, selector: { text: { mode: 'blur' } } },
         { name: 'car_power_font_size', label: fields.car_power_font_size.label, helper: fields.car_power_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'car2_power_font_size', label: fields.car2_power_font_size.label, helper: fields.car2_power_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'car_name_font_size', label: fields.car_name_font_size.label, helper: fields.car_name_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'car2_name_font_size', label: fields.car2_name_font_size.label, helper: fields.car2_name_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'car_soc_font_size', label: fields.car_soc_font_size.label, helper: fields.car_soc_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'car2_soc_font_size', label: fields.car2_soc_font_size.label, helper: fields.car2_soc_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_1_font_size', label: fields.sensor_popup_pv_1_font_size.label, helper: fields.sensor_popup_pv_1_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_2_font_size', label: fields.sensor_popup_pv_2_font_size.label, helper: fields.sensor_popup_pv_2_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_3_font_size', label: fields.sensor_popup_pv_3_font_size.label, helper: fields.sensor_popup_pv_3_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_4_font_size', label: fields.sensor_popup_pv_4_font_size.label, helper: fields.sensor_popup_pv_4_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_5_font_size', label: fields.sensor_popup_pv_5_font_size.label, helper: fields.sensor_popup_pv_5_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_pv_6_font_size', label: fields.sensor_popup_pv_6_font_size.label, helper: fields.sensor_popup_pv_6_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_1_font_size', label: fields.sensor_popup_house_1_font_size.label, helper: fields.sensor_popup_house_1_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_2_font_size', label: fields.sensor_popup_house_2_font_size.label, helper: fields.sensor_popup_house_2_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_3_font_size', label: fields.sensor_popup_house_3_font_size.label, helper: fields.sensor_popup_house_3_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_4_font_size', label: fields.sensor_popup_house_4_font_size.label, helper: fields.sensor_popup_house_4_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_5_font_size', label: fields.sensor_popup_house_5_font_size.label, helper: fields.sensor_popup_house_5_font_size.helper, selector: { text: { mode: 'blur' } } },
-        { name: 'sensor_popup_house_6_font_size', label: fields.sensor_popup_house_6_font_size.label, helper: fields.sensor_popup_house_6_font_size.helper, selector: { text: { mode: 'blur' } } }
+        { name: 'car2_power_font_size', label: (fields.car2_power_font_size && fields.car2_power_font_size.label) || '', helper: (fields.car2_power_font_size && fields.car2_power_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'car_name_font_size', label: (fields.car_name_font_size && fields.car_name_font_size.label) || '', helper: (fields.car_name_font_size && fields.car_name_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'car2_name_font_size', label: (fields.car2_name_font_size && fields.car2_name_font_size.label) || '', helper: (fields.car2_name_font_size && fields.car2_name_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'car_soc_font_size', label: (fields.car_soc_font_size && fields.car_soc_font_size.label) || '', helper: (fields.car_soc_font_size && fields.car_soc_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'car2_soc_font_size', label: (fields.car2_soc_font_size && fields.car2_soc_font_size.label) || '', helper: (fields.car2_soc_font_size && fields.car2_soc_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_1_font_size', label: (fields.sensor_popup_pv_1_font_size && fields.sensor_popup_pv_1_font_size.label) || '', helper: (fields.sensor_popup_pv_1_font_size && fields.sensor_popup_pv_1_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_2_font_size', label: (fields.sensor_popup_pv_2_font_size && fields.sensor_popup_pv_2_font_size.label) || '', helper: (fields.sensor_popup_pv_2_font_size && fields.sensor_popup_pv_2_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_3_font_size', label: (fields.sensor_popup_pv_3_font_size && fields.sensor_popup_pv_3_font_size.label) || '', helper: (fields.sensor_popup_pv_3_font_size && fields.sensor_popup_pv_3_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_4_font_size', label: (fields.sensor_popup_pv_4_font_size && fields.sensor_popup_pv_4_font_size.label) || '', helper: (fields.sensor_popup_pv_4_font_size && fields.sensor_popup_pv_4_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_5_font_size', label: (fields.sensor_popup_pv_5_font_size && fields.sensor_popup_pv_5_font_size.label) || '', helper: (fields.sensor_popup_pv_5_font_size && fields.sensor_popup_pv_5_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_pv_6_font_size', label: (fields.sensor_popup_pv_6_font_size && fields.sensor_popup_pv_6_font_size.label) || '', helper: (fields.sensor_popup_pv_6_font_size && fields.sensor_popup_pv_6_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_1_font_size', label: (fields.sensor_popup_house_1_font_size && fields.sensor_popup_house_1_font_size.label) || '', helper: (fields.sensor_popup_house_1_font_size && fields.sensor_popup_house_1_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_2_font_size', label: (fields.sensor_popup_house_2_font_size && fields.sensor_popup_house_2_font_size.label) || '', helper: (fields.sensor_popup_house_2_font_size && fields.sensor_popup_house_2_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_3_font_size', label: (fields.sensor_popup_house_3_font_size && fields.sensor_popup_house_3_font_size.label) || '', helper: (fields.sensor_popup_house_3_font_size && fields.sensor_popup_house_3_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_4_font_size', label: (fields.sensor_popup_house_4_font_size && fields.sensor_popup_house_4_font_size.label) || '', helper: (fields.sensor_popup_house_4_font_size && fields.sensor_popup_house_4_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_5_font_size', label: (fields.sensor_popup_house_5_font_size && fields.sensor_popup_house_5_font_size.label) || '', helper: (fields.sensor_popup_house_5_font_size && fields.sensor_popup_house_5_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_house_6_font_size', label: (fields.sensor_popup_house_6_font_size && fields.sensor_popup_house_6_font_size.label) || '', helper: (fields.sensor_popup_house_6_font_size && fields.sensor_popup_house_6_font_size.helper) || '', selector: { text: { mode: 'blur' } } },
+        { name: 'sensor_popup_bat_1_font_size', label: (fields.sensor_popup_bat_1_font_size && fields.sensor_popup_bat_1_font_size.label) || '', helper: (fields.sensor_popup_bat_1_font_size && fields.sensor_popup_bat_1_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_bat_2_font_size', label: (fields.sensor_popup_bat_2_font_size && fields.sensor_popup_bat_2_font_size.label) || '', helper: (fields.sensor_popup_bat_2_font_size && fields.sensor_popup_bat_2_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_bat_3_font_size', label: (fields.sensor_popup_bat_3_font_size && fields.sensor_popup_bat_3_font_size.label) || '', helper: (fields.sensor_popup_bat_3_font_size && fields.sensor_popup_bat_3_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_bat_4_font_size', label: (fields.sensor_popup_bat_4_font_size && fields.sensor_popup_bat_4_font_size.label) || '', helper: (fields.sensor_popup_bat_4_font_size && fields.sensor_popup_bat_4_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_bat_5_font_size', label: (fields.sensor_popup_bat_5_font_size && fields.sensor_popup_bat_5_font_size.label) || '', helper: (fields.sensor_popup_bat_5_font_size && fields.sensor_popup_bat_5_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_bat_6_font_size', label: (fields.sensor_popup_bat_6_font_size && fields.sensor_popup_bat_6_font_size.label) || '', helper: (fields.sensor_popup_bat_6_font_size && fields.sensor_popup_bat_6_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
+        { name: 'sensor_popup_pv_2', label: (fields.sensor_popup_pv_2 && fields.sensor_popup_pv_2.label) || '', helper: (fields.sensor_popup_pv_2 && fields.sensor_popup_pv_2.helper) || '', selector: entitySelector },
+        { name: 'sensor_popup_pv_2_name', label: (fields.sensor_popup_pv_2_name && fields.sensor_popup_pv_2_name.label) || '', helper: (fields.sensor_popup_pv_2_name && fields.sensor_popup_pv_2_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_pv_3', label: (fields.sensor_popup_pv_3 && fields.sensor_popup_pv_3.label) || '', helper: (fields.sensor_popup_pv_3 && fields.sensor_popup_pv_3.helper) || '', selector: entitySelector },
+        { name: 'sensor_popup_pv_3_name', label: (fields.sensor_popup_pv_3_name && fields.sensor_popup_pv_3_name.label) || '', helper: (fields.sensor_popup_pv_3_name && fields.sensor_popup_pv_3_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_pv_4', label: (fields.sensor_popup_pv_4 && fields.sensor_popup_pv_4.label) || '', helper: (fields.sensor_popup_pv_4 && fields.sensor_popup_pv_4.helper) || '', selector: entitySelector },
+        { name: 'sensor_popup_pv_4_name', label: (fields.sensor_popup_pv_4_name && fields.sensor_popup_pv_4_name.label) || '', helper: (fields.sensor_popup_pv_4_name && fields.sensor_popup_pv_4_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_pv_5', label: (fields.sensor_popup_pv_5 && fields.sensor_popup_pv_5.label) || '', helper: (fields.sensor_popup_pv_5 && fields.sensor_popup_pv_5.helper) || '', selector: entitySelector },
+        { name: 'sensor_popup_pv_5_name', label: (fields.sensor_popup_pv_5_name && fields.sensor_popup_pv_5_name.label) || '', helper: (fields.sensor_popup_pv_5_name && fields.sensor_popup_pv_5_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_pv_6', label: (fields.sensor_popup_pv_6 && fields.sensor_popup_pv_6.label) || '', helper: (fields.sensor_popup_pv_6 && fields.sensor_popup_pv_6.helper) || '', selector: entitySelector },
+        { name: 'sensor_popup_pv_6_name', label: (fields.sensor_popup_pv_6_name && fields.sensor_popup_pv_6_name.label) || '', helper: (fields.sensor_popup_pv_6_name && fields.sensor_popup_pv_6_name.helper) || '', selector: { text: {} } }
       ]),
-      pvPopup: define([
-        { name: 'sensor_popup_pv_1', label: fields.sensor_popup_pv_1.label, helper: fields.sensor_popup_pv_1.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_1_name', label: fields.sensor_popup_pv_1_name.label, helper: fields.sensor_popup_pv_1_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_pv_2', label: fields.sensor_popup_pv_2.label, helper: fields.sensor_popup_pv_2.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_2_name', label: fields.sensor_popup_pv_2_name.label, helper: fields.sensor_popup_pv_2_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_pv_3', label: fields.sensor_popup_pv_3.label, helper: fields.sensor_popup_pv_3.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_3_name', label: fields.sensor_popup_pv_3_name.label, helper: fields.sensor_popup_pv_3_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_pv_4', label: fields.sensor_popup_pv_4.label, helper: fields.sensor_popup_pv_4.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_4_name', label: fields.sensor_popup_pv_4_name.label, helper: fields.sensor_popup_pv_4_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_pv_5', label: fields.sensor_popup_pv_5.label, helper: fields.sensor_popup_pv_5.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_5_name', label: fields.sensor_popup_pv_5_name.label, helper: fields.sensor_popup_pv_5_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_pv_6', label: fields.sensor_popup_pv_6.label, helper: fields.sensor_popup_pv_6.helper, selector: entitySelector },
-        { name: 'sensor_popup_pv_6_name', label: fields.sensor_popup_pv_6_name.label, helper: fields.sensor_popup_pv_6_name.helper, selector: { text: {} } }
+      batteryPopup: define([
+        { name: 'sensor_popup_bat_1', label: (fields.sensor_popup_bat_1 && fields.sensor_popup_bat_1.label) || '', helper: (fields.sensor_popup_bat_1 && fields.sensor_popup_bat_1.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_1_name', label: (fields.sensor_popup_bat_1_name && fields.sensor_popup_bat_1_name.label) || '', helper: (fields.sensor_popup_bat_1_name && fields.sensor_popup_bat_1_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_bat_2', label: (fields.sensor_popup_bat_2 && fields.sensor_popup_bat_2.label) || '', helper: (fields.sensor_popup_bat_2 && fields.sensor_popup_bat_2.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_2_name', label: (fields.sensor_popup_bat_2_name && fields.sensor_popup_bat_2_name.label) || '', helper: (fields.sensor_popup_bat_2_name && fields.sensor_popup_bat_2_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_bat_3', label: (fields.sensor_popup_bat_3 && fields.sensor_popup_bat_3.label) || '', helper: (fields.sensor_popup_bat_3 && fields.sensor_popup_bat_3.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_3_name', label: (fields.sensor_popup_bat_3_name && fields.sensor_popup_bat_3_name.label) || '', helper: (fields.sensor_popup_bat_3_name && fields.sensor_popup_bat_3_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_bat_4', label: (fields.sensor_popup_bat_4 && fields.sensor_popup_bat_4.label) || '', helper: (fields.sensor_popup_bat_4 && fields.sensor_popup_bat_4.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_4_name', label: (fields.sensor_popup_bat_4_name && fields.sensor_popup_bat_4_name.label) || '', helper: (fields.sensor_popup_bat_4_name && fields.sensor_popup_bat_4_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_bat_5', label: (fields.sensor_popup_bat_5 && fields.sensor_popup_bat_5.label) || '', helper: (fields.sensor_popup_bat_5 && fields.sensor_popup_bat_5.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_5_name', label: (fields.sensor_popup_bat_5_name && fields.sensor_popup_bat_5_name.label) || '', helper: (fields.sensor_popup_bat_5_name && fields.sensor_popup_bat_5_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_bat_6', label: (fields.sensor_popup_bat_6 && fields.sensor_popup_bat_6.label) || '', helper: (fields.sensor_popup_bat_6 && fields.sensor_popup_bat_6.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_bat_6_name', label: (fields.sensor_popup_bat_6_name && fields.sensor_popup_bat_6_name.label) || '', helper: (fields.sensor_popup_bat_6_name && fields.sensor_popup_bat_6_name.helper) || '', selector: { text: {} } }
       ]),
       housePopup: define([
-        { name: 'sensor_popup_house_1', label: fields.sensor_popup_house_1.label, helper: fields.sensor_popup_house_1.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_1_name', label: fields.sensor_popup_house_1_name.label, helper: fields.sensor_popup_house_1_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_house_2', label: fields.sensor_popup_house_2.label, helper: fields.sensor_popup_house_2.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_2_name', label: fields.sensor_popup_house_2_name.label, helper: fields.sensor_popup_house_2_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_house_3', label: fields.sensor_popup_house_3.label, helper: fields.sensor_popup_house_3.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_3_name', label: fields.sensor_popup_house_3_name.label, helper: fields.sensor_popup_house_3_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_house_4', label: fields.sensor_popup_house_4.label, helper: fields.sensor_popup_house_4.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_4_name', label: fields.sensor_popup_house_4_name.label, helper: fields.sensor_popup_house_4_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_house_5', label: fields.sensor_popup_house_5.label, helper: fields.sensor_popup_house_5.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_5_name', label: fields.sensor_popup_house_5_name.label, helper: fields.sensor_popup_house_5_name.helper, selector: { text: {} } },
-        { name: 'sensor_popup_house_6', label: fields.sensor_popup_house_6.label, helper: fields.sensor_popup_house_6.helper, selector: { entity: {} } },
-        { name: 'sensor_popup_house_6_name', label: fields.sensor_popup_house_6_name.label, helper: fields.sensor_popup_house_6_name.helper, selector: { text: {} } }
+        { name: 'sensor_popup_house_1', label: (fields.sensor_popup_house_1 && fields.sensor_popup_house_1.label) || '', helper: (fields.sensor_popup_house_1 && fields.sensor_popup_house_1.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_1_name', label: (fields.sensor_popup_house_1_name && fields.sensor_popup_house_1_name.label) || '', helper: (fields.sensor_popup_house_1_name && fields.sensor_popup_house_1_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_house_2', label: (fields.sensor_popup_house_2 && fields.sensor_popup_house_2.label) || '', helper: (fields.sensor_popup_house_2 && fields.sensor_popup_house_2.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_2_name', label: (fields.sensor_popup_house_2_name && fields.sensor_popup_house_2_name.label) || '', helper: (fields.sensor_popup_house_2_name && fields.sensor_popup_house_2_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_house_3', label: (fields.sensor_popup_house_3 && fields.sensor_popup_house_3.label) || '', helper: (fields.sensor_popup_house_3 && fields.sensor_popup_house_3.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_3_name', label: (fields.sensor_popup_house_3_name && fields.sensor_popup_house_3_name.label) || '', helper: (fields.sensor_popup_house_3_name && fields.sensor_popup_house_3_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_house_4', label: (fields.sensor_popup_house_4 && fields.sensor_popup_house_4.label) || '', helper: (fields.sensor_popup_house_4 && fields.sensor_popup_house_4.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_4_name', label: (fields.sensor_popup_house_4_name && fields.sensor_popup_house_4_name.label) || '', helper: (fields.sensor_popup_house_4_name && fields.sensor_popup_house_4_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_house_5', label: (fields.sensor_popup_house_5 && fields.sensor_popup_house_5.label) || '', helper: (fields.sensor_popup_house_5 && fields.sensor_popup_house_5.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_5_name', label: (fields.sensor_popup_house_5_name && fields.sensor_popup_house_5_name.label) || '', helper: (fields.sensor_popup_house_5_name && fields.sensor_popup_house_5_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_house_6', label: (fields.sensor_popup_house_6 && fields.sensor_popup_house_6.label) || '', helper: (fields.sensor_popup_house_6 && fields.sensor_popup_house_6.helper) || '', selector: { entity: {} } },
+        { name: 'sensor_popup_house_6_name', label: (fields.sensor_popup_house_6_name && fields.sensor_popup_house_6_name.label) || '', helper: (fields.sensor_popup_house_6_name && fields.sensor_popup_house_6_name.helper) || '', selector: { text: {} } }
       ])
     };
   }
@@ -3809,8 +4004,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           if (fields.solar_array2_title && fields.solar_array2_title.helper) {
             const array2Helper = document.createElement('div');
             array2Helper.className = 'field-helper';
-            array2Helper.textContent = fields.solar_array2_title.helper;
-            wrapper.appendChild(array2Helper);
+            array2Helper.textContent = fields.solar_array2_title.helper;dist
           }
           // Informational helper about activation requirements for Array 2
           const array2ActivationHelper = document.createElement('div');
@@ -3827,6 +4021,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         }
       },
       { id: 'pvPopup', title: sections.pvPopup.title, helper: sections.pvPopup.helper, schema: schemaDefs.pvPopup, defaultOpen: false },
+      { id: 'batteryPopup', title: sections.batteryPopup.title, helper: sections.batteryPopup.helper, schema: schemaDefs.batteryPopup, defaultOpen: false },
       { id: 'housePopup', title: sections.housePopup.title, helper: sections.housePopup.helper, schema: schemaDefs.housePopup, defaultOpen: false },
       { id: 'colors', title: sections.colors.title, helper: sections.colors.helper, schema: schemaDefs.colors, defaultOpen: false },
       { id: 'typography', title: sections.typography.title, helper: sections.typography.helper, schema: schemaDefs.typography, defaultOpen: false },
