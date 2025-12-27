@@ -1733,7 +1733,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (isVisible) {
       this._hidePvPopup();
     } else {
-      this._hideHousePopup(); // Hide house popup if open
+      this._closeOtherPopups('pv');
       this._showPvPopup();
     }
   }
@@ -1831,6 +1831,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
     
     popup.style.display = 'inline';
+    this._activePopup = 'pv';
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -1844,9 +1845,11 @@ class LuminaEnergyCard extends HTMLElement {
     if (gsap) {
       gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
         popup.style.display = 'none';
+        if (this._activePopup === 'pv') this._activePopup = null;
       }});
     } else {
       popup.style.display = 'none';
+      if (this._activePopup === 'pv') this._activePopup = null;
     }
   }
 
@@ -1864,8 +1867,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (isVisible) {
       this._hideBatteryPopup();
     } else {
-      this._hidePvPopup(); // hide other popups
-      this._hideHousePopup();
+      this._closeOtherPopups('battery');
       this._showBatteryPopup();
     }
   }
@@ -1946,6 +1948,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
 
     popup.style.display = 'inline';
+    this._activePopup = 'battery';
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -1959,9 +1962,11 @@ class LuminaEnergyCard extends HTMLElement {
     if (gsap) {
       gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
         popup.style.display = 'none';
+        if (this._activePopup === 'battery') this._activePopup = null;
       }});
     } else {
       popup.style.display = 'none';
+      if (this._activePopup === 'battery') this._activePopup = null;
     }
   }
 
@@ -1984,7 +1989,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (isVisible) {
       this._hideHousePopup();
     } else {
-      this._hidePvPopup(); // Hide PV popup if open
+      this._closeOtherPopups('house');
       this._showHousePopup();
     }
   }
@@ -2077,6 +2082,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
     
     popup.style.display = 'inline';
+    this._activePopup = 'house';
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -2090,10 +2096,18 @@ class LuminaEnergyCard extends HTMLElement {
     if (gsap) {
       gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
         popup.style.display = 'none';
+        if (this._activePopup === 'house') this._activePopup = null;
       }});
     } else {
       popup.style.display = 'none';
+      if (this._activePopup === 'house') this._activePopup = null;
     }
+  }
+
+  _closeOtherPopups(except) {
+    if (except !== 'pv') this._hidePvPopup();
+    if (except !== 'battery') this._hideBatteryPopup();
+    if (except !== 'house') this._hideHousePopup();
   }
 
   _updateView(viewState) {
