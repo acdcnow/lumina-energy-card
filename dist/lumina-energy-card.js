@@ -255,6 +255,7 @@ class LuminaEnergyCard extends HTMLElement {
       car2_pct_color: '#00FFFF',
       heat_pump_flow_color: '#FFA500',
       heat_pump_text_color: '#FFA500',
+      show_car_soc: false,
       show_car2: false,
       invert_battery: false,
       battery_fill_high_color: DEFAULT_BATTERY_FILL_HIGH_COLOR,
@@ -1103,8 +1104,27 @@ class LuminaEnergyCard extends HTMLElement {
 
     // EV Cars
     const showCar1 = Boolean(config.show_car_soc);
-    const showCar2Toggle = Boolean(config.show_car2);
-    const car2EntitiesConfigured = Boolean(config.sensor_car2_power || config.sensor_car2_soc);
+    const showCar2Toggle = Boolean(config.show_car_soc2 !== undefined ? config.show_car_soc2 : config.show_car2);
+    const resolveEntityId = (primary, legacy) => {
+      if (typeof primary === 'string') {
+        const trimmed = primary.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+      if (typeof legacy === 'string') {
+        const trimmed = legacy.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+      return '';
+    };
+    const car1PowerSensorId = resolveEntityId(config.sensor_car_power, config.car_power);
+    const car1SocSensorId = resolveEntityId(config.sensor_car_soc, config.car_soc);
+    const car2PowerSensorId = resolveEntityId(config.sensor_car2_power, config.car2_power);
+    const car2SocSensorId = resolveEntityId(config.sensor_car2_soc, config.car2_soc);
+    const car2EntitiesConfigured = Boolean(car2PowerSensorId || car2SocSensorId);
     const showCar2 = showCar2Toggle && car2EntitiesConfigured;
     const showDebugGrid = DEBUG_GRID_ENABLED;
     const resolveLabel = (value, fallback) => {
@@ -1118,10 +1138,10 @@ class LuminaEnergyCard extends HTMLElement {
     };
     const car1Label = resolveLabel(config.car1_label, 'CAR 1');
     const car2Label = resolveLabel(config.car2_label, 'CAR 2');
-    const car1PowerValue = showCar1 && config.sensor_car_power ? this.getStateSafe(config.sensor_car_power) : 0;
-    const car1SocValue = showCar1 && config.sensor_car_soc ? this.getStateSafe(config.sensor_car_soc) : null;
-    const car2PowerValue = showCar2 && config.sensor_car2_power ? this.getStateSafe(config.sensor_car2_power) : 0;
-    const car2SocValue = showCar2 && config.sensor_car2_soc ? this.getStateSafe(config.sensor_car2_soc) : null;
+    const car1PowerValue = showCar1 && car1PowerSensorId ? this.getStateSafe(car1PowerSensorId) : 0;
+    const car1SocValue = showCar1 && car1SocSensorId ? this.getStateSafe(car1SocSensorId) : null;
+    const car2PowerValue = showCar2 && car2PowerSensorId ? this.getStateSafe(car2PowerSensorId) : 0;
+    const car2SocValue = showCar2 && car2SocSensorId ? this.getStateSafe(car2SocSensorId) : null;
     const carLayoutKey = showCar2 ? 'dual' : 'single';
     const carLayout = CAR_LAYOUTS[carLayoutKey];
     const car1Transforms = buildCarTextTransforms(carLayout.car1);
@@ -4085,12 +4105,14 @@ class LuminaEnergyCardEditor extends HTMLElement {
         
       ]),
       car: define([
+        { name: 'show_car_soc', label: fields.show_car_soc.label, helper: fields.show_car_soc.helper, selector: { boolean: {} } },
+        { name: 'show_car2', label: fields.show_car2.label, helper: fields.show_car2.helper, selector: { boolean: {} } },
         { name: 'sensor_car_power', label: fields.sensor_car_power.label, helper: fields.sensor_car_power.helper, selector: entitySelector },
-        { name: 'car_soc', label: fields.car_soc.label, helper: fields.car_soc.helper, selector: entitySelector },
-        { name: 'car_charger_power', label: fields.car_charger_power.label, helper: fields.car_charger_power.helper, selector: entitySelector },
-        { name: 'car2_power', label: fields.car2_power.label, helper: fields.car2_power.helper, selector: entitySelector },
-        { name: 'car2_soc', label: fields.car2_soc.label, helper: fields.car2_soc.helper, selector: entitySelector },
-        { name: 'car2_charger_power', label: fields.car2_charger_power.label, helper: fields.car2_charger_power.helper, selector: entitySelector },
+        { name: 'sensor_car_soc', label: fields.sensor_car_soc.label, helper: fields.sensor_car_soc.helper, selector: entitySelector },
+        { name: 'sensor_car2_power', label: fields.sensor_car2_power.label, helper: fields.sensor_car2_power.helper, selector: entitySelector },
+        { name: 'sensor_car2_soc', label: fields.sensor_car2_soc.label, helper: fields.sensor_car2_soc.helper, selector: entitySelector },
+        { name: 'car1_label', label: fields.car1_label.label, helper: fields.car1_label.helper, selector: { text: { mode: 'blur' } } },
+        { name: 'car2_label', label: fields.car2_label.label, helper: fields.car2_label.helper, selector: { text: { mode: 'blur' } } },
         
       ]),
       other: define([
