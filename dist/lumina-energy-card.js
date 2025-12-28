@@ -266,6 +266,8 @@ class LuminaEnergyCard extends HTMLElement {
       grid_warning_color: '#ff8000',
       grid_threshold_critical: null,
       grid_critical_color: '#ff0000',
+      show_daily_grid: false,
+      show_grid_flow_label: true,
       show_pv_strings: false,
       display_unit: 'kW',
       update_interval: 30
@@ -1398,22 +1400,25 @@ class LuminaEnergyCard extends HTMLElement {
     });
 
     // Build optional grid daily lines (import/export cumulative values)
-    const gridLinesRaw = [];
-    if (config.sensor_grid_import_daily && Number.isFinite(gridImportDaily)) {
-      gridLinesRaw.push({ key: 'grid-import-daily', text: `IMP DAY: ${(gridImportDaily / 1000).toFixed(2)} kWh`, fill: gridImportColor });
-    }
-    if (config.sensor_grid_export_daily && Number.isFinite(gridExportDaily)) {
-      gridLinesRaw.push({ key: 'grid-export-daily', text: `EXP DAY: ${(gridExportDaily / 1000).toFixed(2)} kWh`, fill: gridExportColor });
-    }
-    const gridLineCount = Math.min(gridLinesRaw.length, 2);
-    const gridBaseY = TEXT_POSITIONS.grid.y + 18;
-    const gridLines = Array.from({ length: 2 }, (_, index) => {
-      if (index < gridLineCount) {
-        const line = gridLinesRaw[index];
-        return { ...line, y: gridBaseY + index * (grid_font_size + 4), visible: true };
+    let gridLines = [];
+    if (config.show_daily_grid) {
+      const gridLinesRaw = [];
+      if (config.sensor_grid_import_daily && Number.isFinite(gridImportDaily)) {
+        gridLinesRaw.push({ key: 'grid-import-daily', text: `IMP DAY: ${(gridImportDaily / 1000).toFixed(2)} kWh`, fill: gridImportColor });
       }
-      return { key: `grid-placeholder-${index}`, text: '', fill: effectiveGridColor, y: gridBaseY + index * (grid_font_size + 4), visible: false };
-    });
+      if (config.sensor_grid_export_daily && Number.isFinite(gridExportDaily)) {
+        gridLinesRaw.push({ key: 'grid-export-daily', text: `EXP DAY: ${(gridExportDaily / 1000).toFixed(2)} kWh`, fill: gridExportColor });
+      }
+      const gridLineCount = Math.min(gridLinesRaw.length, 2);
+      if (gridLineCount > 0) {
+        const gridBaseY = TEXT_POSITIONS.grid.y + 18;
+        gridLines = gridLinesRaw.slice(0, gridLineCount).map((line, index) => ({
+          ...line,
+          y: gridBaseY + index * (grid_font_size + 4),
+          visible: true
+        }));
+      }
+    }
 
     // Build load display lines when Array 2 is active (include per-line colours)
     const houseFill = resolveColor(config.house_total_color, C_CYAN);
@@ -1506,6 +1511,20 @@ class LuminaEnergyCard extends HTMLElement {
     };
     const car1View = buildCarView(showCar1, car1Label, car1PowerValue, car1SocValue, car1Transforms, carLayout.car1, car_name_font_size, car_power_font_size, car_soc_font_size, car1Color, car1NameColor, car1SocColor);
     const car2View = buildCarView(showCar2, car2Label, car2PowerValue, car2SocValue, car2Transforms, carLayout.car2, car2_name_font_size, car2_power_font_size, car2_soc_font_size, car2Color, car2NameColor, car2SocColor);
+    const showGridFlowLabel = config.show_grid_flow_label !== false;
+    const gridValueText = this.formatPower(Math.abs(gridNet), use_kw);
+    const gridText = (() => {
+      if (!showGridFlowLabel) {
+        return gridValueText;
+      }
+      if (gridNet > 0) {
+        return `${label_importing} ${gridValueText}`;
+      }
+      if (gridNet < 0) {
+        return `${label_exporting} ${gridValueText}`;
+      }
+      return gridValueText;
+    })();
 
     const viewState = {
       backgroundImage: bg_img,
@@ -1517,7 +1536,7 @@ class LuminaEnergyCard extends HTMLElement {
       batterySoc: { text: `${Math.floor(avg_soc)}%`, fontSize: battery_soc_font_size, fill: C_WHITE },
       batteryPower: { text: this.formatPower(Math.abs(total_bat_w), use_kw), fontSize: battery_power_font_size, fill: bat_col },
       load: (loadLines && loadLines.length) ? { lines: loadLines, y: loadY, fontSize: load_font_size, fill: effectiveLoadTextColor } : { text: this.formatPower(loadValue, use_kw), fontSize: load_font_size, fill: effectiveLoadTextColor },
-      grid: { text: gridNet > 0 ? `${label_importing} ${this.formatPower(Math.abs(gridNet), use_kw)}` : gridNet < 0 ? `${label_exporting} ${this.formatPower(Math.abs(gridNet), use_kw)}` : this.formatPower(Math.abs(gridNet), use_kw), fontSize: grid_font_size, fill: effectiveGridColor, lines: gridLines },
+      grid: { text: gridText, fontSize: grid_font_size, fill: effectiveGridColor, lines: gridLines },
       heatPump: {
         text: hasHeatPumpSensor ? this.formatPower(heat_pump_w, use_kw) : '',
         fontSize: heat_pump_font_size,
@@ -2866,6 +2885,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_import_daily: { label: 'Daily Grid Import Sensor', helper: 'Optional entity reporting cumulative grid import for the current day.' },
           sensor_grid_export_daily: { label: 'Daily Grid Export Sensor', helper: 'Optional entity reporting cumulative grid export for the current day.' },
           show_daily_grid: { label: 'Show Daily Grid Values', helper: 'Show the daily import/export totals under the current grid flow when enabled.' },
+          show_grid_flow_label: { label: 'Show Grid Import/Export Name', helper: 'Prepend the importing/exporting label before the grid value when enabled.' },
           pv_tot_color: { label: 'PV Total Color', helper: 'Colour applied to the PV TOTAL text line.' },
           pv_primary_color: { label: 'PV 1 Flow Color', helper: 'Colour used for the primary PV animation line.' },
           pv_secondary_color: { label: 'PV 2 Flow Color', helper: 'Colour used for the secondary PV animation line when available.' },
@@ -3100,6 +3120,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_import_daily: { label: 'Sensore import rete giornaliero', helper: 'Entita opzionale che riporta l import cumulativo della rete per il giorno corrente.' },
           sensor_grid_export_daily: { label: 'Sensore export rete giornaliero', helper: 'Entita opzionale che riporta l export cumulativo della rete per il giorno corrente.' },
           show_daily_grid: { label: 'Mostra valori rete giornalieri', helper: 'Mostra i totali import/export giornalieri sotto il flusso rete corrente quando abilitato.' },
+          show_grid_flow_label: { label: 'Mostra etichetta import/export rete', helper: 'Aggiunge "Importazione"/"Esportazione" prima del valore rete quando attivato.' },
           pv_primary_color: { label: 'Colore flusso FV 1', helper: 'Colore utilizzato per l animazione FV principale.' },
           pv_tot_color: { label: 'Colore PV TOTALE', helper: 'Colore applicato alla riga PV TOTALE.' },
           pv_secondary_color: { label: 'Colore flusso FV 2', helper: 'Colore utilizzato per la seconda linea FV quando presente.' },
@@ -3334,6 +3355,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_import_daily: { label: 'Tages-Netzimport Sensor', helper: 'Optionale Entitaet, die den kumulierten Netzimport fuer den aktuellen Tag meldet.' },
           sensor_grid_export_daily: { label: 'Tages-Netzexport Sensor', helper: 'Optionale Entitaet, die den kumulierten Netzexport fuer den aktuellen Tag meldet.' },
           show_daily_grid: { label: 'Tages-Netzwerte anzeigen', helper: 'Zeigt die taeglichen Import-/Exporttotalen unter dem aktuellen Netzfluss an, wenn aktiviert.' },
+          show_grid_flow_label: { label: 'Netz Import/Export Text anzeigen', helper: 'Fuegt "Importieren"/"Exportieren" vor dem Netzwert ein, wenn aktiviert.' },
           pv_primary_color: { label: 'PV 1 Flussfarbe', helper: 'Farbe fuer die primaere PV-Animationslinie.' },
           pv_tot_color: { label: 'PV Gesamt Farbe', helper: 'Farbe fuer die PV Gesamt Zeile.' },
           pv_secondary_color: { label: 'PV 2 Flussfarbe', helper: 'Farbe fuer die zweite PV-Linie (falls vorhanden).' },
@@ -3569,6 +3591,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_import_daily: { label: 'Capteur import réseau journalier', helper: 'Entité optionnelle rapportant l import cumulatif réseau pour la journée en cours.' },
           sensor_grid_export_daily: { label: 'Capteur export réseau journalier', helper: 'Entité optionnelle rapportant l export cumulatif réseau pour la journée en cours.' },
           show_daily_grid: { label: 'Afficher les valeurs réseau journalières', helper: 'Affiche les totaux import/export journaliers sous le flux réseau actuel lorsqu activé.' },
+          show_grid_flow_label: { label: 'Afficher le libellé import/export réseau', helper: 'Ajoute "Importation"/"Exportation" avant la valeur réseau lorsqu activé.' },
           pv_tot_color: { label: 'Couleur PV totale', helper: 'Couleur appliquée à la ligne/texte PV TOTAL.' },
           pv_primary_color: { label: 'Couleur flux PV 1', helper: 'Couleur utilisée pour la ligne d animation PV primaire.' },
           pv_secondary_color: { label: 'Couleur flux PV 2', helper: 'Couleur utilisée pour la ligne d animation PV secondaire si disponible.' },
@@ -3805,6 +3828,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_grid_import_daily: { label: 'Dagelijkse grid import sensor', helper: 'Optionele entiteit die cumulatieve grid import voor de huidige dag rapporteert.' },
           sensor_grid_export_daily: { label: 'Dagelijkse grid export sensor', helper: 'Optionele entiteit die cumulatieve grid export voor de huidige dag rapporteert.' },
           show_daily_grid: { label: 'Toon dagelijkse grid waarden', helper: 'Toon de dagelijkse import/export totalen onder de huidige grid flow wanneer ingeschakeld.' },
+          show_grid_flow_label: { label: 'Toon net import/export label', helper: 'Voegt "Importeren"/"Exporteren" toe voor de netwaarde wanneer ingeschakeld.' },
           pv_tot_color: { label: 'Totale PV kleur', helper: 'Kleur toegepast op de PV TOTAL lijn/tekst.' },
           pv_primary_color: { label: 'PV Flow 1 kleur', helper: 'Kleur gebruikt voor de primaire PV animatie lijn.' },
           pv_secondary_color: { label: 'PV Flow 2 kleur', helper: 'Kleur gebruikt voor de secundaire PV animatie lijn indien beschikbaar.' },
@@ -4107,6 +4131,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_grid_import_daily', label: fields.sensor_grid_import_daily.label, helper: fields.sensor_grid_import_daily.helper, selector: entitySelector },
         { name: 'sensor_grid_export_daily', label: fields.sensor_grid_export_daily.label, helper: fields.sensor_grid_export_daily.helper, selector: entitySelector },
         { name: 'show_daily_grid', label: fields.show_daily_grid.label, helper: fields.show_daily_grid.helper, selector: { boolean: {} } },
+        { name: 'show_grid_flow_label', label: fields.show_grid_flow_label.label, helper: fields.show_grid_flow_label.helper, selector: { boolean: {} } },
         { name: 'invert_grid', label: fields.invert_grid.label, helper: fields.invert_grid.helper, selector: { boolean: {} } },
         { name: 'grid_flow_mode', label: fields.grid_flow_mode.label, helper: fields.grid_flow_mode.helper, selector: { select: { options: optionDefs.grid_flow_mode } } },
         
