@@ -1,7 +1,7 @@
 /**
  * Lumina Energy Card
  * Custom Home Assistant card for energy flow visualization
- * Version: 1.1.31
+ * Version: 1.1.29
  * Tested with Home Assistant 2025.12+
  */
 const BATTERY_GEOMETRY = { X: 260, Y_BASE: 350, WIDTH: 55, MAX_HEIGHT: 84 };
@@ -1761,6 +1761,10 @@ class LuminaEnergyCard extends HTMLElement {
 
           <polygon data-role="house-clickable-area" points="300,200 300,150 350,100 450,75 500,150 500,200 395,250" fill="transparent" style="cursor:pointer;" />
 
+          <polygon data-role="grid-clickable-area" points="555,100 550,230 610,210 610,90 555,100" fill="transparent" style="cursor:pointer;" />
+
+          <path data-role="inverter-clickable-area" d="M 400 290 L 445 270 L 485 290 L 485 315 L 445 340 L 400 320 L 400 290" fill="transparent" style="cursor:pointer;" />
+
           <g data-role="house-popup" style="display:none; cursor:pointer;">
             <rect x="300" y="200" width="200" height="120" rx="10" ry="10" class="alive-box" />
             <text data-role="house-popup-line-0" x="400" y="225" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
@@ -1769,6 +1773,26 @@ class LuminaEnergyCard extends HTMLElement {
             <text data-role="house-popup-line-3" x="400" y="270" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
             <text data-role="house-popup-line-4" x="400" y="285" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
             <text data-role="house-popup-line-5" x="400" y="300" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+          </g>
+
+          <g data-role="grid-popup" style="display:none; cursor:pointer;">
+            <rect x="300" y="200" width="200" height="120" rx="10" ry="10" class="alive-box" />
+            <text data-role="grid-popup-line-0" x="400" y="225" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="grid-popup-line-1" x="400" y="240" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="grid-popup-line-2" x="400" y="255" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="grid-popup-line-3" x="400" y="270" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="grid-popup-line-4" x="400" y="285" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="grid-popup-line-5" x="400" y="300" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+          </g>
+
+          <g data-role="inverter-popup" style="display:none; cursor:pointer;">
+            <rect x="300" y="200" width="200" height="120" rx="10" ry="10" class="alive-box" />
+            <text data-role="inverter-popup-line-0" x="400" y="225" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="inverter-popup-line-1" x="400" y="240" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="inverter-popup-line-2" x="400" y="255" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="inverter-popup-line-3" x="400" y="270" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="inverter-popup-line-4" x="400" y="285" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
+            <text data-role="inverter-popup-line-5" x="400" y="300" fill="#FFFFFF" font-size="16" font-family="sans-serif" text-anchor="middle" style="display:none;"></text>
           </g>
 
         </svg>
@@ -1819,6 +1843,12 @@ class LuminaEnergyCard extends HTMLElement {
       housePopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="house-popup-line-${index}"]`)),
       houseClickableArea: root.querySelector('[data-role="house-clickable-area"]'),
       batteryClickableArea: root.querySelector('[data-role="battery-clickable-area"]'),
+      gridPopup: root.querySelector('[data-role="grid-popup"]'),
+      gridPopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="grid-popup-line-${index}"]`)),
+      gridClickableArea: root.querySelector('[data-role="grid-clickable-area"]'),
+      inverterPopup: root.querySelector('[data-role="inverter-popup"]'),
+      inverterPopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="inverter-popup-line-${index}"]`)),
+      inverterClickableArea: root.querySelector('[data-role="inverter-clickable-area"]'),
 
       flows: {
         pv1: root.querySelector('[data-flow-key="pv1"]'),
@@ -1921,19 +1951,35 @@ class LuminaEnergyCard extends HTMLElement {
     if (!lines.length) return;
     
     // Calculate popup dimensions based on content
-    const maxLineLength = Math.max(...lines.map(line => line.length));
-    
-    // Find the maximum font size used in the popup for width calculation
+    // Find the maximum font size used in the popup for width and height calculation
     const maxFontSize = Math.max(...lines.map((_, index) => {
       const fontSizeKey = `sensor_popup_pv_${index + 1}_font_size`;
       return config[fontSizeKey] || 16;
     }));
     
-    // More accurate width calculation: account for font size and variable character widths
-    // Average character width is roughly 0.6 * font-size for most fonts
-    const estimatedCharWidth = maxFontSize * 0.6;
-    const popupWidth = Math.max(200, Math.min(500, maxLineLength * estimatedCharWidth + 40)); // Reduced padding for tighter fit
-    const popupHeight = 25 + lines.length * 15; // Reduced height since header removed
+    // Calculate line height based on font size (font-size + 1px padding for readability)
+    const lineHeight = maxFontSize + 1;
+    
+    // Measure actual text width for accurate sizing
+    let maxTextWidth = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${maxFontSize}px Arial, sans-serif`;
+    
+    lines.forEach((line) => {
+      const textWidth = ctx.measureText(line).width;
+      maxTextWidth = Math.max(maxTextWidth, textWidth);
+    });
+    
+    const contentWidth = Math.max(200, Math.min(500, maxTextWidth));
+    const popupWidth = contentWidth + 40; // 40px padding as requested
+    
+    // Calculate height based on content: top padding + lines + bottom padding
+    const topPadding = 20;
+    const bottomPadding = 20;
+    const contentHeight = lines.length * lineHeight;
+    const popupHeight = topPadding + contentHeight + bottomPadding;
+    
     const popupX = (800 - popupWidth) / 2; // Center horizontally
     const popupY = (450 - popupHeight) / 2; // Center vertically
     
@@ -1944,22 +1990,19 @@ class LuminaEnergyCard extends HTMLElement {
       rect.setAttribute('y', popupY);
       rect.setAttribute('width', popupWidth);
       rect.setAttribute('height', popupHeight);
+      // Ensure popup background is opaque and shows glowing border
+      rect.setAttribute('fill', '#001428');
+      rect.setAttribute('stroke', '#00FFFF');
+      rect.setAttribute('stroke-width', '2');
     }
     
-    // Update text positions
-    const titleText = popup.querySelector('text');
-    if (titleText) {
-      titleText.setAttribute('x', popupX + popupWidth / 2);
-      titleText.setAttribute('y', popupY + 20);
-    }
-    
-    // Update line positions and styling
+    // Update text positions and styling
     const lineElements = this._domRefs.pvPopupLines || [];
     lines.forEach((line, index) => {
       const element = lineElements[index];
       if (element) {
         element.setAttribute('x', popupX + popupWidth / 2);
-        element.setAttribute('y', popupY + 25 + index * 15);
+        element.setAttribute('y', popupY + topPadding + (index * lineHeight) + (lineHeight / 2));
         element.textContent = line;
         element.style.display = 'inline';
         
@@ -2054,17 +2097,38 @@ class LuminaEnergyCard extends HTMLElement {
       .filter((line) => line);
     if (!lines.length) return;
 
-    const maxLineLength = Math.max(...lines.map(line => line.length));
+    // Calculate popup dimensions based on content
+    // Find the maximum font size used in the popup for width and height calculation
     const maxFontSize = Math.max(...lines.map((_, index) => {
       const fontSizeKey = `sensor_popup_bat_${index + 1}_font_size`;
       return config[fontSizeKey] || 16;
     }));
-    const estimatedCharWidth = maxFontSize * 0.6;
-    // Use a 40px margin on each side (80px total) to match design requirement
-    const popupWidth = Math.max(200, Math.min(700, maxLineLength * estimatedCharWidth + 80));
-    const popupHeight = 25 + lines.length * 15;
-    const popupX = (800 - popupWidth) / 2;
-    const popupY = (450 - popupHeight) / 2;
+    
+    // Calculate line height based on font size (font-size + 1px padding for readability)
+    const lineHeight = maxFontSize + 1;
+    
+    // Measure actual text width for accurate sizing
+    let maxTextWidth = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${maxFontSize}px Arial, sans-serif`;
+    
+    lines.forEach((line) => {
+      const textWidth = ctx.measureText(line).width;
+      maxTextWidth = Math.max(maxTextWidth, textWidth);
+    });
+    
+    const contentWidth = Math.max(200, Math.min(500, maxTextWidth));
+    const popupWidth = contentWidth + 40; // 40px padding as requested
+    
+    // Calculate height based on content: top padding + lines + bottom padding
+    const topPadding = 20;
+    const bottomPadding = 20;
+    const contentHeight = lines.length * lineHeight;
+    const popupHeight = topPadding + contentHeight + bottomPadding;
+    
+    const popupX = (800 - popupWidth) / 2; // Center horizontally
+    const popupY = (450 - popupHeight) / 2; // Center vertically
 
     const rect = popup.querySelector('rect');
     if (rect) {
@@ -2078,23 +2142,29 @@ class LuminaEnergyCard extends HTMLElement {
       rect.setAttribute('stroke-width', '2');
     }
 
+    // Update text positions and styling
     const lineElements = this._domRefs.batteryPopupLines || [];
     lines.forEach((line, index) => {
       const element = lineElements[index];
       if (element) {
         element.setAttribute('x', popupX + popupWidth / 2);
-        element.setAttribute('y', popupY + 25 + index * 15);
+        element.setAttribute('y', popupY + topPadding + (index * lineHeight) + (lineHeight / 2));
         element.textContent = line;
         element.style.display = 'inline';
+        
+        // Apply font size
         const fontSizeKey = `sensor_popup_bat_${index + 1}_font_size`;
         const fontSize = config[fontSizeKey] || 16;
         element.setAttribute('font-size', fontSize);
+        
+        // Apply color
         const colorKey = `sensor_popup_bat_${index + 1}_color`;
         const color = config[colorKey] || '#80ffff';
         element.setAttribute('fill', color);
       }
     });
 
+    // Hide unused lines
     for (let i = lines.length; i < lineElements.length; i++) {
       const element = lineElements[i];
       if (element) {
@@ -2181,19 +2251,35 @@ class LuminaEnergyCard extends HTMLElement {
     if (!lines.length) return;
     
     // Calculate popup dimensions based on content
-    const maxLineLength = Math.max(...lines.map(line => line.length));
-    
-    // Find the maximum font size used in the popup for width calculation
+    // Find the maximum font size used in the popup for width and height calculation
     const maxFontSize = Math.max(...lines.map((_, index) => {
       const fontSizeKey = `sensor_popup_house_${index + 1}_font_size`;
       return config[fontSizeKey] || 16;
     }));
     
-    // More accurate width calculation: account for font size and variable character widths
-    // Average character width is roughly 0.6 * font-size for most fonts
-    const estimatedCharWidth = maxFontSize * 0.6;
-    const popupWidth = Math.max(200, Math.min(500, maxLineLength * estimatedCharWidth + 40)); // Reduced padding for tighter fit
-    const popupHeight = 25 + lines.length * 15; // Reduced height since header removed
+    // Calculate line height based on font size (font-size + 1px padding for readability)
+    const lineHeight = maxFontSize + 1;
+    
+    // Measure actual text width for accurate sizing
+    let maxTextWidth = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${maxFontSize}px Arial, sans-serif`;
+    
+    lines.forEach((line) => {
+      const textWidth = ctx.measureText(line).width;
+      maxTextWidth = Math.max(maxTextWidth, textWidth);
+    });
+    
+    const contentWidth = Math.max(200, Math.min(500, maxTextWidth));
+    const popupWidth = contentWidth + 40; // 40px padding as requested
+    
+    // Calculate height based on content: top padding + lines + bottom padding
+    const topPadding = 20;
+    const bottomPadding = 20;
+    const contentHeight = lines.length * lineHeight;
+    const popupHeight = topPadding + contentHeight + bottomPadding;
+    
     const popupX = (800 - popupWidth) / 2; // Center horizontally
     const popupY = (450 - popupHeight) / 2; // Center vertically
     
@@ -2204,15 +2290,19 @@ class LuminaEnergyCard extends HTMLElement {
       rect.setAttribute('y', popupY);
       rect.setAttribute('width', popupWidth);
       rect.setAttribute('height', popupHeight);
+      // Ensure popup background is opaque and shows glowing border
+      rect.setAttribute('fill', '#001428');
+      rect.setAttribute('stroke', '#00FFFF');
+      rect.setAttribute('stroke-width', '2');
     }
     
-    // Update text positions
+    // Update text positions and styling
     const lineElements = this._domRefs.housePopupLines || [];
     lines.forEach((line, index) => {
       const element = lineElements[index];
       if (element && line) {
         element.setAttribute('x', popupX + popupWidth / 2);
-        element.setAttribute('y', popupY + 25 + index * 15);
+        element.setAttribute('y', popupY + topPadding + (index * lineHeight) + (lineHeight / 2));
         element.textContent = line;
         element.style.display = 'inline';
         
@@ -2261,10 +2351,320 @@ class LuminaEnergyCard extends HTMLElement {
     }
   }
 
+  _toggleGridPopup() {
+    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    
+    // Check if popup has any content by checking if any grid entities are configured
+    const config = this._config || this.config || {};
+    if (!config) return;
+    const hasContent = (config.sensor_popup_grid_1 && config.sensor_popup_grid_1.trim()) || 
+                      (config.sensor_popup_grid_2 && config.sensor_popup_grid_2.trim()) || 
+                      (config.sensor_popup_grid_3 && config.sensor_popup_grid_3.trim()) || 
+                      (config.sensor_popup_grid_4 && config.sensor_popup_grid_4.trim()) || 
+                      (config.sensor_popup_grid_5 && config.sensor_popup_grid_5.trim()) || 
+                      (config.sensor_popup_grid_6 && config.sensor_popup_grid_6.trim());
+    if (!hasContent) return;
+    
+    const popup = this._domRefs.gridPopup;
+    const isVisible = popup.style.display !== 'none';
+    if (isVisible) {
+      this._hideGridPopup();
+    } else {
+      this._closeOtherPopups('grid');
+      this._showGridPopup();
+    }
+  }
+
+  async _showGridPopup() {
+    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    const popup = this._domRefs.gridPopup;
+    
+    // Calculate popup content
+    const config = this._config || this.config || {};
+    
+    const popupGridSensorIds = [
+      config.sensor_popup_grid_1,
+      config.sensor_popup_grid_2,
+      config.sensor_popup_grid_3,
+      config.sensor_popup_grid_4,
+      config.sensor_popup_grid_5,
+      config.sensor_popup_grid_6
+    ];
+    const popupGridValues = popupGridSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
+
+    const popupGridNames = [
+      config.sensor_popup_grid_1_name && config.sensor_popup_grid_1_name.trim() ? config.sensor_popup_grid_1_name.trim() : this.getEntityName(config.sensor_popup_grid_1),
+      config.sensor_popup_grid_2_name && config.sensor_popup_grid_2_name.trim() ? config.sensor_popup_grid_2_name.trim() : this.getEntityName(config.sensor_popup_grid_2),
+      config.sensor_popup_grid_3_name && config.sensor_popup_grid_3_name.trim() ? config.sensor_popup_grid_3_name.trim() : this.getEntityName(config.sensor_popup_grid_3),
+      config.sensor_popup_grid_4_name && config.sensor_popup_grid_4_name.trim() ? config.sensor_popup_grid_4_name.trim() : this.getEntityName(config.sensor_popup_grid_4),
+      config.sensor_popup_grid_5_name && config.sensor_popup_grid_5_name.trim() ? config.sensor_popup_grid_5_name.trim() : this.getEntityName(config.sensor_popup_grid_5),
+      config.sensor_popup_grid_6_name && config.sensor_popup_grid_6_name.trim() ? config.sensor_popup_grid_6_name.trim() : this.getEntityName(config.sensor_popup_grid_6)
+    ];
+
+    const lines = popupGridValues
+      .map((valueText, i) => (valueText ? `${popupGridNames[i]}: ${valueText}` : ''))
+      .filter((line) => line);
+    if (!lines.length) return;
+    
+    // Calculate popup dimensions based on content
+    // Find the maximum font size used in the popup for width and height calculation
+    const maxFontSize = Math.max(...lines.map((_, index) => {
+      const fontSizeKey = `sensor_popup_grid_${index + 1}_font_size`;
+      return config[fontSizeKey] || 16;
+    }));
+    
+    // Calculate line height based on font size (font-size + 1px padding for readability)
+    const lineHeight = maxFontSize + 1;
+    
+    // Measure actual text width for accurate sizing
+    let maxTextWidth = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${maxFontSize}px Arial, sans-serif`;
+    
+    lines.forEach((line) => {
+      const textWidth = ctx.measureText(line).width;
+      maxTextWidth = Math.max(maxTextWidth, textWidth);
+    });
+    
+    const contentWidth = Math.max(200, Math.min(500, maxTextWidth));
+    const popupWidth = contentWidth + 40; // 40px padding as requested
+    
+    // Calculate height based on content: top padding + lines + bottom padding
+    const topPadding = 20;
+    const bottomPadding = 20;
+    const contentHeight = lines.length * lineHeight;
+    const popupHeight = topPadding + contentHeight + bottomPadding;
+    
+    const popupX = (800 - popupWidth) / 2; // Center horizontally
+    const popupY = (450 - popupHeight) / 2; // Center vertically
+    
+    // Update popup rectangle
+    const rect = popup.querySelector('rect');
+    if (rect) {
+      rect.setAttribute('x', popupX);
+      rect.setAttribute('y', popupY);
+      rect.setAttribute('width', popupWidth);
+      rect.setAttribute('height', popupHeight);
+      // Ensure popup background is opaque and shows glowing border
+      rect.setAttribute('fill', '#001428');
+      rect.setAttribute('stroke', '#00FFFF');
+      rect.setAttribute('stroke-width', '2');
+    }
+    
+    // Update text positions and styling
+    const lineElements = this._domRefs.gridPopupLines || [];
+    lines.forEach((line, index) => {
+      const element = lineElements[index];
+      if (element) {
+        element.setAttribute('x', popupX + popupWidth / 2);
+        element.setAttribute('y', popupY + topPadding + (index * lineHeight) + (lineHeight / 2));
+        element.textContent = line;
+        element.style.display = 'inline';
+        
+        // Apply font size
+        const fontSizeKey = `sensor_popup_grid_${index + 1}_font_size`;
+        const fontSize = config[fontSizeKey] || 16;
+        element.setAttribute('font-size', fontSize);
+        
+        // Apply color
+        const colorKey = `sensor_popup_grid_${index + 1}_color`;
+        const color = config[colorKey] || '#80ffff';
+        element.setAttribute('fill', color);
+      }
+    });
+    
+    // Hide unused lines
+    for (let i = lines.length; i < lineElements.length; i++) {
+      const element = lineElements[i];
+      if (element) {
+        element.style.display = 'none';
+      }
+    }
+    
+    popup.style.display = 'inline';
+    this._activePopup = 'grid';
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
+    }
+  }
+
+  async _hideGridPopup() {
+    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    const popup = this._domRefs.gridPopup;
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
+        popup.style.display = 'none';
+        if (this._activePopup === 'grid') this._activePopup = null;
+      }});
+    } else {
+      popup.style.display = 'none';
+      if (this._activePopup === 'grid') this._activePopup = null;
+    }
+  }
+
+  _toggleInverterPopup() {
+    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    
+    // Check if popup has any content by checking if any inverter entities are configured
+    const config = this._config || this.config || {};
+    if (!config) return;
+    const hasContent = (config.sensor_popup_inverter_1 && config.sensor_popup_inverter_1.trim()) || 
+                      (config.sensor_popup_inverter_2 && config.sensor_popup_inverter_2.trim()) || 
+                      (config.sensor_popup_inverter_3 && config.sensor_popup_inverter_3.trim()) || 
+                      (config.sensor_popup_inverter_4 && config.sensor_popup_inverter_4.trim()) || 
+                      (config.sensor_popup_inverter_5 && config.sensor_popup_inverter_5.trim()) || 
+                      (config.sensor_popup_inverter_6 && config.sensor_popup_inverter_6.trim());
+    if (!hasContent) return;
+    
+    const popup = this._domRefs.inverterPopup;
+    const isVisible = popup.style.display !== 'none';
+    if (isVisible) {
+      this._hideInverterPopup();
+    } else {
+      this._closeOtherPopups('inverter');
+      this._showInverterPopup();
+    }
+  }
+
+  async _showInverterPopup() {
+    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    const popup = this._domRefs.inverterPopup;
+    
+    // Calculate popup content
+    const config = this._config || this.config || {};
+    
+    const popupInverterSensorIds = [
+      config.sensor_popup_inverter_1,
+      config.sensor_popup_inverter_2,
+      config.sensor_popup_inverter_3,
+      config.sensor_popup_inverter_4,
+      config.sensor_popup_inverter_5,
+      config.sensor_popup_inverter_6
+    ];
+    const popupInverterValues = popupInverterSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
+
+    const popupInverterNames = [
+      config.sensor_popup_inverter_1_name && config.sensor_popup_inverter_1_name.trim() ? config.sensor_popup_inverter_1_name.trim() : this.getEntityName(config.sensor_popup_inverter_1),
+      config.sensor_popup_inverter_2_name && config.sensor_popup_inverter_2_name.trim() ? config.sensor_popup_inverter_2_name.trim() : this.getEntityName(config.sensor_popup_inverter_2),
+      config.sensor_popup_inverter_3_name && config.sensor_popup_inverter_3_name.trim() ? config.sensor_popup_inverter_3_name.trim() : this.getEntityName(config.sensor_popup_inverter_3),
+      config.sensor_popup_inverter_4_name && config.sensor_popup_inverter_4_name.trim() ? config.sensor_popup_inverter_4_name.trim() : this.getEntityName(config.sensor_popup_inverter_4),
+      config.sensor_popup_inverter_5_name && config.sensor_popup_inverter_5_name.trim() ? config.sensor_popup_inverter_5_name.trim() : this.getEntityName(config.sensor_popup_inverter_5),
+      config.sensor_popup_inverter_6_name && config.sensor_popup_inverter_6_name.trim() ? config.sensor_popup_inverter_6_name.trim() : this.getEntityName(config.sensor_popup_inverter_6)
+    ];
+
+    const lines = popupInverterValues
+      .map((valueText, i) => (valueText ? `${popupInverterNames[i]}: ${valueText}` : ''))
+      .filter((line) => line);
+    if (!lines.length) return;
+    
+    // Calculate popup dimensions based on content
+    // Find the maximum font size used in the popup for width and height calculation
+    const maxFontSize = Math.max(...lines.map((_, index) => {
+      const fontSizeKey = `sensor_popup_inverter_${index + 1}_font_size`;
+      return config[fontSizeKey] || 16;
+    }));
+    
+    // Calculate line height based on font size (font-size + 1px padding for readability)
+    const lineHeight = maxFontSize + 1;
+    
+    // Measure actual text width for accurate sizing
+    let maxTextWidth = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${maxFontSize}px Arial, sans-serif`;
+    
+    lines.forEach((line) => {
+      const textWidth = ctx.measureText(line).width;
+      maxTextWidth = Math.max(maxTextWidth, textWidth);
+    });
+    
+    const contentWidth = Math.max(200, Math.min(500, maxTextWidth));
+    const popupWidth = contentWidth + 40; // 40px padding as requested
+    
+    // Calculate height based on content: top padding + lines + bottom padding
+    const topPadding = 20;
+    const bottomPadding = 20;
+    const contentHeight = lines.length * lineHeight;
+    const popupHeight = topPadding + contentHeight + bottomPadding;
+    
+    const popupX = (800 - popupWidth) / 2; // Center horizontally
+    const popupY = (450 - popupHeight) / 2; // Center vertically
+    
+    // Update popup rectangle
+    const rect = popup.querySelector('rect');
+    if (rect) {
+      rect.setAttribute('x', popupX);
+      rect.setAttribute('y', popupY);
+      rect.setAttribute('width', popupWidth);
+      rect.setAttribute('height', popupHeight);
+      // Ensure popup background is opaque and shows glowing border
+      rect.setAttribute('fill', '#001428');
+      rect.setAttribute('stroke', '#00FFFF');
+      rect.setAttribute('stroke-width', '2');
+    }
+    
+    // Update text positions and styling
+    const lineElements = this._domRefs.inverterPopupLines || [];
+    lines.forEach((line, index) => {
+      const element = lineElements[index];
+      if (element) {
+        element.setAttribute('x', popupX + popupWidth / 2);
+        element.setAttribute('y', popupY + topPadding + (index * lineHeight) + (lineHeight / 2));
+        element.textContent = line;
+        element.style.display = 'inline';
+        
+        // Apply font size
+        const fontSizeKey = `sensor_popup_inverter_${index + 1}_font_size`;
+        const fontSize = config[fontSizeKey] || 16;
+        element.setAttribute('font-size', fontSize);
+        
+        // Apply color
+        const colorKey = `sensor_popup_inverter_${index + 1}_color`;
+        const color = config[colorKey] || '#80ffff';
+        element.setAttribute('fill', color);
+      }
+    });
+    
+    // Hide unused lines
+    for (let i = lines.length; i < lineElements.length; i++) {
+      const element = lineElements[i];
+      if (element) {
+        element.style.display = 'none';
+      }
+    }
+    
+    popup.style.display = 'inline';
+    this._activePopup = 'inverter';
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
+    }
+  }
+
+  async _hideInverterPopup() {
+    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    const popup = this._domRefs.inverterPopup;
+    const gsap = await this._ensureGsap();
+    if (gsap) {
+      gsap.to(popup, { opacity: 0, scale: 0.8, duration: 0.2, ease: 'power2.in', onComplete: () => {
+        popup.style.display = 'none';
+        if (this._activePopup === 'inverter') this._activePopup = null;
+      }});
+    } else {
+      popup.style.display = 'none';
+      if (this._activePopup === 'inverter') this._activePopup = null;
+    }
+  }
+
   _closeOtherPopups(except) {
     if (except !== 'pv') this._hidePvPopup();
     if (except !== 'battery') this._hideBatteryPopup();
     if (except !== 'house') this._hideHousePopup();
+    if (except !== 'grid') this._hideGridPopup();
+    if (except !== 'inverter') this._hideInverterPopup();
   }
 
   _updateView(viewState) {
@@ -2775,6 +3175,22 @@ class LuminaEnergyCard extends HTMLElement {
       });
     }
 
+    // Attach click listener to grid clickable area for grid popup
+    if (this._domRefs.gridClickableArea) {
+      this._domRefs.gridClickableArea.addEventListener('click', () => {
+        console.debug('Lumina Energy Card: grid clickable area clicked');
+        this._toggleGridPopup();
+      });
+    }
+
+    // Attach click listener to inverter clickable area for inverter popup
+    if (this._domRefs.inverterClickableArea) {
+      this._domRefs.inverterClickableArea.addEventListener('click', () => {
+        console.debug('Lumina Energy Card: inverter clickable area clicked');
+        this._toggleInverterPopup();
+      });
+    }
+
     // Attach click listener to popup for closing
     if (this._domRefs.pvPopup) {
       this._domRefs.pvPopup.addEventListener('click', () => {
@@ -2794,6 +3210,20 @@ class LuminaEnergyCard extends HTMLElement {
     if (this._domRefs.housePopup) {
       this._domRefs.housePopup.addEventListener('click', () => {
         this._hideHousePopup();
+      });
+    }
+
+    // Attach click listener to grid popup for closing
+    if (this._domRefs.gridPopup) {
+      this._domRefs.gridPopup.addEventListener('click', () => {
+        this._hideGridPopup();
+      });
+    }
+
+    // Attach click listener to inverter popup for closing
+    if (this._domRefs.inverterPopup) {
+      this._domRefs.inverterPopup.addEventListener('click', () => {
+        this._hideInverterPopup();
       });
     }
 
@@ -2872,6 +3302,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pvPopup: { title: 'PV Popup', helper: 'Configure entities for the PV popup display.' },
           housePopup: { title: 'House Popup', helper: 'Configure entities for the house popup display.' },
           batteryPopup: { title: 'Battery Popup', helper: 'Configure battery popup display.' },
+          gridPopup: { title: 'Grid Popup', helper: 'Configure entities for the grid popup display.' },
+          inverterPopup: { title: 'Inverter Popup', helper: 'Configure entities for the inverter popup display.' },
           colors: { title: 'Color & Thresholds', helper: 'Configure grid thresholds and accent colours for flows and EV display.' },
           typography: { title: 'Typography', helper: 'Fine tune the font sizes used across the card.' },
           about: { title: 'About', helper: 'Credits, version, and helpful links.' }
@@ -3067,7 +3499,55 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_popup_bat_6: { label: 'Battery Popup 6', helper: 'Entity for battery popup line 6.' },
           sensor_popup_bat_6_name: { label: 'Battery Popup 6 Name', helper: 'Optional custom name for battery popup line 6. Leave blank to use entity name.' },
           sensor_popup_bat_6_color: { label: 'Battery Popup 6 Color', helper: 'Color for battery popup line 6 text.' },
-          sensor_popup_bat_6_font_size: { label: 'Battery Popup 6 Font Size (px)', helper: 'Font size for battery popup line 6. Default 16' }
+          sensor_popup_bat_6_font_size: { label: 'Battery Popup 6 Font Size (px)', helper: 'Font size for battery popup line 6. Default 16' },
+          sensor_popup_grid_1: { label: 'Grid Popup 1', helper: 'Entity for grid popup line 1.' },
+          sensor_popup_grid_1_name: { label: 'Grid Popup 1 Name', helper: 'Optional custom name for grid popup line 1. Leave blank to use entity name.' },
+          sensor_popup_grid_1_color: { label: 'Grid Popup 1 Color', helper: 'Color for grid popup line 1 text.' },
+          sensor_popup_grid_1_font_size: { label: 'Grid Popup 1 Font Size (px)', helper: 'Font size for grid popup line 1. Default 16' },
+          sensor_popup_grid_2: { label: 'Grid Popup 2', helper: 'Entity for grid popup line 2.' },
+          sensor_popup_grid_2_name: { label: 'Grid Popup 2 Name', helper: 'Optional custom name for grid popup line 2. Leave blank to use entity name.' },
+          sensor_popup_grid_2_color: { label: 'Grid Popup 2 Color', helper: 'Color for grid popup line 2 text.' },
+          sensor_popup_grid_2_font_size: { label: 'Grid Popup 2 Font Size (px)', helper: 'Font size for grid popup line 2. Default 16' },
+          sensor_popup_grid_3: { label: 'Grid Popup 3', helper: 'Entity for grid popup line 3.' },
+          sensor_popup_grid_3_name: { label: 'Grid Popup 3 Name', helper: 'Optional custom name for grid popup line 3. Leave blank to use entity name.' },
+          sensor_popup_grid_3_color: { label: 'Grid Popup 3 Color', helper: 'Color for grid popup line 3 text.' },
+          sensor_popup_grid_3_font_size: { label: 'Grid Popup 3 Font Size (px)', helper: 'Font size for grid popup line 3. Default 16' },
+          sensor_popup_grid_4: { label: 'Grid Popup 4', helper: 'Entity for grid popup line 4.' },
+          sensor_popup_grid_4_name: { label: 'Grid Popup 4 Name', helper: 'Optional custom name for grid popup line 4. Leave blank to use entity name.' },
+          sensor_popup_grid_4_color: { label: 'Grid Popup 4 Color', helper: 'Color for grid popup line 4 text.' },
+          sensor_popup_grid_4_font_size: { label: 'Grid Popup 4 Font Size (px)', helper: 'Font size for grid popup line 4. Default 16' },
+          sensor_popup_grid_5: { label: 'Grid Popup 5', helper: 'Entity for grid popup line 5.' },
+          sensor_popup_grid_5_name: { label: 'Grid Popup 5 Name', helper: 'Optional custom name for grid popup line 5. Leave blank to use entity name.' },
+          sensor_popup_grid_5_color: { label: 'Grid Popup 5 Color', helper: 'Color for grid popup line 5 text.' },
+          sensor_popup_grid_5_font_size: { label: 'Grid Popup 5 Font Size (px)', helper: 'Font size for grid popup line 5. Default 16' },
+          sensor_popup_grid_6: { label: 'Grid Popup 6', helper: 'Entity for grid popup line 6.' },
+          sensor_popup_grid_6_name: { label: 'Grid Popup 6 Name', helper: 'Optional custom name for grid popup line 6. Leave blank to use entity name.' },
+          sensor_popup_grid_6_color: { label: 'Grid Popup 6 Color', helper: 'Color for grid popup line 6 text.' },
+          sensor_popup_grid_6_font_size: { label: 'Grid Popup 6 Font Size (px)', helper: 'Font size for grid popup line 6. Default 16' },
+          sensor_popup_inverter_1: { label: 'Inverter Popup 1', helper: 'Entity for inverter popup line 1.' },
+          sensor_popup_inverter_1_name: { label: 'Inverter Popup 1 Name', helper: 'Optional custom name for inverter popup line 1. Leave blank to use entity name.' },
+          sensor_popup_inverter_1_color: { label: 'Inverter Popup 1 Color', helper: 'Color for inverter popup line 1 text.' },
+          sensor_popup_inverter_1_font_size: { label: 'Inverter Popup 1 Font Size (px)', helper: 'Font size for inverter popup line 1. Default 16' },
+          sensor_popup_inverter_2: { label: 'Inverter Popup 2', helper: 'Entity for inverter popup line 2.' },
+          sensor_popup_inverter_2_name: { label: 'Inverter Popup 2 Name', helper: 'Optional custom name for inverter popup line 2. Leave blank to use entity name.' },
+          sensor_popup_inverter_2_color: { label: 'Inverter Popup 2 Color', helper: 'Color for inverter popup line 2 text.' },
+          sensor_popup_inverter_2_font_size: { label: 'Inverter Popup 2 Font Size (px)', helper: 'Font size for inverter popup line 2. Default 16' },
+          sensor_popup_inverter_3: { label: 'Inverter Popup 3', helper: 'Entity for inverter popup line 3.' },
+          sensor_popup_inverter_3_name: { label: 'Inverter Popup 3 Name', helper: 'Optional custom name for inverter popup line 3. Leave blank to use entity name.' },
+          sensor_popup_inverter_3_color: { label: 'Inverter Popup 3 Color', helper: 'Color for inverter popup line 3 text.' },
+          sensor_popup_inverter_3_font_size: { label: 'Inverter Popup 3 Font Size (px)', helper: 'Font size for inverter popup line 3. Default 16' },
+          sensor_popup_inverter_4: { label: 'Inverter Popup 4', helper: 'Entity for inverter popup line 4.' },
+          sensor_popup_inverter_4_name: { label: 'Inverter Popup 4 Name', helper: 'Optional custom name for inverter popup line 4. Leave blank to use entity name.' },
+          sensor_popup_inverter_4_color: { label: 'Inverter Popup 4 Color', helper: 'Color for inverter popup line 4 text.' },
+          sensor_popup_inverter_4_font_size: { label: 'Inverter Popup 4 Font Size (px)', helper: 'Font size for inverter popup line 4. Default 16' },
+          sensor_popup_inverter_5: { label: 'Inverter Popup 5', helper: 'Entity for inverter popup line 5.' },
+          sensor_popup_inverter_5_name: { label: 'Inverter Popup 5 Name', helper: 'Optional custom name for inverter popup line 5. Leave blank to use entity name.' },
+          sensor_popup_inverter_5_color: { label: 'Inverter Popup 5 Color', helper: 'Color for inverter popup line 5 text.' },
+          sensor_popup_inverter_5_font_size: { label: 'Inverter Popup 5 Font Size (px)', helper: 'Font size for inverter popup line 5. Default 16' },
+          sensor_popup_inverter_6: { label: 'Inverter Popup 6', helper: 'Entity for inverter popup line 6.' },
+          sensor_popup_inverter_6_name: { label: 'Inverter Popup 6 Name', helper: 'Optional custom name for inverter popup line 6. Leave blank to use entity name.' },
+          sensor_popup_inverter_6_color: { label: 'Inverter Popup 6 Color', helper: 'Color for inverter popup line 6 text.' },
+          sensor_popup_inverter_6_font_size: { label: 'Inverter Popup 6 Font Size (px)', helper: 'Font size for inverter popup line 6. Default 16' }
         },
         options: {
           languages: [
@@ -3110,6 +3590,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pvPopup: { title: 'PV Popup', helper: 'Configura le entita per la visualizzazione del popup PV.' },
           housePopup: { title: 'House Popup', helper: 'Configura le entita per la visualizzazione del popup casa.' },
           batteryPopup: { title: 'Popup Batteria', helper: 'Configura il popup della batteria.' },
+          gridPopup: { title: 'Popup Rete', helper: 'Configura le entita per la visualizzazione del popup rete.' },
+          inverterPopup: { title: 'Popup Inverter', helper: 'Configura le entita per la visualizzazione del popup inverter.' },
           colors: { title: 'Colori e soglie', helper: 'Configura soglie della rete e colori di accento per i flussi.' },
           typography: { title: 'Tipografia', helper: 'Regola le dimensioni dei caratteri utilizzate nella scheda.' },
           about: { title: 'Informazioni', helper: 'Crediti, versione e link utili.' }
@@ -3299,7 +3781,55 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_popup_bat_6: { label: 'Battery Popup 6', helper: 'Entità per la riga 6 del popup batteria.' },
           sensor_popup_bat_6_name: { label: 'Nome Battery Popup 6', helper: 'Nome personalizzato opzionale per la riga 6 del popup batteria. Lasciare vuoto per usare il nome entità.' },
           sensor_popup_bat_6_color: { label: 'Colore Battery Popup 6', helper: 'Colore per il testo della riga 6 del popup batteria.' },
-          sensor_popup_bat_6_font_size: { label: 'Dimensione carattere Battery Popup 6 (px)', helper: 'Dimensione carattere per la riga 6 del popup batteria. Predefinita 16' }
+          sensor_popup_bat_6_font_size: { label: 'Dimensione carattere Battery Popup 6 (px)', helper: 'Dimensione carattere per la riga 6 del popup batteria. Predefinita 16' },
+          sensor_popup_grid_1: { label: 'Grid Popup 1', helper: 'Entità per la riga 1 del popup rete.' },
+          sensor_popup_grid_1_name: { label: 'Nome Grid Popup 1', helper: 'Nome personalizzato opzionale per la riga 1 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_1_color: { label: 'Colore Grid Popup 1', helper: 'Colore per il testo della riga 1 del popup rete.' },
+          sensor_popup_grid_1_font_size: { label: 'Dimensione carattere Grid Popup 1 (px)', helper: 'Dimensione carattere per la riga 1 del popup rete. Predefinita 16' },
+          sensor_popup_grid_2: { label: 'Grid Popup 2', helper: 'Entità per la riga 2 del popup rete.' },
+          sensor_popup_grid_2_name: { label: 'Nome Grid Popup 2', helper: 'Nome personalizzato opzionale per la riga 2 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_2_color: { label: 'Colore Grid Popup 2', helper: 'Colore per il testo della riga 2 del popup rete.' },
+          sensor_popup_grid_2_font_size: { label: 'Dimensione carattere Grid Popup 2 (px)', helper: 'Dimensione carattere per la riga 2 del popup rete. Predefinita 16' },
+          sensor_popup_grid_3: { label: 'Grid Popup 3', helper: 'Entità per la riga 3 del popup rete.' },
+          sensor_popup_grid_3_name: { label: 'Nome Grid Popup 3', helper: 'Nome personalizzato opzionale per la riga 3 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_3_color: { label: 'Colore Grid Popup 3', helper: 'Colore per il testo della riga 3 del popup rete.' },
+          sensor_popup_grid_3_font_size: { label: 'Dimensione carattere Grid Popup 3 (px)', helper: 'Dimensione carattere per la riga 3 del popup rete. Predefinita 16' },
+          sensor_popup_grid_4: { label: 'Grid Popup 4', helper: 'Entità per la riga 4 del popup rete.' },
+          sensor_popup_grid_4_name: { label: 'Nome Grid Popup 4', helper: 'Nome personalizzato opzionale per la riga 4 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_4_color: { label: 'Colore Grid Popup 4', helper: 'Colore per il testo della riga 4 del popup rete.' },
+          sensor_popup_grid_4_font_size: { label: 'Dimensione carattere Grid Popup 4 (px)', helper: 'Dimensione carattere per la riga 4 del popup rete. Predefinita 16' },
+          sensor_popup_grid_5: { label: 'Grid Popup 5', helper: 'Entità per la riga 5 del popup rete.' },
+          sensor_popup_grid_5_name: { label: 'Nome Grid Popup 5', helper: 'Nome personalizzato opzionale per la riga 5 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_5_color: { label: 'Colore Grid Popup 5', helper: 'Colore per il testo della riga 5 del popup rete.' },
+          sensor_popup_grid_5_font_size: { label: 'Dimensione carattere Grid Popup 5 (px)', helper: 'Dimensione carattere per la riga 5 del popup rete. Predefinita 16' },
+          sensor_popup_grid_6: { label: 'Grid Popup 6', helper: 'Entità per la riga 6 del popup rete.' },
+          sensor_popup_grid_6_name: { label: 'Nome Grid Popup 6', helper: 'Nome personalizzato opzionale per la riga 6 del popup rete. Lasciare vuoto per usare il nome entità.' },
+          sensor_popup_grid_6_color: { label: 'Colore Grid Popup 6', helper: 'Colore per il testo della riga 6 del popup rete.' },
+          sensor_popup_grid_6_font_size: { label: 'Dimensione carattere Grid Popup 6 (px)', helper: 'Dimensione carattere per la riga 6 del popup rete. Predefinita 16' },
+          sensor_popup_inverter_1: { label: 'Inverter Popup 1', helper: 'Entita per la riga 1 del popup inverter.' },
+          sensor_popup_inverter_1_name: { label: 'Nome Inverter Popup 1', helper: 'Nome personalizzato opzionale per la riga 1 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_1_color: { label: 'Colore Inverter Popup 1', helper: 'Colore per il testo della riga 1 del popup inverter.' },
+          sensor_popup_inverter_1_font_size: { label: 'Dimensione carattere Inverter Popup 1 (px)', helper: 'Dimensione carattere per la riga 1 del popup inverter. Predefinita 16' },
+          sensor_popup_inverter_2: { label: 'Inverter Popup 2', helper: 'Entita per la riga 2 del popup inverter.' },
+          sensor_popup_inverter_2_name: { label: 'Nome Inverter Popup 2', helper: 'Nome personalizzato opzionale per la riga 2 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_2_color: { label: 'Colore Inverter Popup 2', helper: 'Colore per il testo della riga 2 del popup inverter.' },
+          sensor_popup_inverter_2_font_size: { label: 'Dimensione carattere Inverter Popup 2 (px)', helper: 'Dimensione carattere per la riga 2 del popup inverter. Predefinita 16' },
+          sensor_popup_inverter_3: { label: 'Inverter Popup 3', helper: 'Entita per la riga 3 del popup inverter.' },
+          sensor_popup_inverter_3_name: { label: 'Nome Inverter Popup 3', helper: 'Nome personalizzato opzionale per la riga 3 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_3_color: { label: 'Colore Inverter Popup 3', helper: 'Colore per il testo della riga 3 del popup inverter.' },
+          sensor_popup_inverter_3_font_size: { label: 'Dimensione carattere Inverter Popup 3 (px)', helper: 'Dimensione carattere per la riga 3 del popup inverter. Predefinita 16' },
+          sensor_popup_inverter_4: { label: 'Inverter Popup 4', helper: 'Entita per la riga 4 del popup inverter.' },
+          sensor_popup_inverter_4_name: { label: 'Nome Inverter Popup 4', helper: 'Nome personalizzato opzionale per la riga 4 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_4_color: { label: 'Colore Inverter Popup 4', helper: 'Colore per il testo della riga 4 del popup inverter.' },
+          sensor_popup_inverter_4_font_size: { label: 'Dimensione carattere Inverter Popup 4 (px)', helper: 'Dimensione carattere per la riga 4 del popup inverter. Predefinita 16' },
+          sensor_popup_inverter_5: { label: 'Inverter Popup 5', helper: 'Entita per la riga 5 del popup inverter.' },
+          sensor_popup_inverter_5_name: { label: 'Nome Inverter Popup 5', helper: 'Nome personalizzato opzionale per la riga 5 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_5_color: { label: 'Colore Inverter Popup 5', helper: 'Colore per il testo della riga 5 del popup inverter.' },
+          sensor_popup_inverter_5_font_size: { label: 'Dimensione carattere Inverter Popup 5 (px)', helper: 'Dimensione carattere per la riga 5 del popup inverter. Predefinita 16' },
+          sensor_popup_inverter_6: { label: 'Inverter Popup 6', helper: 'Entita per la riga 6 del popup inverter.' },
+          sensor_popup_inverter_6_name: { label: 'Nome Inverter Popup 6', helper: 'Nome personalizzato opzionale per la riga 6 del popup inverter. Lasciare vuoto per utilizzare il nome entita.' },
+          sensor_popup_inverter_6_color: { label: 'Colore Inverter Popup 6', helper: 'Colore per il testo della riga 6 del popup inverter.' },
+          sensor_popup_inverter_6_font_size: { label: 'Dimensione carattere Inverter Popup 6 (px)', helper: 'Dimensione carattere per la riga 6 del popup inverter. Predefinita 16' }
         },
         options: {
           languages: [
@@ -3342,6 +3872,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pvPopup: { title: 'PV Popup', helper: 'Entitaeten fuer die PV-Popup-Anzeige konfigurieren.' },
           housePopup: { title: 'House Popup', helper: 'Entitaeten fuer die House-Popup-Anzeige konfigurieren.' },
           batteryPopup: { title: 'Batterie-Popup', helper: 'Konfigurieren Sie die Batterie-Popup-Anzeige.' },
+          gridPopup: { title: 'Netz-Popup', helper: 'Entitaeten fuer die Netz-Popup-Anzeige konfigurieren.' },
+          inverterPopup: { title: 'Inverter-Popup', helper: 'Entitaeten fuer die Inverter-Popup-Anzeige konfigurieren.' },
           colors: { title: 'Farben & Schwellwerte', helper: 'Grenzwerte und Farben fuer Netz- und EV-Anzeige einstellen.' },
           typography: { title: 'Typografie', helper: 'Schriftgroessen der Karte feinjustieren.' },
           about: { title: 'Info', helper: 'Credits, Version und nuetzliche Links.' }
@@ -3527,7 +4059,55 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_popup_bat_6: { label: 'Battery Popup 6', helper: 'Entitaet fuer Battery Popup Zeile 6.' },
           sensor_popup_bat_6_name: { label: 'Name Battery Popup 6', helper: 'Optionaler benutzerdefinierter Name fuer Battery Popup Zeile 6. Leer lassen, um den Entitaetsnamen zu verwenden.' },
           sensor_popup_bat_6_color: { label: 'Farbe Battery Popup 6', helper: 'Farbe fuer Battery Popup Zeile 6 Text.' },
-          sensor_popup_bat_6_font_size: { label: 'Schriftgroesse Battery Popup 6 (px)', helper: 'Schriftgroesse fuer Battery Popup Zeile 6. Standard 16' }
+          sensor_popup_bat_6_font_size: { label: 'Schriftgroesse Battery Popup 6 (px)', helper: 'Schriftgroesse fuer Battery Popup Zeile 6. Standard 16' },
+          sensor_popup_grid_1: { label: 'Grid Popup 1', helper: 'Entitaet fuer Grid Popup Zeile 1.' },
+          sensor_popup_grid_1_name: { label: 'Name Grid Popup 1', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 1. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_1_color: { label: 'Farbe Grid Popup 1', helper: 'Farbe fuer Grid Popup Zeile 1 Text.' },
+          sensor_popup_grid_1_font_size: { label: 'Schriftgroesse Grid Popup 1 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 1. Standard 16' },
+          sensor_popup_grid_2: { label: 'Grid Popup 2', helper: 'Entitaet fuer Grid Popup Zeile 2.' },
+          sensor_popup_grid_2_name: { label: 'Name Grid Popup 2', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 2. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_2_color: { label: 'Farbe Grid Popup 2', helper: 'Farbe fuer Grid Popup Zeile 2 Text.' },
+          sensor_popup_grid_2_font_size: { label: 'Schriftgroesse Grid Popup 2 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 2. Standard 16' },
+          sensor_popup_grid_3: { label: 'Grid Popup 3', helper: 'Entitaet fuer Grid Popup Zeile 3.' },
+          sensor_popup_grid_3_name: { label: 'Name Grid Popup 3', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 3. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_3_color: { label: 'Farbe Grid Popup 3', helper: 'Farbe fuer Grid Popup Zeile 3 Text.' },
+          sensor_popup_grid_3_font_size: { label: 'Schriftgroesse Grid Popup 3 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 3. Standard 16' },
+          sensor_popup_grid_4: { label: 'Grid Popup 4', helper: 'Entitaet fuer Grid Popup Zeile 4.' },
+          sensor_popup_grid_4_name: { label: 'Name Grid Popup 4', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 4. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_4_color: { label: 'Farbe Grid Popup 4', helper: 'Farbe fuer Grid Popup Zeile 4 Text.' },
+          sensor_popup_grid_4_font_size: { label: 'Schriftgroesse Grid Popup 4 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 4. Standard 16' },
+          sensor_popup_grid_5: { label: 'Grid Popup 5', helper: 'Entitaet fuer Grid Popup Zeile 5.' },
+          sensor_popup_grid_5_name: { label: 'Name Grid Popup 5', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 5. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_5_color: { label: 'Farbe Grid Popup 5', helper: 'Farbe fuer Grid Popup Zeile 5 Text.' },
+          sensor_popup_grid_5_font_size: { label: 'Schriftgroesse Grid Popup 5 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 5. Standard 16' },
+          sensor_popup_grid_6: { label: 'Grid Popup 6', helper: 'Entitaet fuer Grid Popup Zeile 6.' },
+          sensor_popup_grid_6_name: { label: 'Name Grid Popup 6', helper: 'Optionaler benutzerdefinierter Name fuer Grid Popup Zeile 6. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_grid_6_color: { label: 'Farbe Grid Popup 6', helper: 'Farbe fuer Grid Popup Zeile 6 Text.' },
+          sensor_popup_grid_6_font_size: { label: 'Schriftgroesse Grid Popup 6 (px)', helper: 'Schriftgroesse fuer Grid Popup Zeile 6. Standard 16' },
+          sensor_popup_inverter_1: { label: 'Inverter Popup 1', helper: 'Entitaet fuer Inverter Popup Zeile 1.' },
+          sensor_popup_inverter_1_name: { label: 'Name Inverter Popup 1', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 1. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_1_color: { label: 'Farbe Inverter Popup 1', helper: 'Farbe fuer Inverter Popup Zeile 1 Text.' },
+          sensor_popup_inverter_1_font_size: { label: 'Schriftgroesse Inverter Popup 1 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 1. Standard 16' },
+          sensor_popup_inverter_2: { label: 'Inverter Popup 2', helper: 'Entitaet fuer Inverter Popup Zeile 2.' },
+          sensor_popup_inverter_2_name: { label: 'Name Inverter Popup 2', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 2. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_2_color: { label: 'Farbe Inverter Popup 2', helper: 'Farbe fuer Inverter Popup Zeile 2 Text.' },
+          sensor_popup_inverter_2_font_size: { label: 'Schriftgroesse Inverter Popup 2 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 2. Standard 16' },
+          sensor_popup_inverter_3: { label: 'Inverter Popup 3', helper: 'Entitaet fuer Inverter Popup Zeile 3.' },
+          sensor_popup_inverter_3_name: { label: 'Name Inverter Popup 3', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 3. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_3_color: { label: 'Farbe Inverter Popup 3', helper: 'Farbe fuer Inverter Popup Zeile 3 Text.' },
+          sensor_popup_inverter_3_font_size: { label: 'Schriftgroesse Inverter Popup 3 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 3. Standard 16' },
+          sensor_popup_inverter_4: { label: 'Inverter Popup 4', helper: 'Entitaet fuer Inverter Popup Zeile 4.' },
+          sensor_popup_inverter_4_name: { label: 'Name Inverter Popup 4', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 4. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_4_color: { label: 'Farbe Inverter Popup 4', helper: 'Farbe fuer Inverter Popup Zeile 4 Text.' },
+          sensor_popup_inverter_4_font_size: { label: 'Schriftgroesse Inverter Popup 4 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 4. Standard 16' },
+          sensor_popup_inverter_5: { label: 'Inverter Popup 5', helper: 'Entitaet fuer Inverter Popup Zeile 5.' },
+          sensor_popup_inverter_5_name: { label: 'Name Inverter Popup 5', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 5. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_5_color: { label: 'Farbe Inverter Popup 5', helper: 'Farbe fuer Inverter Popup Zeile 5 Text.' },
+          sensor_popup_inverter_5_font_size: { label: 'Schriftgroesse Inverter Popup 5 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 5. Standard 16' },
+          sensor_popup_inverter_6: { label: 'Inverter Popup 6', helper: 'Entitaet fuer Inverter Popup Zeile 6.' },
+          sensor_popup_inverter_6_name: { label: 'Name Inverter Popup 6', helper: 'Optionaler benutzerdefinierter Name fuer Inverter Popup Zeile 6. Leer lassen, um den Entitaetsnamen zu verwenden.' },
+          sensor_popup_inverter_6_color: { label: 'Farbe Inverter Popup 6', helper: 'Farbe fuer Inverter Popup Zeile 6 Text.' },
+          sensor_popup_inverter_6_font_size: { label: 'Schriftgroesse Inverter Popup 6 (px)', helper: 'Schriftgroesse fuer Inverter Popup Zeile 6. Standard 16' }
         },
         options: {
           languages: [
@@ -3570,6 +4150,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pvPopup: { title: 'Popup PV', helper: 'Configurer les entités pour l\'affichage du popup PV.' },
           housePopup: { title: 'Popup Maison', helper: 'Configurer les entités pour l\'affichage du popup maison.' },
           batteryPopup: { title: 'Popup Batterie', helper: 'Configurer l\'affichage du popup batterie.' },
+          gridPopup: { title: 'Popup Réseau', helper: 'Configurer les entités pour l\'affichage du popup réseau.' },
+          inverterPopup: { title: 'Popup Inverter', helper: 'Configurer les entités pour l\'affichage du popup inverter.' },
           colors: { title: 'Couleurs & Seuils', helper: 'Configurez les seuils réseau et les couleurs d accent pour les flux et l affichage EV.' },
           typography: { title: 'Typographie', helper: 'Ajustez les tailles de police utilisées dans la carte.' },
           about: { title: 'À propos', helper: 'Crédits, version et liens utiles.' }
@@ -3761,7 +4343,55 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_popup_bat_6: { label: 'Popup Batterie 6', helper: 'Entité pour la ligne 6 du popup batterie.' },
           sensor_popup_bat_6_name: { label: 'Nom Popup Batterie 6', helper: 'Nom personnalisé optionnel pour la ligne 6 du popup batterie. Laisser vide pour utiliser le nom de l\'entité.' },
           sensor_popup_bat_6_color: { label: 'Couleur Popup Batterie 6', helper: 'Couleur pour le texte de la ligne 6 du popup batterie.' },
-          sensor_popup_bat_6_font_size: { label: 'Taille police Popup Batterie 6 (px)', helper: 'Taille de police pour la ligne 6 du popup batterie. Par défaut 16' }
+          sensor_popup_bat_6_font_size: { label: 'Taille police Popup Batterie 6 (px)', helper: 'Taille de police pour la ligne 6 du popup batterie. Par défaut 16' },
+          sensor_popup_grid_1: { label: 'Popup Réseau 1', helper: 'Entité pour la ligne 1 du popup réseau.' },
+          sensor_popup_grid_1_name: { label: 'Nom Popup Réseau 1', helper: 'Nom personnalisé optionnel pour la ligne 1 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_1_color: { label: 'Couleur Popup Réseau 1', helper: 'Couleur pour le texte de la ligne 1 du popup réseau.' },
+          sensor_popup_grid_1_font_size: { label: 'Taille police Popup Réseau 1 (px)', helper: 'Taille de police pour la ligne 1 du popup réseau. Par défaut 16' },
+          sensor_popup_grid_2: { label: 'Popup Réseau 2', helper: 'Entité pour la ligne 2 du popup réseau.' },
+          sensor_popup_grid_2_name: { label: 'Nom Popup Réseau 2', helper: 'Nom personnalisé optionnel pour la ligne 2 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_2_color: { label: 'Couleur Popup Réseau 2', helper: 'Couleur pour le texte de la ligne 2 du popup réseau.' },
+          sensor_popup_grid_2_font_size: { label: 'Taille police Popup Réseau 2 (px)', helper: 'Taille de police pour la ligne 2 du popup réseau. Par défaut 16' },
+          sensor_popup_grid_3: { label: 'Popup Réseau 3', helper: 'Entité pour la ligne 3 du popup réseau.' },
+          sensor_popup_grid_3_name: { label: 'Nom Popup Réseau 3', helper: 'Nom personnalisé optionnel pour la ligne 3 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_3_color: { label: 'Couleur Popup Réseau 3', helper: 'Couleur pour le texte de la ligne 3 du popup réseau.' },
+          sensor_popup_grid_3_font_size: { label: 'Taille police Popup Réseau 3 (px)', helper: 'Taille de police pour la ligne 3 du popup réseau. Par défaut 16' },
+          sensor_popup_grid_4: { label: 'Popup Réseau 4', helper: 'Entité pour la ligne 4 du popup réseau.' },
+          sensor_popup_grid_4_name: { label: 'Nom Popup Réseau 4', helper: 'Nom personnalisé optionnel pour la ligne 4 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_4_color: { label: 'Couleur Popup Réseau 4', helper: 'Couleur pour le texte de la ligne 4 du popup réseau.' },
+          sensor_popup_grid_4_font_size: { label: 'Taille police Popup Réseau 4 (px)', helper: 'Taille de police pour la ligne 4 du popup réseau. Par défaut 16' },
+          sensor_popup_grid_5: { label: 'Popup Réseau 5', helper: 'Entité pour la ligne 5 du popup réseau.' },
+          sensor_popup_grid_5_name: { label: 'Nom Popup Réseau 5', helper: 'Nom personnalisé optionnel pour la ligne 5 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_5_color: { label: 'Couleur Popup Réseau 5', helper: 'Couleur pour le texte de la ligne 5 du popup réseau.' },
+          sensor_popup_grid_5_font_size: { label: 'Taille police Popup Réseau 5 (px)', helper: 'Taille de police pour la ligne 5 du popup réseau. Par défaut 16' },
+          sensor_popup_grid_6: { label: 'Popup Réseau 6', helper: 'Entité pour la ligne 6 du popup réseau.' },
+          sensor_popup_grid_6_name: { label: 'Nom Popup Réseau 6', helper: 'Nom personnalisé optionnel pour la ligne 6 du popup réseau. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_grid_6_color: { label: 'Couleur Popup Réseau 6', helper: 'Couleur pour le texte de la ligne 6 du popup réseau.' },
+          sensor_popup_grid_6_font_size: { label: 'Taille police Popup Réseau 6 (px)', helper: 'Taille de police pour la ligne 6 du popup réseau. Par défaut 16' },
+          sensor_popup_inverter_1: { label: 'Popup Inverter 1', helper: 'Entité pour la ligne 1 du popup Inverter.' },
+          sensor_popup_inverter_1_name: { label: 'Nom Popup Inverter 1', helper: 'Nom personnalisé optionnel pour la ligne 1 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_1_color: { label: 'Couleur Popup Inverter 1', helper: 'Couleur pour le texte de la ligne 1 du popup Inverter.' },
+          sensor_popup_inverter_1_font_size: { label: 'Taille police Popup Inverter 1 (px)', helper: 'Taille de police pour la ligne 1 du popup Inverter. Par défaut 16' },
+          sensor_popup_inverter_2: { label: 'Popup Inverter 2', helper: 'Entité pour la ligne 2 du popup Inverter.' },
+          sensor_popup_inverter_2_name: { label: 'Nom Popup Inverter 2', helper: 'Nom personnalisé optionnel pour la ligne 2 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_2_color: { label: 'Couleur Popup Inverter 2', helper: 'Couleur pour le texte de la ligne 2 du popup Inverter.' },
+          sensor_popup_inverter_2_font_size: { label: 'Taille police Popup Inverter 2 (px)', helper: 'Taille de police pour la ligne 2 du popup Inverter. Par défaut 16' },
+          sensor_popup_inverter_3: { label: 'Popup Inverter 3', helper: 'Entité pour la ligne 3 du popup Inverter.' },
+          sensor_popup_inverter_3_name: { label: 'Nom Popup Inverter 3', helper: 'Nom personnalisé optionnel pour la ligne 3 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_3_color: { label: 'Couleur Popup Inverter 3', helper: 'Couleur pour le texte de la ligne 3 du popup Inverter.' },
+          sensor_popup_inverter_3_font_size: { label: 'Taille police Popup Inverter 3 (px)', helper: 'Taille de police pour la ligne 3 du popup Inverter. Par défaut 16' },
+          sensor_popup_inverter_4: { label: 'Popup Inverter 4', helper: 'Entité pour la ligne 4 du popup Inverter.' },
+          sensor_popup_inverter_4_name: { label: 'Nom Popup Inverter 4', helper: 'Nom personnalisé optionnel pour la ligne 4 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_4_color: { label: 'Couleur Popup Inverter 4', helper: 'Couleur pour le texte de la ligne 4 du popup Inverter.' },
+          sensor_popup_inverter_4_font_size: { label: 'Taille police Popup Inverter 4 (px)', helper: 'Taille de police pour la ligne 4 du popup Inverter. Par défaut 16' },
+          sensor_popup_inverter_5: { label: 'Popup Inverter 5', helper: 'Entité pour la ligne 5 du popup Inverter.' },
+          sensor_popup_inverter_5_name: { label: 'Nom Popup Inverter 5', helper: 'Nom personnalisé optionnel pour la ligne 5 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_5_color: { label: 'Couleur Popup Inverter 5', helper: 'Couleur pour le texte de la ligne 5 du popup Inverter.' },
+          sensor_popup_inverter_5_font_size: { label: 'Taille police Popup Inverter 5 (px)', helper: 'Taille de police pour la ligne 5 du popup Inverter. Par défaut 16' },
+          sensor_popup_inverter_6: { label: 'Popup Inverter 6', helper: 'Entité pour la ligne 6 du popup Inverter.' },
+          sensor_popup_inverter_6_name: { label: 'Nom Popup Inverter 6', helper: 'Nom personnalisé optionnel pour la ligne 6 du popup Inverter. Laisser vide pour utiliser le nom de l\'entité.' },
+          sensor_popup_inverter_6_color: { label: 'Couleur Popup Inverter 6', helper: 'Couleur pour le texte de la ligne 6 du popup Inverter.' },
+          sensor_popup_inverter_6_font_size: { label: 'Taille police Popup Inverter 6 (px)', helper: 'Taille de police pour la ligne 6 du popup Inverter. Par défaut 16' }
         },
         options: {
           languages: [
@@ -3804,6 +4434,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pvPopup: { title: 'PV Popup', helper: 'Configureer entiteiten voor de PV popup weergave.' },
           housePopup: { title: 'House Popup', helper: 'Configureer entiteiten voor de House popup weergave.' },
           batteryPopup: { title: 'Batterij-popup', helper: 'Configureer de batterij popup weergave.' },
+          gridPopup: { title: 'Grid-popup', helper: 'Configureer entiteiten voor de grid popup weergave.' },
+          inverterPopup: { title: 'Inverter-popup', helper: 'Configureer entiteiten voor de inverter popup weergave.' },
           colors: { title: 'Kleuren & Drempels', helper: 'Configureer netwerkdrempels en accentkleuren voor stromen en EV-weergave.' },
           typography: { title: 'Typografie', helper: 'Pas de lettergrootte aan gebruikt in de kaart.' },
           about: { title: 'Over', helper: 'Credits, versie en nuttige links.' }
@@ -3995,7 +4627,55 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_popup_bat_6: { label: 'Battery Popup 6', helper: 'Entiteit voor battery popup lijn 6.' },
           sensor_popup_bat_6_name: { label: 'Naam Battery Popup 6', helper: 'Optionele aangepaste naam voor battery popup lijn 6. Laat leeg om entiteit naam te gebruiken.' },
           sensor_popup_bat_6_color: { label: 'Kleur Battery Popup 6', helper: 'Kleur voor battery popup lijn 6 tekst.' },
-          sensor_popup_bat_6_font_size: { label: 'Lettergrootte Battery Popup 6 (px)', helper: 'Lettergrootte voor battery popup lijn 6. Standaard 16' }
+          sensor_popup_bat_6_font_size: { label: 'Lettergrootte Battery Popup 6 (px)', helper: 'Lettergrootte voor battery popup lijn 6. Standaard 16' },
+          sensor_popup_grid_1: { label: 'Grid Popup 1', helper: 'Entiteit voor grid popup lijn 1.' },
+          sensor_popup_grid_1_name: { label: 'Naam Grid Popup 1', helper: 'Optionele aangepaste naam voor grid popup lijn 1. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_1_color: { label: 'Kleur Grid Popup 1', helper: 'Kleur voor grid popup lijn 1 tekst.' },
+          sensor_popup_grid_1_font_size: { label: 'Lettergrootte Grid Popup 1 (px)', helper: 'Lettergrootte voor grid popup lijn 1. Standaard 16' },
+          sensor_popup_grid_2: { label: 'Grid Popup 2', helper: 'Entiteit voor grid popup lijn 2.' },
+          sensor_popup_grid_2_name: { label: 'Naam Grid Popup 2', helper: 'Optionele aangepaste naam voor grid popup lijn 2. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_2_color: { label: 'Kleur Grid Popup 2', helper: 'Kleur voor grid popup lijn 2 tekst.' },
+          sensor_popup_grid_2_font_size: { label: 'Lettergrootte Grid Popup 2 (px)', helper: 'Lettergrootte voor grid popup lijn 2. Standaard 16' },
+          sensor_popup_grid_3: { label: 'Grid Popup 3', helper: 'Entiteit voor grid popup lijn 3.' },
+          sensor_popup_grid_3_name: { label: 'Naam Grid Popup 3', helper: 'Optionele aangepaste naam voor grid popup lijn 3. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_3_color: { label: 'Kleur Grid Popup 3', helper: 'Kleur voor grid popup lijn 3 tekst.' },
+          sensor_popup_grid_3_font_size: { label: 'Lettergrootte Grid Popup 3 (px)', helper: 'Lettergrootte voor grid popup lijn 3. Standaard 16' },
+          sensor_popup_grid_4: { label: 'Grid Popup 4', helper: 'Entiteit voor grid popup lijn 4.' },
+          sensor_popup_grid_4_name: { label: 'Naam Grid Popup 4', helper: 'Optionele aangepaste naam voor grid popup lijn 4. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_4_color: { label: 'Kleur Grid Popup 4', helper: 'Kleur voor grid popup lijn 4 tekst.' },
+          sensor_popup_grid_4_font_size: { label: 'Lettergrootte Grid Popup 4 (px)', helper: 'Lettergrootte voor grid popup lijn 4. Standaard 16' },
+          sensor_popup_grid_5: { label: 'Grid Popup 5', helper: 'Entiteit voor grid popup lijn 5.' },
+          sensor_popup_grid_5_name: { label: 'Naam Grid Popup 5', helper: 'Optionele aangepaste naam voor grid popup lijn 5. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_5_color: { label: 'Kleur Grid Popup 5', helper: 'Kleur voor grid popup lijn 5 tekst.' },
+          sensor_popup_grid_5_font_size: { label: 'Lettergrootte Grid Popup 5 (px)', helper: 'Lettergrootte voor grid popup lijn 5. Standaard 16' },
+          sensor_popup_grid_6: { label: 'Grid Popup 6', helper: 'Entiteit voor grid popup lijn 6.' },
+          sensor_popup_grid_6_name: { label: 'Naam Grid Popup 6', helper: 'Optionele aangepaste naam voor grid popup lijn 6. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_grid_6_color: { label: 'Kleur Grid Popup 6', helper: 'Kleur voor grid popup lijn 6 tekst.' },
+          sensor_popup_grid_6_font_size: { label: 'Lettergrootte Grid Popup 6 (px)', helper: 'Lettergrootte voor grid popup lijn 6. Standaard 16' },
+          sensor_popup_inverter_1: { label: 'Inverter Popup 1', helper: 'Entiteit voor inverter popup lijn 1.' },
+          sensor_popup_inverter_1_name: { label: 'Naam Inverter Popup 1', helper: 'Optionele aangepaste naam voor inverter popup lijn 1. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_1_color: { label: 'Kleur Inverter Popup 1', helper: 'Kleur voor inverter popup lijn 1 tekst.' },
+          sensor_popup_inverter_1_font_size: { label: 'Lettergrootte Inverter Popup 1 (px)', helper: 'Lettergrootte voor inverter popup lijn 1. Standaard 16' },
+          sensor_popup_inverter_2: { label: 'Inverter Popup 2', helper: 'Entiteit voor inverter popup lijn 2.' },
+          sensor_popup_inverter_2_name: { label: 'Naam Inverter Popup 2', helper: 'Optionele aangepaste naam voor inverter popup lijn 2. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_2_color: { label: 'Kleur Inverter Popup 2', helper: 'Kleur voor inverter popup lijn 2 tekst.' },
+          sensor_popup_inverter_2_font_size: { label: 'Lettergrootte Inverter Popup 2 (px)', helper: 'Lettergrootte voor inverter popup lijn 2. Standaard 16' },
+          sensor_popup_inverter_3: { label: 'Inverter Popup 3', helper: 'Entiteit voor inverter popup lijn 3.' },
+          sensor_popup_inverter_3_name: { label: 'Naam Inverter Popup 3', helper: 'Optionele aangepaste naam voor inverter popup lijn 3. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_3_color: { label: 'Kleur Inverter Popup 3', helper: 'Kleur voor inverter popup lijn 3 tekst.' },
+          sensor_popup_inverter_3_font_size: { label: 'Lettergrootte Inverter Popup 3 (px)', helper: 'Lettergrootte voor inverter popup lijn 3. Standaard 16' },
+          sensor_popup_inverter_4: { label: 'Inverter Popup 4', helper: 'Entiteit voor inverter popup lijn 4.' },
+          sensor_popup_inverter_4_name: { label: 'Naam Inverter Popup 4', helper: 'Optionele aangepaste naam voor inverter popup lijn 4. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_4_color: { label: 'Kleur Inverter Popup 4', helper: 'Kleur voor inverter popup lijn 4 tekst.' },
+          sensor_popup_inverter_4_font_size: { label: 'Lettergrootte Inverter Popup 4 (px)', helper: 'Lettergrootte voor inverter popup lijn 4. Standaard 16' },
+          sensor_popup_inverter_5: { label: 'Inverter Popup 5', helper: 'Entiteit voor inverter popup lijn 5.' },
+          sensor_popup_inverter_5_name: { label: 'Naam Inverter Popup 5', helper: 'Optionele aangepaste naam voor inverter popup lijn 5. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_5_color: { label: 'Kleur Inverter Popup 5', helper: 'Kleur voor inverter popup lijn 5 tekst.' },
+          sensor_popup_inverter_5_font_size: { label: 'Lettergrootte Inverter Popup 5 (px)', helper: 'Lettergrootte voor inverter popup lijn 5. Standaard 16' },
+          sensor_popup_inverter_6: { label: 'Inverter Popup 6', helper: 'Entiteit voor inverter popup lijn 6.' },
+          sensor_popup_inverter_6_name: { label: 'Naam Inverter Popup 6', helper: 'Optionele aangepaste naam voor inverter popup lijn 6. Laat leeg om entiteit naam te gebruiken.' },
+          sensor_popup_inverter_6_color: { label: 'Kleur Inverter Popup 6', helper: 'Kleur voor inverter popup lijn 6 tekst.' },
+          sensor_popup_inverter_6_font_size: { label: 'Lettergrootte Inverter Popup 6 (px)', helper: 'Lettergrootte voor inverter popup lijn 6. Standaard 16' }
         },
         options: {
           languages: [
@@ -4233,6 +4913,18 @@ class LuminaEnergyCardEditor extends HTMLElement {
         ,{ name: 'sensor_popup_bat_4_color', label: (fields.sensor_popup_bat_4_color && fields.sensor_popup_bat_4_color.label) || '', helper: (fields.sensor_popup_bat_4_color && fields.sensor_popup_bat_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
         ,{ name: 'sensor_popup_bat_5_color', label: (fields.sensor_popup_bat_5_color && fields.sensor_popup_bat_5_color.label) || '', helper: (fields.sensor_popup_bat_5_color && fields.sensor_popup_bat_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
         ,{ name: 'sensor_popup_bat_6_color', label: (fields.sensor_popup_bat_6_color && fields.sensor_popup_bat_6_color.label) || '', helper: (fields.sensor_popup_bat_6_color && fields.sensor_popup_bat_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_1_color', label: (fields.sensor_popup_grid_1_color && fields.sensor_popup_grid_1_color.label) || '', helper: (fields.sensor_popup_grid_1_color && fields.sensor_popup_grid_1_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_2_color', label: (fields.sensor_popup_grid_2_color && fields.sensor_popup_grid_2_color.label) || '', helper: (fields.sensor_popup_grid_2_color && fields.sensor_popup_grid_2_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_3_color', label: (fields.sensor_popup_grid_3_color && fields.sensor_popup_grid_3_color.label) || '', helper: (fields.sensor_popup_grid_3_color && fields.sensor_popup_grid_3_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_4_color', label: (fields.sensor_popup_grid_4_color && fields.sensor_popup_grid_4_color.label) || '', helper: (fields.sensor_popup_grid_4_color && fields.sensor_popup_grid_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_5_color', label: (fields.sensor_popup_grid_5_color && fields.sensor_popup_grid_5_color.label) || '', helper: (fields.sensor_popup_grid_5_color && fields.sensor_popup_grid_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_grid_6_color', label: (fields.sensor_popup_grid_6_color && fields.sensor_popup_grid_6_color.label) || '', helper: (fields.sensor_popup_grid_6_color && fields.sensor_popup_grid_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_1_color', label: (fields.sensor_popup_inverter_1_color && fields.sensor_popup_inverter_1_color.label) || '', helper: (fields.sensor_popup_inverter_1_color && fields.sensor_popup_inverter_1_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_2_color', label: (fields.sensor_popup_inverter_2_color && fields.sensor_popup_inverter_2_color.label) || '', helper: (fields.sensor_popup_inverter_2_color && fields.sensor_popup_inverter_2_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_3_color', label: (fields.sensor_popup_inverter_3_color && fields.sensor_popup_inverter_3_color.label) || '', helper: (fields.sensor_popup_inverter_3_color && fields.sensor_popup_inverter_3_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_4_color', label: (fields.sensor_popup_inverter_4_color && fields.sensor_popup_inverter_4_color.label) || '', helper: (fields.sensor_popup_inverter_4_color && fields.sensor_popup_inverter_4_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_5_color', label: (fields.sensor_popup_inverter_5_color && fields.sensor_popup_inverter_5_color.label) || '', helper: (fields.sensor_popup_inverter_5_color && fields.sensor_popup_inverter_5_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
+        ,{ name: 'sensor_popup_inverter_6_color', label: (fields.sensor_popup_inverter_6_color && fields.sensor_popup_inverter_6_color.label) || '', helper: (fields.sensor_popup_inverter_6_color && fields.sensor_popup_inverter_6_color.helper) || '', selector: { color_picker: {} }, default: '#80ffff' }
       ]),
       typography: define([
         { name: 'header_font_size', label: fields.header_font_size.label, helper: fields.header_font_size.helper, selector: { text: { mode: 'blur' } } },
@@ -4268,6 +4960,18 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_popup_bat_4_font_size', label: (fields.sensor_popup_bat_4_font_size && fields.sensor_popup_bat_4_font_size.label) || '', helper: (fields.sensor_popup_bat_4_font_size && fields.sensor_popup_bat_4_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
         { name: 'sensor_popup_bat_5_font_size', label: (fields.sensor_popup_bat_5_font_size && fields.sensor_popup_bat_5_font_size.label) || '', helper: (fields.sensor_popup_bat_5_font_size && fields.sensor_popup_bat_5_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' },
         { name: 'sensor_popup_bat_6_font_size', label: (fields.sensor_popup_bat_6_font_size && fields.sensor_popup_bat_6_font_size.label) || '', helper: (fields.sensor_popup_bat_6_font_size && fields.sensor_popup_bat_6_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_1_font_size', label: (fields.sensor_popup_grid_1_font_size && fields.sensor_popup_grid_1_font_size.label) || '', helper: (fields.sensor_popup_grid_1_font_size && fields.sensor_popup_grid_1_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_2_font_size', label: (fields.sensor_popup_grid_2_font_size && fields.sensor_popup_grid_2_font_size.label) || '', helper: (fields.sensor_popup_grid_2_font_size && fields.sensor_popup_grid_2_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_3_font_size', label: (fields.sensor_popup_grid_3_font_size && fields.sensor_popup_grid_3_font_size.label) || '', helper: (fields.sensor_popup_grid_3_font_size && fields.sensor_popup_grid_3_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_4_font_size', label: (fields.sensor_popup_grid_4_font_size && fields.sensor_popup_grid_4_font_size.label) || '', helper: (fields.sensor_popup_grid_4_font_size && fields.sensor_popup_grid_4_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_5_font_size', label: (fields.sensor_popup_grid_5_font_size && fields.sensor_popup_grid_5_font_size.label) || '', helper: (fields.sensor_popup_grid_5_font_size && fields.sensor_popup_grid_5_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_grid_6_font_size', label: (fields.sensor_popup_grid_6_font_size && fields.sensor_popup_grid_6_font_size.label) || '', helper: (fields.sensor_popup_grid_6_font_size && fields.sensor_popup_grid_6_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_1_font_size', label: (fields.sensor_popup_inverter_1_font_size && fields.sensor_popup_inverter_1_font_size.label) || '', helper: (fields.sensor_popup_inverter_1_font_size && fields.sensor_popup_inverter_1_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_2_font_size', label: (fields.sensor_popup_inverter_2_font_size && fields.sensor_popup_inverter_2_font_size.label) || '', helper: (fields.sensor_popup_inverter_2_font_size && fields.sensor_popup_inverter_2_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_3_font_size', label: (fields.sensor_popup_inverter_3_font_size && fields.sensor_popup_inverter_3_font_size.label) || '', helper: (fields.sensor_popup_inverter_3_font_size && fields.sensor_popup_inverter_3_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_4_font_size', label: (fields.sensor_popup_inverter_4_font_size && fields.sensor_popup_inverter_4_font_size.label) || '', helper: (fields.sensor_popup_inverter_4_font_size && fields.sensor_popup_inverter_4_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_5_font_size', label: (fields.sensor_popup_inverter_5_font_size && fields.sensor_popup_inverter_5_font_size.label) || '', helper: (fields.sensor_popup_inverter_5_font_size && fields.sensor_popup_inverter_5_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
+        ,{ name: 'sensor_popup_inverter_6_font_size', label: (fields.sensor_popup_inverter_6_font_size && fields.sensor_popup_inverter_6_font_size.label) || '', helper: (fields.sensor_popup_inverter_6_font_size && fields.sensor_popup_inverter_6_font_size.helper) || '', selector: { text: { mode: 'blur' } }, default: '16' }
       ]),
       pvPopup: define([
         { name: 'sensor_popup_pv_1', label: (fields.sensor_popup_pv_1 && fields.sensor_popup_pv_1.label) || '', helper: (fields.sensor_popup_pv_1 && fields.sensor_popup_pv_1.helper) || '', selector: popupEntitySelector },
@@ -4296,6 +5000,34 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_popup_bat_5_name', label: (fields.sensor_popup_bat_5_name && fields.sensor_popup_bat_5_name.label) || '', helper: (fields.sensor_popup_bat_5_name && fields.sensor_popup_bat_5_name.helper) || '', selector: { text: {} } },
         { name: 'sensor_popup_bat_6', label: (fields.sensor_popup_bat_6 && fields.sensor_popup_bat_6.label) || '', helper: (fields.sensor_popup_bat_6 && fields.sensor_popup_bat_6.helper) || '', selector: popupEntitySelector },
         { name: 'sensor_popup_bat_6_name', label: (fields.sensor_popup_bat_6_name && fields.sensor_popup_bat_6_name.label) || '', helper: (fields.sensor_popup_bat_6_name && fields.sensor_popup_bat_6_name.helper) || '', selector: { text: {} } }
+      ]),
+      gridPopup: define([
+        { name: 'sensor_popup_grid_1', label: (fields.sensor_popup_grid_1 && fields.sensor_popup_grid_1.label) || '', helper: (fields.sensor_popup_grid_1 && fields.sensor_popup_grid_1.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_1_name', label: (fields.sensor_popup_grid_1_name && fields.sensor_popup_grid_1_name.label) || '', helper: (fields.sensor_popup_grid_1_name && fields.sensor_popup_grid_1_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_grid_2', label: (fields.sensor_popup_grid_2 && fields.sensor_popup_grid_2.label) || '', helper: (fields.sensor_popup_grid_2 && fields.sensor_popup_grid_2.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_2_name', label: (fields.sensor_popup_grid_2_name && fields.sensor_popup_grid_2_name.label) || '', helper: (fields.sensor_popup_grid_2_name && fields.sensor_popup_grid_2_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_grid_3', label: (fields.sensor_popup_grid_3 && fields.sensor_popup_grid_3.label) || '', helper: (fields.sensor_popup_grid_3 && fields.sensor_popup_grid_3.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_3_name', label: (fields.sensor_popup_grid_3_name && fields.sensor_popup_grid_3_name.label) || '', helper: (fields.sensor_popup_grid_3_name && fields.sensor_popup_grid_3_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_grid_4', label: (fields.sensor_popup_grid_4 && fields.sensor_popup_grid_4.label) || '', helper: (fields.sensor_popup_grid_4 && fields.sensor_popup_grid_4.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_4_name', label: (fields.sensor_popup_grid_4_name && fields.sensor_popup_grid_4_name.label) || '', helper: (fields.sensor_popup_grid_4_name && fields.sensor_popup_grid_4_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_grid_5', label: (fields.sensor_popup_grid_5 && fields.sensor_popup_grid_5.label) || '', helper: (fields.sensor_popup_grid_5 && fields.sensor_popup_grid_5.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_5_name', label: (fields.sensor_popup_grid_5_name && fields.sensor_popup_grid_5_name.label) || '', helper: (fields.sensor_popup_grid_5_name && fields.sensor_popup_grid_5_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_grid_6', label: (fields.sensor_popup_grid_6 && fields.sensor_popup_grid_6.label) || '', helper: (fields.sensor_popup_grid_6 && fields.sensor_popup_grid_6.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_grid_6_name', label: (fields.sensor_popup_grid_6_name && fields.sensor_popup_grid_6_name.label) || '', helper: (fields.sensor_popup_grid_6_name && fields.sensor_popup_grid_6_name.helper) || '', selector: { text: {} } }
+      ]),
+      inverterPopup: define([
+        { name: 'sensor_popup_inverter_1', label: (fields.sensor_popup_inverter_1 && fields.sensor_popup_inverter_1.label) || '', helper: (fields.sensor_popup_inverter_1 && fields.sensor_popup_inverter_1.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_1_name', label: (fields.sensor_popup_inverter_1_name && fields.sensor_popup_inverter_1_name.label) || '', helper: (fields.sensor_popup_inverter_1_name && fields.sensor_popup_inverter_1_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_inverter_2', label: (fields.sensor_popup_inverter_2 && fields.sensor_popup_inverter_2.label) || '', helper: (fields.sensor_popup_inverter_2 && fields.sensor_popup_inverter_2.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_2_name', label: (fields.sensor_popup_inverter_2_name && fields.sensor_popup_inverter_2_name.label) || '', helper: (fields.sensor_popup_inverter_2_name && fields.sensor_popup_inverter_2_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_inverter_3', label: (fields.sensor_popup_inverter_3 && fields.sensor_popup_inverter_3.label) || '', helper: (fields.sensor_popup_inverter_3 && fields.sensor_popup_inverter_3.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_3_name', label: (fields.sensor_popup_inverter_3_name && fields.sensor_popup_inverter_3_name.label) || '', helper: (fields.sensor_popup_inverter_3_name && fields.sensor_popup_inverter_3_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_inverter_4', label: (fields.sensor_popup_inverter_4 && fields.sensor_popup_inverter_4.label) || '', helper: (fields.sensor_popup_inverter_4 && fields.sensor_popup_inverter_4.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_4_name', label: (fields.sensor_popup_inverter_4_name && fields.sensor_popup_inverter_4_name.label) || '', helper: (fields.sensor_popup_inverter_4_name && fields.sensor_popup_inverter_4_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_inverter_5', label: (fields.sensor_popup_inverter_5 && fields.sensor_popup_inverter_5.label) || '', helper: (fields.sensor_popup_inverter_5 && fields.sensor_popup_inverter_5.helper) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_5_name', label: (fields.sensor_popup_inverter_5_name && fields.sensor_popup_inverter_5_name.label) || '', helper: (fields.sensor_popup_inverter_5_name && fields.sensor_popup_inverter_5_name.helper) || '', selector: { text: {} } },
+        { name: 'sensor_popup_inverter_6', label: (fields.sensor_popup_inverter_6 && fields.sensor_popup_inverter_6.label) || '', helper: (fields.sensor_popup_inverter_6 && fields.sensor_popup_inverter_6.label) || '', selector: popupEntitySelector },
+        { name: 'sensor_popup_inverter_6_name', label: (fields.sensor_popup_inverter_6_name && fields.sensor_popup_inverter_6_name.label) || '', helper: (fields.sensor_popup_inverter_6_name && fields.sensor_popup_inverter_6_name.helper) || '', selector: { text: {} } }
       ]),
       housePopup: define([
         { name: 'sensor_popup_house_1', label: (fields.sensor_popup_house_1 && fields.sensor_popup_house_1.label) || '', helper: (fields.sensor_popup_house_1 && fields.sensor_popup_house_1.helper) || '', selector: popupEntitySelector },
@@ -4329,6 +5061,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { id: 'other', title: sections.other.title, helper: sections.other.helper, schema: schemaDefs.other, defaultOpen: false },
       { id: 'pvPopup', title: sections.pvPopup.title, helper: sections.pvPopup.helper, schema: schemaDefs.pvPopup, defaultOpen: false },
       { id: 'batteryPopup', title: sections.batteryPopup.title, helper: sections.batteryPopup.helper, schema: schemaDefs.batteryPopup, defaultOpen: false },
+      { id: 'gridPopup', title: sections.gridPopup.title, helper: sections.gridPopup.helper, schema: schemaDefs.gridPopup, defaultOpen: false },
+      { id: 'inverterPopup', title: sections.inverterPopup.title, helper: sections.inverterPopup.helper, schema: schemaDefs.inverterPopup, defaultOpen: false },
       { id: 'housePopup', title: sections.housePopup.title, helper: sections.housePopup.helper, schema: schemaDefs.housePopup, defaultOpen: false },
       { id: 'colors', title: sections.colors.title, helper: sections.colors.helper, schema: schemaDefs.colors, defaultOpen: false },
       { id: 'typography', title: sections.typography.title, helper: sections.typography.helper, schema: schemaDefs.typography, defaultOpen: false },

@@ -40,7 +40,7 @@ Lumina Energy Card is a Home Assistant custom Lovelace card that renders animate
 - Daily Import and Export Totals
 - Load warning/critical colour overrides and a configurable low SOC threshold for the battery liquid fill
 - Update interval slider (0–60 s, default 30 s) with optional real-time refresh when set to 0
-- Popup Information Displays for House, Solar and Battery. Each has 6 slots for entites with name overrides available. Font Size and Color selection
+- Popup Information Displays for House, Solar, Battery, Grid and Inverter. Each has 6 slots for entities with name overrides available. Font Size and Color selection
 - Many new features coming with support for more items.
 
 #### Feature Walkthrough (EN)
@@ -200,7 +200,7 @@ The legacy grid→house toggle has been removed, so delete any `grid_flow_mode` 
 
 ### Popups (Editor Options)
 
-The card provides three editable popup groups (PV, House, Battery). Each popup exposes up to six entity slots, optional custom names, per-line colour pickers, and font-size controls.
+The card provides five editable popup groups (PV, House, Battery, Grid, Inverter). Each popup exposes up to six entity slots, optional custom names, per-line colour pickers, and font-size controls.
 The entities specfied in here will not have any conversions done to them other tha the name override if you specify one. This has been done delibertly so it is more flexible.
 It is not only sensors that can be specifed in the popups. Text based entities can be displayed (e.g. alerts). If you have a sensor that needs its units converted. Please use
 a helper to display it.
@@ -225,6 +225,20 @@ a helper to display it.
   - `sensor_popup_bat_1_color` .. `sensor_popup_bat_6_color`: per-line colour pickers (default `#80ffff`).
   - `sensor_popup_bat_1_font_size` .. `sensor_popup_bat_6_font_size`: per-line font-size (px) (default `16`).
   - Battery clickable areads is the battery image. Click to toggle the Battery popup; clicking the popup closes it.
+
+- Grid Popup
+  - `sensor_popup_grid_1` .. `sensor_popup_grid_6`: entity selectors for Grid popup lines.
+  - `sensor_popup_grid_1_name` .. `sensor_popup_grid_6_name`: optional custom names.
+  - `sensor_popup_grid_1_color` .. `sensor_popup_grid_6_color`: per-line colour pickers (default `#80ffff`).
+  - `sensor_popup_grid_1_font_size` .. `sensor_popup_grid_6_font_size`: per-line font-size (px) (default `16`).
+  - Grid clickable area is the Grid section; click to toggle the Grid popup and click the popup to close.
+
+- Inverter Popup
+  - `sensor_popup_inverter_1` .. `sensor_popup_inverter_6`: entity selectors for Inverter popup lines.
+  - `sensor_popup_inverter_1_name` .. `sensor_popup_inverter_6_name`: optional custom names.
+  - `sensor_popup_inverter_1_color` .. `sensor_popup_inverter_6_color`: per-line colour pickers (default `#80ffff`).
+  - `sensor_popup_inverter_1_font_size` .. `sensor_popup_inverter_6_font_size`: per-line font-size (px) (default `16`).
+  - Inverter clickable area is the Inverter section; click to toggle the Inverter popup and click the popup to close.
 
 ### Additional Array 2 & Options (EN)
 
@@ -314,7 +328,7 @@ Lumina Energy Card è una scheda Lovelace personalizzata per Home Assistant che 
 - Totali giornalieri di import ed export rete quando i sensori sono disponibili.
 - Colori di avviso/critico per il carico domestico e soglia SOC bassa configurabile per il riempimento della batteria.
 - Cursore dell'intervallo di aggiornamento (0–60 s, default 30 s) con aggiornamento in tempo reale impostando 0 s.
-- Popup informativi per Casa, Solare e Batteria con sei righe configurabili (nome, colore, dimensione font).
+- Popup informativi per Casa, Solare, Batteria, Rete e Inverter con sei righe configurabili (nome, colore, dimensione font).
 - Modalità dedicate per pompa di calore, doppio flusso di rete e future estensioni.
 
 ### Installazione (IT)
@@ -468,13 +482,15 @@ Il vecchio toggle grid→house è stato rimosso: elimina qualsiasi `grid_flow_mo
 
 ### Popup (IT)
 
-Le tre finestre (FV, Casa, Batteria) offrono sei righe ciascuna con selettore entità, nome facoltativo, colore e dimensione del font. I valori vengono mostrati così come arrivano, così puoi combinare sensori numerici e testuali.
+Le cinque finestre (FV, Casa, Batteria, Rete, Inverter) offrono sei righe ciascuna con selettore entità, nome facoltativo, colore e dimensione del font. I valori vengono mostrati così come arrivano, così puoi combinare sensori numerici e testuali.
 
 - Popup FV: aree cliccabili sul badge di produzione giornaliera e sui pannelli; clicca per aprire/chiudere, clic sul popup per nasconderlo.
 - Popup Casa: la casa è cliccabile per alternare la finestra.
 - Popup Batteria: clic sulla batteria per aprire/chiudere; clic sul popup per chiudere.
+- Popup Rete: la sezione rete è cliccabile per alternare la finestra.
+- Popup Inverter: la sezione inverter è cliccabile per alternare la finestra.
 
-I campi disponibili includono `sensor_popup_*`, `*_name`, `*_color`, `*_font_size` (colore di default `#80ffff`, 14 px per PV/Casa, 16 px per Batteria).
+I campi disponibili includono `sensor_popup_*`, `*_name`, `*_color`, `*_font_size` (colore di default `#80ffff`, 14 px per PV/Casa, 16 px per Batteria/Rete/Inverter).
 
 ### Opzioni aggiuntive Array 2 (IT)
 
@@ -542,7 +558,7 @@ Lumina Energy Card est une carte Lovelace personnalisée pour Home Assistant qui
 - Totaux quotidiens d'import et d'export du réseau lorsque les capteurs correspondants sont fournis.
 - Couleurs d'avertissement/critique pour la charge domestique et seuil SOC bas configurable pour le remplissage liquide de la batterie.
 - Curseur d'intervalle de mise à jour (0–60 s, valeur par défaut 30 s) avec rafraîchissement temps réel si réglé sur 0 s.
-- Trois popups d'information (Maison, Solaire, Batterie) avec six lignes configurables (nom, couleur, taille de police).
+- Cinq popups d'information (Maison, Solaire, Batterie, Réseau, Onduleur) avec six lignes configurables (nom, couleur, taille de police).
 - Prise en charge d'un second onduleur, d'un flux pompe à chaleur dédié et d'autres évolutions à venir.
 
 ### Installation (FR)
@@ -696,7 +712,7 @@ L'ancienne bascule grid→house a été supprimée ; retirez toute entrée `grid
 
 ### Popups (FR)
 
-Les trois groupes de popups (PV, Maison, Batterie) offrent chacun six emplacements avec entité, nom facultatif, couleur et taille de police. Les valeurs sont affichées telles quelles pour permettre l'utilisation de capteurs numériques ou textuels.
+Les cinq groupes de popups (PV, Maison, Batterie, Réseau, Onduleur) offrent chacun six emplacements avec entité, nom facultatif, couleur et taille de police. Les valeurs sont affichées telles quelles pour permettre l'utilisation de capteurs numériques ou textuels.
 
 - Popup PV
   - `sensor_popup_pv_1` .. `sensor_popup_pv_6` : entités à afficher.
@@ -718,6 +734,20 @@ Les trois groupes de popups (PV, Maison, Batterie) offrent chacun six emplacemen
   - `sensor_popup_bat_1_color` .. `sensor_popup_bat_6_color` : couleurs (défaut `#80ffff`).
   - `sensor_popup_bat_1_font_size` .. `sensor_popup_bat_6_font_size` : tailles de police (px) (défaut `16`).
   - La batterie est cliquable ; cliquer dessus ouvre/ferme le popup, cliquer sur le popup le ferme.
+
+- Popup Réseau
+  - `sensor_popup_grid_1` .. `sensor_popup_grid_6` : entités à afficher.
+  - `sensor_popup_grid_1_name` .. `sensor_popup_grid_6_name` : noms facultatifs.
+  - `sensor_popup_grid_1_color` .. `sensor_popup_grid_6_color` : couleurs (défaut `#80ffff`).
+  - `sensor_popup_grid_1_font_size` .. `sensor_popup_grid_6_font_size` : tailles de police (px) (défaut `16`).
+  - La section réseau est cliquable pour ouvrir/fermer le popup ; cliquer sur le popup le ferme.
+
+- Popup Onduleur
+  - `sensor_popup_inverter_1` .. `sensor_popup_inverter_6` : entités à afficher.
+  - `sensor_popup_inverter_1_name` .. `sensor_popup_inverter_6_name` : noms facultatifs.
+  - `sensor_popup_inverter_1_color` .. `sensor_popup_inverter_6_color` : couleurs (défaut `#80ffff`).
+  - `sensor_popup_inverter_1_font_size` .. `sensor_popup_inverter_6_font_size` : tailles de police (px) (défaut `16`).
+  - La section onduleur est cliquable pour ouvrir/fermer le popup ; cliquer sur le popup le ferme.
 
 ### Options supplémentaires Array 2 (FR)
 
@@ -816,7 +846,7 @@ Lumina Energy Card ist eine benutzerdefinierte Lovelace-Karte für Home Assistan
 - Tägliche Import-/Export-Summen des Netzes, sofern Sensoren vorhanden sind.
 - Konfigurierbare Lastwarn-/Kritikfarben und ein SOC-Untergrenzwert für die Batteriefüllung.
 - Update-Intervall-Schieberegler (0–60 s, Standard 30 s) mit Live-Refresh bei 0 s.
-- Info-Popups für Haus, Solar und Batterie mit je sechs konfigurierbaren Zeilen (Name, Farbe, Schriftgröße).
+- Info-Popups für Haus, Solar, Batterie, Netz und Wechselrichter mit je sechs konfigurierbaren Zeilen (Name, Farbe, Schriftgröße).
 - Dedizierter Wärmepumpenpfad, zweigeteilte Netzflüsse und weitere geplante Funktionen.
 
 ### Installation (DE)
@@ -970,13 +1000,15 @@ Der frühere grid→house-Schalter wurde entfernt – lösche `grid_flow_mode` a
 
 ### Popups (DE)
 
-Die drei Popup-Gruppen (PV, Haus, Batterie) stellen je sechs Zeilen mit Entität, optionalem Namen, Farbe und Schriftgröße bereit. Werte werden unverändert angezeigt, sodass auch Textsensoren genutzt werden können.
+Die fünf Popup-Gruppen (PV, Haus, Batterie, Netz, Wechselrichter) stellen je sechs Zeilen mit Entität, optionalem Namen, Farbe und Schriftgröße bereit. Werte werden unverändert angezeigt, sodass auch Textsensoren genutzt werden können.
 
 - PV-Popup: Klick auf den Tagesertrags-Badge oder die PV-Flächen öffnet/schließt das Popup; Klick auf das Popup blendet es aus.
 - Haus-Popup: Das Haus ist klickbar und toggelt die Anzeige.
 - Batterie-Popup: Die Batteriefläche öffnet/schließt das Popup; ein Klick auf das Popup schließt es.
+- Netz-Popup: Der Netzbereich ist klickbar und toggelt die Anzeige.
+- Wechselrichter-Popup: Der Wechselrichterbereich ist klickbar und toggelt die Anzeige.
 
-Felder: `sensor_popup_*`, `*_name`, `*_color`, `*_font_size` (Standardfarbe `#80ffff`, Schriftgröße 14 px für PV/Haus und 16 px für Batterie).
+Felder: `sensor_popup_*`, `*_name`, `*_color`, `*_font_size` (Standardfarbe `#80ffff`, Schriftgröße 14 px für PV/Haus und 16 px für Batterie/Netz/Wechselrichter).
 
 ### Zusätzliche Array-2-Optionen (DE)
 
@@ -1188,13 +1220,42 @@ De oude grid→house-toggle is verwijderd; haal `grid_flow_mode` uit je YAML. De
 
 ### Popups (NL)
 
-PV-, Huis- en Batterijpopups bieden elk zes rijen. Elke rij heeft `sensor_popup_*`, optionele naam, kleur en lettergrootte.
+De vijf popupgroepen (PV, Huis, Batterij, Net, Omvormer) bieden elk zes plaatsen met entiteit, optionele naam, kleur en lettergrootte. Waarden worden weergegeven zoals ze zijn om het gebruik van numerieke of tekstuele sensoren mogelijk te maken.
 
-- Klik op de PV-badge of PV-sectie om het PV-popup te toggelen; klik op de popup om te sluiten.
-- Klik op het huis voor het Huis-popup; een tweede klik sluit het.
-- Klik op de batterijsectie voor het Batterij-popup.
+- PV Popup
+  - `sensor_popup_pv_1` .. `sensor_popup_pv_6` : entiteiten om weer te geven.
+  - `sensor_popup_pv_1_name` .. `sensor_popup_pv_6_name` : optionele aangepaste namen.
+  - `sensor_popup_pv_1_color` .. `sensor_popup_pv_6_color` : kleuren per regel (standaard `#80ffff`).
+  - `sensor_popup_pv_1_font_size` .. `sensor_popup_pv_6_font_size` : lettergroottes (px) (standaard `14`).
+  - Klikbare gebieden: het dagelijkse productiebadge en zonnepanelen openen/sluiten de popup; klikken op de popup verbergt deze.
 
-Standaardkleur `#80ffff`, standaard tekstgrootte 14 px (PV/Huis) en 16 px (Batterij).
+- Huis Popup
+  - `sensor_popup_house_1` .. `sensor_popup_house_6` : entiteiten om weer te geven.
+  - `sensor_popup_house_1_name` .. `sensor_popup_house_6_name` : optionele namen.
+  - `sensor_popup_house_1_color` .. `sensor_popup_house_6_color` : kleuren (standaard `#80ffff`).
+  - `sensor_popup_house_1_font_size` .. `sensor_popup_house_6_font_size` : lettergroottes (px) (standaard `14`).
+  - Het huis is klikbaar om de popup te openen/sluiten; klikken op de popup sluit deze.
+
+- Batterij Popup
+  - `sensor_popup_bat_1` .. `sensor_popup_bat_6` : entiteiten om weer te geven.
+  - `sensor_popup_bat_1_name` .. `sensor_popup_bat_6_name` : optionele namen.
+  - `sensor_popup_bat_1_color` .. `sensor_popup_bat_6_color` : kleuren (standaard `#80ffff`).
+  - `sensor_popup_bat_1_font_size` .. `sensor_popup_bat_6_font_size` : lettergroottes (px) (standaard `16`).
+  - De batterij is klikbaar; klikken erop opent/sluit de popup, klikken op de popup sluit deze.
+
+- Net Popup
+  - `sensor_popup_grid_1` .. `sensor_popup_grid_6` : entiteiten om weer te geven.
+  - `sensor_popup_grid_1_name` .. `sensor_popup_grid_6_name` : optionele namen.
+  - `sensor_popup_grid_1_color` .. `sensor_popup_grid_6_color` : kleuren (standaard `#80ffff`).
+  - `sensor_popup_grid_1_font_size` .. `sensor_popup_grid_6_font_size` : lettergroottes (px) (standaard `16`).
+  - De netsectie is klikbaar om de popup te openen/sluiten; klikken op de popup sluit deze.
+
+- Omvormer Popup
+  - `sensor_popup_inverter_1` .. `sensor_popup_inverter_6` : entiteiten om weer te geven.
+  - `sensor_popup_inverter_1_name` .. `sensor_popup_inverter_6_name` : optionele namen.
+  - `sensor_popup_inverter_1_color` .. `sensor_popup_inverter_6_color` : kleuren (standaard `#80ffff`).
+  - `sensor_popup_inverter_1_font_size` .. `sensor_popup_inverter_6_font_size` : lettergroottes (px) (standaard `16`).
+  - De omvormersectie is klikbaar om de popup te openen/sluiten; klikken op de popup sluit deze.
 
 ### Array 2 & extra opties (NL)
 
