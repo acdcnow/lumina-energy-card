@@ -1317,7 +1317,7 @@ Tips:
 
 - `hacs.json` declares the card as a frontend resource (`content_in_root: false`) and points to `dist/lumina-energy-card.js`.
 - `.github/workflows/hacs-validation.yml` runs the official HACS validation action on pushes, pull requests, and manual triggers.
-- `CODEOWNERS` registers @Giorgio866 and @ratava as maintainers for automated reviews.
+- `CODEOWNERS` registers @Giorgio866  as maintainers for automated reviews.
 - The project is released under the MIT License (see [LICENSE](LICENSE)).
 
 ---
