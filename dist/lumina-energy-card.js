@@ -12084,7 +12084,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       wrapper.classList.add('authorized');
     }
 
-    const paypalUrl = 'https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=3dprint8616@gmail.com&amount=1.00&currency_code=EUR&item_name=Lumina%20Energy%20Card%20PRO';
+    const paypalUrl = 'https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=3dprint8616@gmail.com&item_name=Licenza+Lumina+Pro&amount=1&currency_code=EUR&no_shipping=1';
     
     const link = document.createElement('a');
     link.href = paypalUrl;
