@@ -11,6 +11,10 @@ Repository: [https://github.com/Giorgio866/lumina-energy-card](https://github.co
 
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)][install]
 
+![Lumina Energy Card](https://raw.githubusercontent.com/Giorgio866/lumina-energy-card/main/Images/schermo.jpg)
+
+*Lumina Energy Card – main view with energy flows, PV, battery, grid, and house*
+
 ---
 
 ## English
