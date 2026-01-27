@@ -7,7 +7,9 @@
 
 // Logging system - only log errors in production
 const LUMINA_DEBUG = false; // Set to true for debugging
+const LUMINA_AUTH_DEBUG = true; // Set to true to debug PRO password / auth list
 const luminaLog = LUMINA_DEBUG ? console.log.bind(console) : () => {};
+const luminaAuthLog = LUMINA_AUTH_DEBUG ? (...args) => console.log('[Lumina PRO Auth]', ...args) : () => {};
 const luminaError = console.error.bind(console);
 
 // ============================================================================
@@ -650,17 +652,29 @@ let LUMINA_AUTH_LIST = null;
 let LUMINA_FETCHING = false;
 
 const LUMINA_REFRESH_AUTH = async (callback) => {
-  if (LUMINA_AUTH_LIST !== null) return LUMINA_AUTH_LIST;
-  if (LUMINA_FETCHING) return null;
-  
+  if (LUMINA_AUTH_LIST !== null) {
+    luminaAuthLog('auth list already loaded, count:', LUMINA_AUTH_LIST.length);
+    return LUMINA_AUTH_LIST;
+  }
+  if (LUMINA_FETCHING) {
+    luminaAuthLog('fetch already in progress, skipping');
+    return null;
+  }
+  luminaAuthLog('fetching auth list from remote...');
   LUMINA_FETCHING = true;
   try {
     const response = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
     const text = await response.text();
-    // Split by newlines and clean up
-    LUMINA_AUTH_LIST = text.split(/\r?\n/).map(h => h.trim()).filter(h => h.length === 64);
+    const raw = text.split(/\r?\n/).map(h => h.trim()).filter(Boolean);
+    LUMINA_AUTH_LIST = raw.filter(h => h.length === 64);
+    luminaAuthLog('auth list loaded: ok. raw lines:', raw.length, 'valid hashes (64 hex):', LUMINA_AUTH_LIST.length);
+    if (LUMINA_AUTH_LIST.length < raw.length) {
+      luminaAuthLog('dropped', raw.length - LUMINA_AUTH_LIST.length, 'lines (not 64-char hex)');
+    }
     if (callback) callback();
   } catch (e) {
+    luminaAuthLog('auth list fetch failed:', e?.message || String(e));
+    luminaError('[Lumina PRO Auth] fetch failed:', e);
     LUMINA_AUTH_LIST = []; // Prevent infinite retries on failure
   } finally {
     LUMINA_FETCHING = false;
@@ -4214,6 +4228,7 @@ class LuminaEnergyCard extends HTMLElement {
         const hashHex = LUMINA_SHA256(inputValue.trim());
         const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
         if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
+          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
           LUMINA_REFRESH_AUTH(() => {
             this._forceRender = true;
             this.render();
@@ -4221,6 +4236,7 @@ class LuminaEnergyCard extends HTMLElement {
         }
         return isAuthorized;
       } catch (e) {
+        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
         return false;
       }
     };
@@ -5103,6 +5119,7 @@ class LuminaEnergyCard extends HTMLElement {
         const hashHex = LUMINA_SHA256(inputValue.trim());
         const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
         if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
+          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
           LUMINA_REFRESH_AUTH(() => {
             this._forceRender = true;
             this.render();
@@ -5110,6 +5127,7 @@ class LuminaEnergyCard extends HTMLElement {
         }
         return isAuthorized;
       } catch (e) {
+        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
         return false;
       }
     };
@@ -8605,6 +8623,7 @@ class LuminaEnergyCard extends HTMLElement {
         const hashHex = LUMINA_SHA256(inputValue.trim());
         const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
         if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
+          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
           LUMINA_REFRESH_AUTH(() => {
             this._forceRender = true;
             this.render();
@@ -8612,6 +8631,7 @@ class LuminaEnergyCard extends HTMLElement {
         }
         return isAuthorized;
       } catch (e) {
+        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
         return false;
       }
     };
@@ -9055,7 +9075,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Car 2 Color', helper: 'Color applied to Car 2 power value.' },
           pro_password: { label: 'PRO Password', helper: '⚠️ PRO FEATURE: This is a premium function.' },
           paypal_button: 'Unlock PRO Features (1€)',
-          paypal_note: 'IMPORTANT: Please include your EMAIL ADDRESS in the PayPal notes so we can send you the password.',
+          paypal_note: 'IMPORTANT: Send as DONATION (other methods will be refunded). Include your EMAIL in the PayPal notes to receive the password.',
           overlay_image_enabled: { label: 'Enable Overlay Image', helper: 'Enable or disable the custom overlay image (requires PRO authorization).' },
           heat_pump_flow_color: { label: 'Heat Pump Flow Color', helper: 'Color applied to the heat pump flow animation.' },
           heat_pump_text_color: { label: 'Heat Pump Text Color', helper: 'Color applied to the heat pump power text.' },
@@ -9422,7 +9442,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Colore Auto 2', helper: 'Colore applicato al valore potenza Auto 2.' },
           pro_password: { label: 'Password PRO', helper: '⚠️ FUNZIONE PRO: Questa è una funzione premium.' },
           paypal_button: 'Sblocca Funzioni PRO (1€)',
-          paypal_note: 'IMPORTANTE: Inserisci il tuo INDIRIZZO EMAIL nelle note di PayPal per ricevere la password.',
+          paypal_note: 'IMPORTANTE: Invia come DONAZIONE (altri metodi saranno rimborsati). Inserisci la tua EMAIL nelle note PayPal per ricevere la password.',
           overlay_image_enabled: { label: 'Abilita immagine overlay', helper: 'Abilita o disabilita l immagine overlay personalizzata (richiede autorizzazione PRO).' },
           heat_pump_flow_color: { label: 'Colore flusso pompa di calore', helper: 'Colore applicato all animazione del flusso della pompa di calore.' },
           heat_pump_text_color: { label: 'Colore testo pompa di calore', helper: 'Colore applicato al testo della potenza della pompa di calore.' },
@@ -9835,7 +9855,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Farbe Auto 2', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 2.' },
           pro_password: { label: 'PRO-Passwort', helper: '⚠️ PRO-FUNKTION: Dies ist eine Premium-Funktion.' },
           paypal_button: 'PRO-Funktionen freischalten (1€)',
-          paypal_note: 'WICHTIG: Bitte geben Sie Ihre E-MAIL-ADRESSE in den PayPal-Notizen an, damit wir Ihnen das Passwort zusenden können.',
+          paypal_note: 'WICHTIG: Als SPENDE senden (andere Zahlungsarten werden erstattet). Geben Sie Ihre E-MAIL in den PayPal-Notizen an, um das Passwort zu erhalten.',
           overlay_image_enabled: { label: 'Overlay-Bild aktivieren', helper: 'Aktivieren oder deaktivieren Sie das benutzerdefinierte Overlay-Bild (erfordert PRO-Autorisierung).' },
           heat_pump_flow_color: { label: 'Waermepumpenfluss Farbe', helper: 'Farbe fuer die Waermepumpenfluss Animation.' },
           heat_pump_text_color: { label: 'Waermepumpentext Farbe', helper: 'Farbe fuer den Waermepumpenleistungstext.' },
@@ -10244,7 +10264,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Couleur Véhicule 2', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 2.' },
           pro_password: { label: 'Mot de passe PRO', helper: '⚠️ FONCTION PRO : C est une fonction premium.' },
           paypal_button: 'Débloquer les fonctions PRO (1€)',
-          paypal_note: 'IMPORTANT : Veuillez inclure votre ADRESSE E-MAIL dans le message PayPal pour recevoir votre mot de passe.',
+          paypal_note: 'IMPORTANT : Envoyez en DON (les autres modes seront remboursés). Incluez votre E-MAIL dans le message PayPal pour recevoir le mot de passe.',
           overlay_image_enabled: { label: 'Activer l image de superposition', helper: 'Activer ou désactiver l image de superposition personnalisée (nécessite une autorisation PRO).' },
           heat_pump_flow_color: { label: 'Couleur flux pompe à chaleur', helper: 'Couleur appliquée à l animation du flux de la pompe à chaleur.' },
           heat_pump_text_color: { label: 'Couleur texte pompe à chaleur', helper: 'Couleur appliquée au texte de puissance de la pompe à chaleur.' },
@@ -10658,7 +10678,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Voertuig 2 kleur', helper: 'Kleur toegepast op de vermogenswaarde van voertuig 2.' },
           pro_password: { label: 'PRO-wachtwoord', helper: '⚠️ PRO-FUNCTIE: Dit is een premium-functie.' },
           paypal_button: 'PRO-functies ontgrendelen (1€)',
-          paypal_note: 'BELANGRIJK: Vermeld je E-MAILADRES in de PayPal-notities zodat we je het wachtwoord kunnen sturen.',
+          paypal_note: 'BELANGRIJK: Stuur als DONATIE (andere methoden worden terugbetaald). Vermeld je E-MAIL in de PayPal-notities om het wachtwoord te ontvangen.',
           overlay_image_enabled: { label: 'Overlay-afbeelding inschakelen', helper: 'Schakel de aangepaste overlay-afbeelding in of uit (vereist PRO-autorisatie).' },
           heat_pump_flow_color: { label: 'Warmtepomp stroom kleur', helper: 'Kleur toegepast op de warmtepomp stroom animatie.' },
           heat_pump_text_color: { label: 'Warmtepomp tekst kleur', helper: 'Kleur toegepast op de warmtepomp vermogen tekst.' },
@@ -11735,10 +11755,18 @@ _createSectionDefs(localeStrings, schemaDefs) {
         let isAuthorized = false;
 
         if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-          const hashHex = LUMINA_SHA256(proPassword.trim());
-          if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex)) {
-            isAuthorized = true;
+          const trimmed = proPassword.trim();
+          const hashHex = LUMINA_SHA256(trimmed);
+          const hasList = Boolean(LUMINA_AUTH_LIST);
+          const listLen = hasList ? LUMINA_AUTH_LIST.length : 0;
+          const found = hasList && LUMINA_AUTH_LIST.includes(hashHex);
+          luminaAuthLog('lumina_pro section: passwd len=', trimmed.length, 'hash=', hashHex, 'auth_list loaded=', hasList, 'list len=', listLen, 'includes=', found);
+          if (hasList && !found) {
+            luminaAuthLog('hash not in list. Sample hashes:', (LUMINA_AUTH_LIST || []).slice(0, 3));
           }
+          if (found) isAuthorized = true;
+        } else {
+          luminaAuthLog('lumina_pro section: no pro_password or empty');
         }
 
         // If not authorized, only show the password field
@@ -11746,6 +11774,9 @@ _createSectionDefs(localeStrings, schemaDefs) {
           filteredSchema = schema.filter(field =>
             field.name === 'pro_password'  // Only keep password field
           );
+          luminaAuthLog('lumina_pro section: not authorized, showing only pro_password field');
+        } else {
+          luminaAuthLog('lumina_pro section: authorized, showing all PRO fields');
         }
         // If authorized, show all fields (already filtered above)
       }
@@ -12074,17 +12105,25 @@ _createSectionDefs(localeStrings, schemaDefs) {
     let isAuthorized = false;
     const proPassword = config.pro_password;
     if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-      const hashHex = LUMINA_SHA256(proPassword.trim());
-      if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex)) {
-        isAuthorized = true;
+      const trimmed = proPassword.trim();
+      const hashHex = LUMINA_SHA256(trimmed);
+      const hasList = Boolean(LUMINA_AUTH_LIST);
+      const listLen = hasList ? LUMINA_AUTH_LIST.length : 0;
+      const found = hasList && LUMINA_AUTH_LIST.includes(hashHex);
+      luminaAuthLog('PayPal button check: passwd len=', trimmed.length, 'hash=', hashHex, 'auth_list loaded=', hasList, 'list len=', listLen, 'includes=', found);
+      if (hasList && !found) {
+        luminaAuthLog('hash not in list. Sample hashes from list:', (LUMINA_AUTH_LIST || []).slice(0, 3));
       }
+      if (found) isAuthorized = true;
+    } else {
+      luminaAuthLog('PayPal button check: no pro_password or empty');
     }
 
     if (isAuthorized) {
       wrapper.classList.add('authorized');
     }
 
-    const paypalUrl = 'https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=3dprint8616@gmail.com&item_name=Licenza+Lumina+Pro&amount=1&currency_code=EUR&no_shipping=1';
+    const paypalUrl = 'https://paypal.me/giorgiosalierno';
     
     const link = document.createElement('a');
     link.href = paypalUrl;
@@ -12367,11 +12406,13 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const overlayEnabledChanged = (this._config.overlay_image_enabled !== newConfig.overlay_image_enabled);
     
     if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-      const hashHex = LUMINA_SHA256(proPassword.trim());
+      const trimmed = proPassword.trim();
+      const hashHex = LUMINA_SHA256(trimmed);
       
       // Use remote list for verification
       let isValid = false;
       if (LUMINA_AUTH_LIST === null) {
+        luminaAuthLog('form value changed: auth list not loaded yet, triggering refresh');
         // If list is still loading, try to refresh and re-render
         LUMINA_REFRESH_AUTH(() => {
           this._rendered = false;
@@ -12379,6 +12420,8 @@ _createSectionDefs(localeStrings, schemaDefs) {
         });
       } else {
         isValid = LUMINA_AUTH_LIST.includes(hashHex);
+        luminaAuthLog('form value changed: passwd len=', trimmed.length, 'hash=', hashHex, 'list len=', LUMINA_AUTH_LIST.length, 'includes=', isValid);
+        if (!isValid) luminaAuthLog('form value changed: hash not in list. Sample:', LUMINA_AUTH_LIST.slice(0, 3));
         // Force re-render if authorization state just changed to update PayPal button size
         const wasAuthorized = this._isAuthorized;
         this._isAuthorized = isValid;
@@ -12390,6 +12433,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       }
       
       if (!isValid && LUMINA_AUTH_LIST !== null) {
+        luminaAuthLog('form value changed: disabling overlay (password invalid)');
         // Disable overlay if password is not valid (and list is loaded)
         if (newConfig.overlay_image_enabled) {
           newConfig.overlay_image_enabled = false;
@@ -12400,6 +12444,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         }
       }
     } else {
+      luminaAuthLog('form value changed: no pro_password or empty, disabling overlay');
       // No password or empty, disable overlay
       if (newConfig.overlay_image_enabled) {
         newConfig.overlay_image_enabled = false;
