@@ -5,7 +5,8 @@
 
 Repository: [https://github.com/Giorgio866/lumina-energy-card](https://github.com/Giorgio866/lumina-energy-card)
 
-**[Install directly (HACS)][install]** · Support: [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.me/giorgiosalierno) · [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Giorgio866-pink?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/Giorgio866)
+**[Install directly (HACS)][install]** · Support: [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://paypal.me/giorgiosalierno) · [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Giorgio866-pink?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/Giorgio866)  
+*Send as donation; other payment methods will be refunded.*
 
 [install]: https://my.home-assistant.io/redirect/hacs_repository/?owner=Giorgio866&repository=lumina-energy-card&category=frontend
 
@@ -114,7 +115,19 @@ Use the card’s visual editor (Edit → Lumina) to configure entities, colors, 
 
 ---
 
-#### 7. PRO section (optional extras)
+#### 7. Solar forecast (PRO)
+
+- **Purpose:** Show **estimated solar production** with a **cyan holographic sun** and a status label (lots/moderate/little sun).
+- **How to enable:** In the editor, open the **PRO** section and set:
+  - `solar_forecast_enabled: true`
+  - `sensor_solar_forecast: sensor.xxx` (your forecast sensor)
+  - `solar_forecast_max_power` (e.g., 10000 W)
+- **Position & style:** Adjust `solar_forecast_x`, `solar_forecast_y`, `solar_forecast_color` (default **#00FFFF**), and `solar_forecast_size`.
+- **Tip:** If the sun doesn’t appear, make sure the sensor has a numeric value and the **Text toggle** is not hiding texts.
+
+---
+
+#### 8. PRO section (optional extras)
 
 PRO features require a **PRO password** (`pro_password`), unlocked via the editor’s PRO section (PayPal support).
 
@@ -131,6 +144,9 @@ PRO features require a **PRO password** (`pro_password`), unlocked via the edito
 - **Custom text:**  
   Up to **5 custom text labels** with optional sensor values, position, color, and font size.
 
+- **Solar forecast:**  
+  Enable **`solar_forecast_enabled`**, set **`sensor_solar_forecast`**, and tune **`solar_forecast_max_power`**, position, and color (**default #00FFFF**).
+
 ---
 
 ### Quick reference
@@ -143,6 +159,7 @@ PRO features require a **PRO password** (`pro_password`), unlocked via the edito
 | Text toggle | **`enable_text_toggle_button`** | Show/hide all texts (clean mode) |
 | Battery mode | **`battery_power_mode`** | `flow` or `charge_discharge` |
 | Animation style | **`animation_style`** | `shimmer`, `dashes`, `dots`, `arrows` |
+| Solar forecast | **PRO** section | Estimated solar production + holographic sun |
 | PRO (motion, overlay, etc.) | **PRO** section + **`pro_password`** | Motion-based text, overlay images, custom flows/text |
 
 ---
@@ -153,6 +170,7 @@ PRO features require a **PRO password** (`pro_password`), unlocked via the edito
 - **Values at zero:** Check entity IDs and that entities exist and are available.
 - **Cameras 403 / not loading:** Cameras must expose `access_token` (most HA camera integrations do). Use **■ Stop** before closing the camera popup.
 - **Editor slow:** Increase **`update_interval`** or reduce dashboard refresh frequency.
+- **Images not downloaded with HACS:** HACS installs only the JavaScript file (`.js`). To use the default backgrounds, download the images from the [**dist** folder](https://github.com/Giorgio866/lumina-energy-card/tree/main/dist) (e.g. `lumina_background.png`, `lumina_background1.png`), place them in `/config/www/community/lumina-energy-card/`, then reload the dashboard. Links: [lumina_background.png](https://github.com/Giorgio866/lumina-energy-card/raw/main/dist/lumina_background.png), [lumina_background1.png](https://github.com/Giorgio866/lumina-energy-card/raw/main/dist/lumina_background1.png).
 
 ---
 
@@ -253,7 +271,19 @@ Usa l’**editor visivo** della scheda (Modifica → Lumina) per configurare ent
 
 ---
 
-#### 7. Sezione PRO (funzionalità extra)
+#### 7. Previsione solare (PRO)
+
+- **Scopo:** Mostra la **produzione solare stimata** con un **sole olografico ciano** e testo stato (tanto/moderato/poco sole).
+- **Attivazione:** Nell’editor, apri la sezione **PRO** e imposta:
+  - `solar_forecast_enabled: true`
+  - `sensor_solar_forecast: sensor.xxx` (il tuo sensore)
+  - `solar_forecast_max_power` (es. 10000 W)
+- **Posizione & stile:** Regola `solar_forecast_x`, `solar_forecast_y`, `solar_forecast_color` (default **#00FFFF**) e `solar_forecast_size`.
+- **Nota:** Se non compare, verifica che il sensore abbia un valore numerico e che il **Toggle testi** non stia nascondendo i testi.
+
+---
+
+#### 8. Sezione PRO (funzionalità extra)
 
 Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dalla sezione PRO dell’editor (supporto PayPal).
 
@@ -270,6 +300,9 @@ Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dal
 - **Testi personalizzati:**  
   Fino a **5 etichette** custom con eventuale valore da sensore, posizione, colore e dimensione font.
 
+- **Previsione solare:**  
+  Abilita **`solar_forecast_enabled`**, imposta **`sensor_solar_forecast`** e regola **`solar_forecast_max_power`**, posizione e colore (**default #00FFFF**).
+
 ---
 
 ### Riferimento rapido
@@ -282,6 +315,7 @@ Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dal
 | Toggle testi | **`enable_text_toggle_button`** | Mostra/nascondi tutti i testi (modalità pulita) |
 | Modalità batteria | **`battery_power_mode`** | `flow` o `charge_discharge` |
 | Stile animazioni | **`animation_style`** | `shimmer`, `dashes`, `dots`, `arrows` |
+| Previsione solare | Sezione **PRO** | Produzione stimata + sole olografico |
 | PRO (movimento, overlay, ecc.) | Sezione **PRO** + **`pro_password`** | Testi su movimento, overlay, flussi/testi custom |
 
 ---
@@ -292,6 +326,7 @@ Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dal
 - **Valori a zero:** Controlla gli entity ID e che le entità esistano e siano disponibili.
 - **Telecamere 403 / non caricano:** Le telecamere devono esporre `access_token` (la maggior parte delle integrazioni HA lo fa). Usa **■ Stop** prima di chiudere il popup telecamere.
 - **Editor lento:** Aumenta **`update_interval`** o riduci la frequenza di aggiornamento della dashboard.
+- **Immagini non scaricate con HACS:** HACS installa solo il file JavaScript (`.js`). Per usare gli sfondi predefiniti, scarica le immagini dalla cartella [**dist**](https://github.com/Giorgio866/lumina-energy-card/tree/main/dist) (es. `lumina_background.png`, `lumina_background1.png`), mettile in `/config/www/community/lumina-energy-card/` e ricarica la dashboard. Link diretti: [lumina_background.png](https://github.com/Giorgio866/lumina-energy-card/raw/main/dist/lumina_background.png), [lumina_background1.png](https://github.com/Giorgio866/lumina-energy-card/raw/main/dist/lumina_background1.png).
 
 ---
 
