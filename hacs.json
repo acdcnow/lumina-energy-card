@@ -1,6 +1,6 @@
 {
   "name": "Lumina Energy Card",
   "render_readme": true,
-  "zip_release": true,
-  "filename": "lumina-energy-card.js"
+  "filename": "lumina-energy-card.js",
+  "zip_release": true
 }
