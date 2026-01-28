@@ -1,7 +1,6 @@
 {
   "name": "Lumina Energy Card",
   "render_readme": true,
-  "content_in_root": false,
-  "filename": "dist/lumina-energy-card.js",
-  "homeassistant": "2025.1.0"
+  "zip_release": true,
+  "filename": "lumina-energy-card.js"
 }
