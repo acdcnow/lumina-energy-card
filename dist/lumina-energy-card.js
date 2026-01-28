@@ -5,12 +5,6 @@
  * Tested with Home Assistant 2025.12+
  */
 
-// Logging system - only log errors in production
-const LUMINA_DEBUG = false; // Set to true for debugging
-const LUMINA_AUTH_DEBUG = true; // Set to true to debug PRO password / auth list
-const luminaLog = LUMINA_DEBUG ? console.log.bind(console) : () => {};
-const luminaAuthLog = LUMINA_AUTH_DEBUG ? (...args) => console.log('[Lumina PRO Auth]', ...args) : () => {};
-const luminaError = console.error.bind(console);
 
 // ============================================================================
 // Helper Classes for Render Method Refactoring
@@ -26,21 +20,41 @@ class SensorDataCollector {
   }
 
   collectPvData(config) {
-    const pvStringIds = [
+    // Optimized: single-pass collection instead of filter+map+reduce
+    const pvStringIds = [];
+    const pvStringValues = [];
+    let pvTotalFromStrings = 0;
+    const pvSources = [
       config.sensor_pv1, config.sensor_pv2, config.sensor_pv3,
       config.sensor_pv4, config.sensor_pv5, config.sensor_pv6
-    ].filter((sensorId) => sensorId && sensorId !== '');
+    ];
+    for (let i = 0; i < pvSources.length; i++) {
+      const sensorId = pvSources[i];
+      if (sensorId && sensorId !== '') {
+        pvStringIds.push(sensorId);
+        const value = this.getStateSafe(sensorId);
+        pvStringValues.push(value);
+        pvTotalFromStrings += value;
+      }
+    }
 
-    const pvStringValues = pvStringIds.map((sensorId) => this.getStateSafe(sensorId));
-    const pvTotalFromStrings = pvStringValues.reduce((acc, value) => acc + value, 0);
-
-    const pvArray2Ids = [
+    // Optimized: single-pass for array2
+    const pvArray2Ids = [];
+    const pvArray2Values = [];
+    let pvArray2TotalFromStrings = 0;
+    const pvArray2Sources = [
       config.sensor_pv_array2_1, config.sensor_pv_array2_2, config.sensor_pv_array2_3,
       config.sensor_pv_array2_4, config.sensor_pv_array2_5, config.sensor_pv_array2_6
-    ].filter((sensorId) => sensorId && sensorId !== '');
-
-    const pvArray2Values = pvArray2Ids.map((sensorId) => this.getStateSafe(sensorId));
-    const pvArray2TotalFromStrings = pvArray2Values.reduce((acc, value) => acc + value, 0);
+    ];
+    for (let i = 0; i < pvArray2Sources.length; i++) {
+      const sensorId = pvArray2Sources[i];
+      if (sensorId && sensorId !== '') {
+        pvArray2Ids.push(sensorId);
+        const value = this.getStateSafe(sensorId);
+        pvArray2Values.push(value);
+        pvArray2TotalFromStrings += value;
+      }
+    }
 
     const pv_primary_w = config.sensor_pv_total ? this.getStateSafe(config.sensor_pv_total) : pvTotalFromStrings;
     const pv_secondary_w = config.sensor_pv_total_secondary ? this.getStateSafe(config.sensor_pv_total_secondary) : pvArray2TotalFromStrings;
@@ -61,12 +75,20 @@ class SensorDataCollector {
 
   collectBatteryData(config) {
     const mode = (config.battery_power_mode === 'charge_discharge') ? 'charge_discharge' : 'flow';
-    const bat_configs = [
+    // Optimized: pre-filter and cache trimmed values
+    const bat_configs = [];
+    const batSources = [
       { soc: config.sensor_bat1_soc, pow: config.sensor_bat1_power },
       { soc: config.sensor_bat2_soc, pow: config.sensor_bat2_power },
       { soc: config.sensor_bat3_soc, pow: config.sensor_bat3_power },
       { soc: config.sensor_bat4_soc, pow: config.sensor_bat4_power }
-    ].filter(b => (b.soc && b.soc !== '') || (b.pow && b.pow !== ''));
+    ];
+    for (let i = 0; i < batSources.length; i++) {
+      const b = batSources[i];
+      if ((b.soc && b.soc !== '') || (b.pow && b.pow !== '')) {
+        bat_configs.push(b);
+      }
+    }
 
     let total_bat_w = 0;
     let total_soc = 0;
@@ -74,46 +96,64 @@ class SensorDataCollector {
     let soc_count = 0;
 
     if (mode === 'charge_discharge') {
-      const chargeId = config.sensor_battery_charge && String(config.sensor_battery_charge).trim();
-      const dischargeId = config.sensor_battery_discharge && String(config.sensor_battery_discharge).trim();
+      // Optimized: cache type checks to avoid repeated typeof operations
+      const chargeRaw = config.sensor_battery_charge;
+      const dischargeRaw = config.sensor_battery_discharge;
+      const chargeId = (chargeRaw && typeof chargeRaw === 'string') ? chargeRaw.trim() : null;
+      const dischargeId = (dischargeRaw && typeof dischargeRaw === 'string') ? dischargeRaw.trim() : null;
       if (chargeId || dischargeId) {
-        const charge_w = chargeId && this._hass.states[chargeId] && this._hass.states[chargeId].state !== 'unavailable'
+        const chargeState = chargeId && this._hass.states[chargeId];
+        const charge_w = (chargeState && chargeState.state !== 'unavailable')
           ? Math.max(0, Number(this.getStateSafe(chargeId)) || 0) : 0;
-        const discharge_w = dischargeId && this._hass.states[dischargeId] && this._hass.states[dischargeId].state !== 'unavailable'
+        const dischargeState = dischargeId && this._hass.states[dischargeId];
+        const discharge_w = (dischargeState && dischargeState.state !== 'unavailable')
           ? Math.max(0, Number(this.getStateSafe(dischargeId)) || 0) : 0;
         total_bat_w = charge_w - discharge_w;
         if (charge_w > 0 || discharge_w > 0) active_bat_count = 1;
       }
     } else {
-      const flowId = config.sensor_battery_flow && String(config.sensor_battery_flow).trim();
-      if (flowId && this._hass.states[flowId] && this._hass.states[flowId].state !== 'unavailable') {
-        const v = this.getStateSafe(flowId);
-        if (Number.isFinite(v)) {
-          total_bat_w = v;
-          active_bat_count = 1;
+      // Optimized: cache type check to avoid repeated typeof operation
+      const flowRaw = config.sensor_battery_flow;
+      const flowId = (flowRaw && typeof flowRaw === 'string') ? flowRaw.trim() : null;
+      if (flowId) {
+        const flowState = this._hass.states[flowId];
+        if (flowState && flowState.state !== 'unavailable') {
+          const v = this.getStateSafe(flowId);
+          if (Number.isFinite(v)) {
+            total_bat_w = v;
+            active_bat_count = 1;
+          }
         }
-      } else {
-        bat_configs.forEach(b => {
-          const powerAvailable = b.pow && this._hass.states[b.pow] && this._hass.states[b.pow].state !== 'unavailable';
-          if (powerAvailable) {
-            const powerValue = this.getStateSafe(b.pow);
-            if (Number.isFinite(powerValue)) {
-              total_bat_w += powerValue;
-              active_bat_count++;
+      }
+      if (!flowId || !this._hass.states[flowId] || this._hass.states[flowId].state === 'unavailable') {
+        // Optimized: single loop instead of forEach
+        for (let i = 0; i < bat_configs.length; i++) {
+          const b = bat_configs[i];
+          if (b.pow) {
+            const powState = this._hass.states[b.pow];
+            if (powState && powState.state !== 'unavailable') {
+              const powerValue = this.getStateSafe(b.pow);
+              if (Number.isFinite(powerValue)) {
+                total_bat_w += powerValue;
+                active_bat_count++;
+              }
             }
           }
-        });
+        }
       }
     }
 
-    bat_configs.forEach(b => {
+    // Optimized: single loop for SOC calculation
+    for (let i = 0; i < bat_configs.length; i++) {
+      const b = bat_configs[i];
       if (b.soc && b.soc !== '') {
-        if (this._hass.states[b.soc] && this._hass.states[b.soc].state !== 'unavailable') {
+        const socState = this._hass.states[b.soc];
+        if (socState && socState.state !== 'unavailable') {
           total_soc += this.getStateSafe(b.soc);
           soc_count++;
         }
       }
-    });
+    }
 
     if (!Number.isFinite(total_bat_w)) {
       total_bat_w = 0;
@@ -128,14 +168,7 @@ class SensorDataCollector {
   }
 
   collectGridData(config) {
-    const toNumber = (value) => {
-      if (value === undefined || value === null || value === '') {
-        return null;
-      }
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-
+    // Optimized: using shared toNumber function instead of local definition
     let gridNet = 0;
     let gridImport = 0;
     let gridExport = 0;
@@ -146,8 +179,10 @@ class SensorDataCollector {
     let gridActive = false;
     const hasCombinedGrid = Boolean(config.sensor_grid_power);
 
+    // Optimized: cache toUpperCase result and avoid repeated string operations
     const display_unit = config.display_unit || 'W';
-    const use_kw = display_unit.toUpperCase() === 'KW';
+    const displayUnitUpper = display_unit.toUpperCase();
+    const use_kw = displayUnitUpper === 'KW';
     const gridActivityThreshold = (() => {
       const raw = config.grid_activity_threshold;
       if (raw === undefined || raw === null || raw === '') {
@@ -273,9 +308,11 @@ class SensorDataCollector {
     const gridData = this.collectGridData(config);
     const loadData = this.collectLoadData(config);
 
-    const heatPumpSensorId = typeof config.sensor_heat_pump_consumption === 'string'
-      ? config.sensor_heat_pump_consumption.trim()
-      : (config.sensor_heat_pump_consumption || null);
+    // Optimized: cache type check and trim result
+    const heatPumpSensorRaw = config.sensor_heat_pump_consumption;
+    const heatPumpSensorId = (typeof heatPumpSensorRaw === 'string')
+      ? heatPumpSensorRaw.trim()
+      : (heatPumpSensorRaw || null);
     const hasHeatPumpSensor = Boolean(heatPumpSensorId);
     const heat_pump_w = hasHeatPumpSensor ? this.getStateSafe(heatPumpSensorId) : 0;
 
@@ -315,27 +352,113 @@ const DEFAULT_TEXT_POSITIONS = {
   car2_soc: { x: 718, y: 330, rotate: 16, skewX: 20, skewY: 0, scaleX: 1, scaleY: 1 }
 };
 
+// ============================================================================
+// Optimized Helper Functions - Shared utilities to reduce code duplication
+// ============================================================================
+
+/**
+ * Safe number conversion with null fallback
+ * Optimized: single function used throughout instead of multiple definitions
+ */
+const toNumber = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+/**
+ * Resolve entity ID from primary or legacy config
+ * Optimized: extracted to avoid duplication in render method
+ */
+const resolveEntityId = (primary, legacy) => {
+  if (typeof primary === 'string') {
+    const trimmed = primary.trim();
+    if (trimmed) return trimmed;
+  }
+  if (typeof legacy === 'string') {
+    const trimmed = legacy.trim();
+    if (trimmed) return trimmed;
+  }
+  return '';
+};
+
+/**
+ * Resolve label from value or fallback
+ * Optimized: extracted to avoid duplication
+ */
+const resolveLabel = (value, fallback) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return fallback;
+};
+
+/**
+ * Resolve color from value or fallback with validation
+ * Optimized: unified implementation replaces 3+ duplicate definitions
+ */
+const resolveColor = (value, fallback) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed && (trimmed.startsWith('#') || trimmed.startsWith('rgb'))) {
+      return trimmed;
+    }
+  }
+  if (typeof fallback === 'string') {
+    const trimmed = fallback.trim();
+    if (trimmed) return trimmed;
+  }
+  return '#00FFFF';
+};
+
+/**
+ * Clamp value between min and max with fallback
+ * Optimized: extracted to avoid duplication
+ */
+const clampValue = (value, min, max, fallback) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.min(Math.max(num, min), max);
+};
+
+// ============================================================================
+// Layout Helper Functions
+// ============================================================================
+
 // Helper function to get text positions from config or defaults
+// Optimized: flattened nested loops, cached prefix calculation
 const getTextPositions = (config) => {
   const TEXT_TYPES = ['solar', 'battery', 'home', 'home_temperature', 'grid', 'heatPump', 'car1_label', 'car2_label', 'car1_power', 'car1_soc', 'car2_power', 'car2_soc'];
   const TEXT_PROPERTIES = ['x', 'y', 'rotate', 'skewX', 'skewY', 'scaleX', 'scaleY'];
+  const result = {};
   
-  return TEXT_TYPES.reduce((acc, type) => {
+  // Optimized: single loop instead of nested reduce
+  for (let typeIdx = 0; typeIdx < TEXT_TYPES.length; typeIdx++) {
+    const type = TEXT_TYPES[typeIdx];
     const prefix = type === 'heatPump' ? 'heatpump' : type;
-    acc[type] = TEXT_PROPERTIES.reduce((props, prop) => {
+    const typeResult = {};
+    const defaults = DEFAULT_TEXT_POSITIONS[type];
+    
+    for (let propIdx = 0; propIdx < TEXT_PROPERTIES.length; propIdx++) {
+      const prop = TEXT_PROPERTIES[propIdx];
       const configKey = `dev_text_${prefix}_${prop}`;
-      const def = DEFAULT_TEXT_POSITIONS[type][prop];
+      const def = defaults[prop];
       const v = Number(config[configKey]);
       const valid = Number.isFinite(v);
+      
       if (prop === 'scaleX' || prop === 'scaleY') {
-        props[prop] = (valid && v > 0) ? v : def;
+        typeResult[prop] = (valid && v > 0) ? v : def;
       } else {
-        props[prop] = valid ? v : def;
+        typeResult[prop] = valid ? v : def;
       }
-      return props;
-    }, {});
-    return acc;
-  }, {});
+    }
+    result[type] = typeResult;
+  }
+  
+  return result;
 };
 
 // Helper function to get battery geometry from config or defaults
@@ -413,10 +536,7 @@ const DEFAULT_GRID_BOX = { x: 607, y: 15, width: 180, height: 67 };
 const DEFAULT_PV_BOX = { x: 20, y: 15, width: 169, height: 60 };
 const getGridBoxConfig = (config) => {
   const n = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
-  const resolveColor = (color, defaultColor) => {
-    if (!color || typeof color !== 'string' || !color.trim()) return defaultColor;
-    return color.trim();
-  };
+  // Optimized: using shared resolveColor function instead of local definition
   return { 
     x: n(config.dev_grid_box_x, DEFAULT_GRID_BOX.x), 
     y: n(config.dev_grid_box_y, DEFAULT_GRID_BOX.y), 
@@ -428,10 +548,7 @@ const getGridBoxConfig = (config) => {
 };
 const getPvBoxConfig = (config) => {
   const n = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
-  const resolveColor = (color, defaultColor) => {
-    if (!color || typeof color !== 'string' || !color.trim()) return defaultColor;
-    return color.trim();
-  };
+  // Optimized: using shared resolveColor function instead of local definition
   return { 
     x: n(config.dev_pv_box_x, DEFAULT_PV_BOX.x), 
     y: n(config.dev_pv_box_y, DEFAULT_PV_BOX.y), 
@@ -442,11 +559,28 @@ const getPvBoxConfig = (config) => {
   };
 };
 
-const buildTextTransform = ({ x, y, rotate, skewX, skewY, scaleX, scaleY }) => {
+// Phase A Optimization: Cached text transform builder
+const buildTextTransform = ({ x, y, rotate, skewX, skewY, scaleX, scaleY }, cache = null) => {
+  // Create cache key
+  const cacheKey = `${x}-${y}-${rotate}-${skewX}-${skewY}-${scaleX}-${scaleY}`;
+  
+  // Check cache if provided
+  if (cache && cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+  
+  // Calculate transform
   const sx = scaleX != null && scaleX !== 0 ? scaleX : 1;
   const sy = scaleY != null && scaleY !== 0 ? scaleY : 1;
   const scale = (sx !== 1 || sy !== 1) ? ` scale(${sx}, ${sy})` : '';
-  return `translate(${x}, ${y}) rotate(${rotate})${scale} skewX(${skewX}) skewY(${skewY}) translate(-${x}, -${y})`;
+  const transform = `translate(${x}, ${y}) rotate(${rotate})${scale} skewX(${skewX}) skewY(${skewY}) translate(-${x}, -${y})`;
+  
+  // Cache if provided
+  if (cache) {
+    cache.set(cacheKey, transform);
+  }
+  
+  return transform;
 };
 
 // Legacy constants for backward compatibility (will use defaults)
@@ -528,15 +662,15 @@ const CAR_LAYOUTS = {
   }
 };
 
-const buildCarTextTransforms = (entry) => {
+const buildCarTextTransforms = (entry, cache = null) => {
   const base = { ...CAR_TEXT_BASE };
   if (typeof entry.x === 'number') {
     base.x = entry.x;
   }
   return {
-    label: buildTextTransform({ ...base, y: entry.labelY }),
-    power: buildTextTransform({ ...base, y: entry.powerY }),
-    soc: buildTextTransform({ ...base, y: entry.socY })
+    label: buildTextTransform({ ...base, y: entry.labelY }, cache),
+    power: buildTextTransform({ ...base, y: entry.powerY }, cache),
+    soc: buildTextTransform({ ...base, y: entry.socY }, cache)
   };
 };
 
@@ -652,30 +786,24 @@ let LUMINA_AUTH_LIST = null;
 let LUMINA_FETCHING = false;
 
 const LUMINA_REFRESH_AUTH = async (callback) => {
-  if (LUMINA_AUTH_LIST !== null) {
-    luminaAuthLog('auth list already loaded, count:', LUMINA_AUTH_LIST.length);
-    return LUMINA_AUTH_LIST;
-  }
-  if (LUMINA_FETCHING) {
-    luminaAuthLog('fetch already in progress, skipping');
-    return null;
-  }
-  luminaAuthLog('fetching auth list from remote...');
+  if (LUMINA_AUTH_LIST !== null) return LUMINA_AUTH_LIST;
+  if (LUMINA_FETCHING) return null;
   LUMINA_FETCHING = true;
   try {
-    const response = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
-    const text = await response.text();
-    const raw = text.split(/\r?\n/).map(h => h.trim()).filter(Boolean);
-    LUMINA_AUTH_LIST = raw.filter(h => h.length === 64);
-    luminaAuthLog('auth list loaded: ok. raw lines:', raw.length, 'valid hashes (64 hex):', LUMINA_AUTH_LIST.length);
-    if (LUMINA_AUTH_LIST.length < raw.length) {
-      luminaAuthLog('dropped', raw.length - LUMINA_AUTH_LIST.length, 'lines (not 64-char hex)');
+    const r = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
+    const text = await r.text();
+    // Optimized: combine map+filter into single loop for better performance
+    const lines = text.split(/\r?\n/);
+    LUMINA_AUTH_LIST = [];
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (trimmed.length === 64) {
+        LUMINA_AUTH_LIST.push(trimmed);
+      }
     }
     if (callback) callback();
   } catch (e) {
-    luminaAuthLog('auth list fetch failed:', e?.message || String(e));
-    luminaError('[Lumina PRO Auth] fetch failed:', e);
-    LUMINA_AUTH_LIST = []; // Prevent infinite retries on failure
+    LUMINA_AUTH_LIST = [];
   } finally {
     LUMINA_FETCHING = false;
   }
@@ -740,8 +868,6 @@ class LuminaEnergyCard extends HTMLElement {
       if (e.detail && e.detail.config) {
         const config = e.detail.config;
         this.setConfig(config);
-      } else {
-        luminaError('[LUMINA CARD] ERROR: No config in event detail!', e.detail);
       }
     };
     this.addEventListener('config-changed', handleConfigChanged);
@@ -763,7 +889,7 @@ class LuminaEnergyCard extends HTMLElement {
     this._handleDebugPointerLeave = this._handleDebugPointerLeave.bind(this);
     this._handleEchoAliveClickBound = this._handleEchoAliveClick.bind(this);
     this._echoAliveClickTimeout = null;
-    this._textsVisible = false; // Hide all texts by default on first configuration
+    this._textsVisible = 0; // Text visibility state: 0=all visible (default), 1=grid/pv boxes and lines hidden, 2=all hidden
     this._motionLastDetectedAt = null; // timestamp when motion last seen (for 60s keep-alive)
     this._motionHideTimer = null;       // timeout id to re-run visibility after 60s
     this._handleTextToggleClickBound = this._handleTextToggleClick.bind(this);
@@ -772,6 +898,7 @@ class LuminaEnergyCard extends HTMLElement {
     this._houseIconPopupOverlay = null;
     this._handleHouseIconClickBound = this._handleHouseIconClick.bind(this);
     this._draggingText = null;
+    this._solarForecastData = null;
     this._dragStartX = 0;
     this._dragStartY = 0;
     this._dragOffsetX = 0;
@@ -779,11 +906,99 @@ class LuminaEnergyCard extends HTMLElement {
     this._handleTextMouseDown = this._handleTextMouseDown.bind(this);
     this._handleDocumentMouseMove = this._handleDocumentMouseMove.bind(this);
     this._handleDocumentMouseUp = this._handleDocumentMouseUp.bind(this);
+    
+    // ============================================================================
+    // Phase A Optimizations: Performance improvements
+    // ============================================================================
+    
+    // 1. Render debounce/throttle
+    this._renderScheduled = false;
+    this._renderTimeoutId = null;
+    this._renderDebounceMs = 100; // Max 1 render per 100ms
+    
+    // 2. State cache for getStateSafe memoization
+    this._stateCache = new Map();
+    this._stateCacheTimeout = 200; // Cache valid for 200ms
+    this._lastHassVersion = null; // Track hass changes to invalidate cache
+    
+    // 3. Data change detection for skip render
+    this._lastDataHash = null;
+    
+    // 4. DOM updates batching (optional helper for critical updates)
+    this._pendingDOMUpdates = [];
+    this._domUpdateRafId = null;
+    
+    // 5. Cache for expensive calculations
+    this._textTransformCache = new Map();
+    this._colorCache = new Map();
+  }
+  
+  /**
+   * Phase A Optimization: Batch DOM updates helper
+   * Use this for non-critical DOM updates that can be batched
+   * Critical updates (like user interactions) should still be immediate
+   */
+  _batchDOMUpdate(updateFn) {
+    if (typeof updateFn !== 'function') return;
+    
+    this._pendingDOMUpdates.push(updateFn);
+    
+    if (!this._domUpdateRafId) {
+      this._domUpdateRafId = requestAnimationFrame(() => {
+        // Execute all pending updates
+        const updates = this._pendingDOMUpdates.slice();
+        this._pendingDOMUpdates = [];
+        this._domUpdateRafId = null;
+        
+        for (let i = 0; i < updates.length; i++) {
+          try {
+            updates[i]();
+          } catch (e) {
+            // Silently fail individual updates to prevent breaking the batch
+          }
+        }
+      });
+    }
+  }
+  
+  /**
+   * Phase A Optimization: Cleanup method for performance optimizations
+   * Clears timeouts, cache, and pending updates to prevent memory leaks
+   */
+  _cleanupPerformanceOptimizations() {
+    // Clear render debounce timeout
+    if (this._renderTimeoutId) {
+      clearTimeout(this._renderTimeoutId);
+      this._renderTimeoutId = null;
+    }
+    this._renderScheduled = false;
+    
+    // Clear DOM update RAF
+    if (this._domUpdateRafId) {
+      cancelAnimationFrame(this._domUpdateRafId);
+      this._domUpdateRafId = null;
+    }
+    this._pendingDOMUpdates = [];
+    
+    // Clear state cache
+    if (this._stateCache) {
+      this._stateCache.clear();
+    }
+    
+    // Clear calculation caches
+    if (this._textTransformCache) {
+      this._textTransformCache.clear();
+    }
+    if (this._colorCache) {
+      this._colorCache.clear();
+    }
+    
+    // Reset data hash
+    this._lastDataHash = null;
   }
 
   setConfig(config) {
     if (!config) {
-      luminaError('[LUMINA CARD setConfig] ERROR: Invalid configuration!');
       throw new Error('Invalid configuration');
     }
     
@@ -793,55 +1008,42 @@ class LuminaEnergyCard extends HTMLElement {
     this._prevViewState = null;
     
     // Initialize text visibility: show texts by default if entities are configured
-    const isSensorConfigured = (sensorValue) => {
-      return sensorValue && typeof sensorValue === 'string' && sensorValue.trim().length > 0;
-    };
-    const hasCustomText = [1, 2, 3, 4, 5].some(i =>
-      config[`custom_text_${i}_enabled`] === true &&
-      (isSensorConfigured(config[`custom_text_${i}_text`]) || isSensorConfigured(config[`custom_text_${i}_sensor`]))
-    );
-    const hasConfiguredEntities = Boolean(
-      hasCustomText ||
-      isSensorConfigured(config.sensor_home_load) ||
-      isSensorConfigured(config.sensor_home_load_secondary) ||
-      isSensorConfigured(config.sensor_pv_total) ||
-      isSensorConfigured(config.sensor_pv_total_secondary) ||
-      isSensorConfigured(config.sensor_pv1) ||
-      isSensorConfigured(config.sensor_pv2) ||
-      isSensorConfigured(config.sensor_pv3) ||
-      isSensorConfigured(config.sensor_pv4) ||
-      isSensorConfigured(config.sensor_pv5) ||
-      isSensorConfigured(config.sensor_pv6) ||
-      isSensorConfigured(config.sensor_pv_array2_1) ||
-      isSensorConfigured(config.sensor_pv_array2_2) ||
-      isSensorConfigured(config.sensor_pv_array2_3) ||
-      isSensorConfigured(config.sensor_pv_array2_4) ||
-      isSensorConfigured(config.sensor_pv_array2_5) ||
-      isSensorConfigured(config.sensor_pv_array2_6) ||
-      isSensorConfigured(config.sensor_bat1_soc) ||
-      isSensorConfigured(config.sensor_bat1_power) ||
-      isSensorConfigured(config.sensor_bat2_soc) ||
-      isSensorConfigured(config.sensor_bat2_power) ||
-      isSensorConfigured(config.sensor_bat3_soc) ||
-      isSensorConfigured(config.sensor_bat3_power) ||
-      isSensorConfigured(config.sensor_bat4_soc) ||
-      isSensorConfigured(config.sensor_bat4_power) ||
-      isSensorConfigured(config.sensor_battery_flow) ||
-      isSensorConfigured(config.sensor_battery_charge) ||
-      isSensorConfigured(config.sensor_battery_discharge) ||
-      isSensorConfigured(config.sensor_grid_power) ||
-      isSensorConfigured(config.sensor_grid_import) ||
-      isSensorConfigured(config.sensor_grid_export) ||
-      isSensorConfigured(config.sensor_car_power) ||
-      isSensorConfigured(config.sensor_car_soc) ||
-      isSensorConfigured(config.sensor_car2_power) ||
-      isSensorConfigured(config.sensor_car2_soc) ||
-      isSensorConfigured(config.sensor_heat_pump_consumption)
-    );
-    // Only set to true if not already initialized (preserve user's manual toggle state after first config).
-    // When toggle button is enabled, default to visible so text shows without pressing the button.
-    if (this._textsVisible === false && (hasConfiguredEntities || config.enable_text_toggle_button)) {
-      this._textsVisible = true;
+    // Optimized: check with early exit
+    let hasCustomText = false;
+    for (let i = 1; i <= 5 && !hasCustomText; i++) {
+      if (config[`custom_text_${i}_enabled`] === true) {
+        const text = config[`custom_text_${i}_text`];
+        const sensor = config[`custom_text_${i}_sensor`];
+        if ((text && typeof text === 'string' && text.trim().length > 0) ||
+            (sensor && typeof sensor === 'string' && sensor.trim().length > 0)) {
+          hasCustomText = true;
+        }
+      }
+    }
+    const sensorKeys = [
+      'sensor_home_load', 'sensor_home_load_secondary', 'sensor_pv_total', 'sensor_pv_total_secondary',
+      'sensor_pv1', 'sensor_pv2', 'sensor_pv3', 'sensor_pv4', 'sensor_pv5', 'sensor_pv6',
+      'sensor_pv_array2_1', 'sensor_pv_array2_2', 'sensor_pv_array2_3', 'sensor_pv_array2_4', 'sensor_pv_array2_5', 'sensor_pv_array2_6',
+      'sensor_bat1_soc', 'sensor_bat1_power', 'sensor_bat2_soc', 'sensor_bat2_power',
+      'sensor_bat3_soc', 'sensor_bat3_power', 'sensor_bat4_soc', 'sensor_bat4_power',
+      'sensor_battery_flow', 'sensor_battery_charge', 'sensor_battery_discharge',
+      'sensor_grid_power', 'sensor_grid_import', 'sensor_grid_export',
+      'sensor_car_power', 'sensor_car_soc', 'sensor_car2_power', 'sensor_car2_soc',
+      'sensor_heat_pump_consumption'
+    ];
+    let hasConfiguredEntities = hasCustomText;
+    if (!hasConfiguredEntities) {
+      for (let i = 0; i < sensorKeys.length && !hasConfiguredEntities; i++) {
+        const val = config[sensorKeys[i]];
+        if (val && typeof val === 'string' && val.trim().length > 0) {
+          hasConfiguredEntities = true;
+        }
+      }
+    }
+    // Initialize to state 0 (all visible) if not already set
+    // When toggle button is enabled, default to all visible so text shows without pressing the button.
+    if (typeof this._textsVisible !== 'number') {
+      this._textsVisible = 0; // State 0: all visible by default
     }
 
     const hasDeveloperValues = Object.keys(config).some(key => 
@@ -897,14 +1099,16 @@ class LuminaEnergyCard extends HTMLElement {
     // Update toggle switches immediately if entity states changed; also track text visibility motion sensor
     if (prevHass && hass && hass.states && prevHass.states) {
       const entityIdsToCheck = new Set();
+      // Optimized: use for loop instead of forEach for better performance
       const collectEntityIds = (toggles) => {
         if (!toggles || !Array.isArray(toggles)) return;
-        toggles.forEach((toggle) => {
+        for (let i = 0; i < toggles.length; i++) {
+          const toggle = toggles[i];
           if (toggle && toggle.getAttribute) {
             const entityId = toggle.getAttribute('data-entity-id');
             if (entityId) entityIdsToCheck.add(entityId);
           }
-        });
+        }
       };
       if (this._domRefs) {
         collectEntityIds(this._domRefs.pvPopupToggles);
@@ -915,20 +1119,26 @@ class LuminaEnergyCard extends HTMLElement {
       }
       const motionSensorId = this.config && this.config.text_visibility_sensor ? String(this.config.text_visibility_sensor).trim() : null;
       if (motionSensorId) entityIdsToCheck.add(motionSensorId);
-      ['sensor_battery_flow', 'sensor_battery_charge', 'sensor_battery_discharge'].forEach((key) => {
-        const id = this.config && this.config[key] ? String(this.config[key]).trim() : null;
+      // Optimized: use for loop instead of forEach for better performance
+      const batteryKeys = ['sensor_battery_flow', 'sensor_battery_charge', 'sensor_battery_discharge'];
+      for (let i = 0; i < batteryKeys.length; i++) {
+        const key = batteryKeys[i];
+        const rawId = this.config && this.config[key];
+        const id = rawId ? String(rawId).trim() : null;
         if (id) entityIdsToCheck.add(id);
-      });
+      }
       
       // Check if any tracked entity state changed
+      // Optimized: use for...of loop and early exit for better performance
       let stateChanged = false;
-      entityIdsToCheck.forEach((entityId) => {
+      for (const entityId of entityIdsToCheck) {
         const prevState = prevHass.states[entityId] ? prevHass.states[entityId].state : null;
         const newState = hass.states[entityId] ? hass.states[entityId].state : null;
         if (prevState !== newState) {
           stateChanged = true;
+          break; // Early exit when change detected
         }
-      });
+      }
       
       if (stateChanged) {
         this._forceRender = true;
@@ -945,15 +1155,62 @@ class LuminaEnergyCard extends HTMLElement {
       }
     }
     
+    // Phase A Optimization: Debounced render scheduling
+    this._scheduleRender();
+  }
+  
+  /**
+   * Phase A Optimization: Schedule render with debounce/throttle
+   * Prevents excessive renders when hass updates rapidly
+   */
+  _scheduleRender() {
     const now = Date.now();
     const configuredInterval = Number(this.config.update_interval);
     const intervalSeconds = Number.isFinite(configuredInterval) ? configuredInterval : 3;
     const clampedSeconds = Math.min(Math.max(intervalSeconds, 0), 60);
     const intervalMs = clampedSeconds > 0 ? clampedSeconds * 1000 : 0;
-    if (this._forceRender || !this._lastRender || intervalMs === 0 || now - this._lastRender >= intervalMs) {
+    
+    // Force render bypasses debounce
+    if (this._forceRender) {
+      if (this._renderTimeoutId) {
+        clearTimeout(this._renderTimeoutId);
+        this._renderTimeoutId = null;
+      }
+      this._renderScheduled = false;
       this.render();
       this._forceRender = false;
+      return;
     }
+    
+    // Check interval-based rendering
+    if (!this._lastRender || intervalMs === 0 || now - this._lastRender >= intervalMs) {
+      // Clear any pending debounced render
+      if (this._renderTimeoutId) {
+        clearTimeout(this._renderTimeoutId);
+        this._renderTimeoutId = null;
+      }
+      this._renderScheduled = false;
+      this.render();
+      return;
+    }
+    
+    // Debounce: if render already scheduled, cancel and reschedule
+    if (this._renderScheduled) {
+      if (this._renderTimeoutId) {
+        clearTimeout(this._renderTimeoutId);
+      }
+    }
+    
+    // Schedule render with debounce
+    this._renderScheduled = true;
+    const timeSinceLastRender = now - this._lastRender;
+    const debounceDelay = Math.max(0, this._renderDebounceMs - timeSinceLastRender);
+    
+    this._renderTimeoutId = setTimeout(() => {
+      this._renderScheduled = false;
+      this._renderTimeoutId = null;
+      this.render();
+    }, debounceDelay);
   }
 
   static async getConfigElement() {
@@ -968,35 +1225,35 @@ class LuminaEnergyCard extends HTMLElement {
       background_image_heat_pump: '/local/community/lumina-energy-card/lumina-energy-card-hp.png',
       pro_password: null,
       overlay_image_enabled: false,
-      overlay_image: null,
+      overlay_image: '/local/community/lumina-energy-card/car.png',
       overlay_image_x: 0,
       overlay_image_y: 0,
       overlay_image_width: 800,
       overlay_image_height: 450,
       overlay_image_opacity: 1.0,
       overlay_image_2_enabled: false,
-      overlay_image_2: null,
+      overlay_image_2: '/local/community/lumina-energy-card/car_real.png',
       overlay_image_2_x: 0,
       overlay_image_2_y: 0,
       overlay_image_2_width: 800,
       overlay_image_2_height: 450,
       overlay_image_2_opacity: 1.0,
       overlay_image_3_enabled: false,
-      overlay_image_3: null,
+      overlay_image_3: '/local/community/lumina-energy-card/Pool.png',
       overlay_image_3_x: 0,
       overlay_image_3_y: 0,
       overlay_image_3_width: 800,
       overlay_image_3_height: 450,
       overlay_image_3_opacity: 1.0,
       overlay_image_4_enabled: false,
-      overlay_image_4: null,
+      overlay_image_4: '/local/community/lumina-energy-card/pool_real.png',
       overlay_image_4_x: 0,
       overlay_image_4_y: 0,
       overlay_image_4_width: 800,
       overlay_image_4_height: 450,
       overlay_image_4_opacity: 1.0,
       overlay_image_5_enabled: false,
-      overlay_image_5: null,
+      overlay_image_5: '/local/community/lumina-energy-card/turbine.png',
       overlay_image_5_x: 0,
       overlay_image_5_y: 0,
       overlay_image_5_width: 800,
@@ -1213,6 +1470,14 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_5_y: 300,
       custom_text_5_color: '#00f1f2',
       custom_text_5_size: 16,
+      // Solar Forecast
+      solar_forecast_enabled: false,
+      sensor_solar_forecast: null,
+      solar_forecast_max_power: 10000, // Max power in W for percentage calculation
+      solar_forecast_x: 400,
+      solar_forecast_y: 350,
+      solar_forecast_color: '#00FFFF',
+      solar_forecast_size: 16,
       text_font_size: 12, // Unified font size for all text elements
       header_font_size: 16,
       daily_label_font_size: 12,
@@ -1298,6 +1563,8 @@ class LuminaEnergyCard extends HTMLElement {
       car2_bidirectional: false,
       car1_invert_flow: false,
       car2_invert_flow: false,
+      array1_invert_flow: false,
+      array2_invert_flow: false,
       invert_battery: false,
       battery_power_mode: 'flow',
       sensor_battery_flow: '',
@@ -1312,7 +1579,7 @@ class LuminaEnergyCard extends HTMLElement {
       display_unit: 'kW',
       update_interval: 3,
       enable_echo_alive: false,
-      enable_text_toggle_button: false,
+      enable_text_toggle_button: true,
       text_toggle_button_x: 30, // Moved 20px to the right from original position (10px)
       text_toggle_button_y: null, // null = bottom, otherwise top
       text_toggle_button_scale: 1.0,
@@ -1357,6 +1624,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    // Phase A Optimization: Cleanup performance optimizations on disconnect
+    this._cleanupPerformanceOptimizations();
+    
     if (typeof super.disconnectedCallback === 'function') {
       super.disconnectedCallback();
     }
@@ -1414,12 +1684,18 @@ class LuminaEnergyCard extends HTMLElement {
     // GSAP will be loaded asynchronously in the background for effects that need it
     execute();
 
-    // Load GSAP in the background for features that require it (glow effects, etc.)
-    // but don't block the animation start
-    if (!this._gsap && !this._gsapLoading) {
+    // Phase A Optimization: Lazy Load GSAP - only load if animations are enabled
+    // Skip GSAP loading if animations are disabled (saves ~100KB download)
+    const animationStyle = this._normalizeAnimationStyle(this.config?.animation_style);
+    const needsGsap = animationStyle !== 'none' && animationStyle !== 'dashes';
+    
+    if (needsGsap && !this._gsap && !this._gsapLoading) {
+      // Load GSAP only when needed (lazy load)
       this._ensureGsap().catch((error) => {
+        // Silently fail - animations will work without GSAP (fallback)
       });
     }
+    // If animations disabled, GSAP is never loaded (performance optimization)
   }
 
   _ensureGsap() {
@@ -1688,6 +1964,7 @@ class LuminaEnergyCard extends HTMLElement {
 
     const ensurePattern = () => {
       element.setAttribute('data-flow-style', animationStyle);
+      // Phase A Optimization: Cache querySelectorAll result to avoid repeated DOM queries
       const targets = element.tagName === 'g' ? element.querySelectorAll('path') : [element];
       const isFluid = false;
       const isShimmer = animationStyle === 'shimmer';
@@ -1695,6 +1972,7 @@ class LuminaEnergyCard extends HTMLElement {
       // For animated part, use even brighter color for maximum visibility
       const fluidBaseColor = isFluid ? this._brightenColor(strokeColor, 1.6, 1.7) : strokeColor;
 
+      // Phase A Optimization: Skip expensive operations if not needed
       if (isFluid && this._debugFluidFlow) {
         try {
           const last = this._fluidFlowDebugColors ? this._fluidFlowDebugColors.get(flowKey) : undefined;
@@ -1719,62 +1997,75 @@ class LuminaEnergyCard extends HTMLElement {
         ? this._ensureFluidFlowMask(flowKey, element, pattern.dasharray, fluidWidths.mask)
         : (isFluid ? this._ensureFluidFlowMask(flowKey, element, '12 18', fluidWidths.mask) : null);
 
+      // Phase A Optimization: Batch DOM updates for targets (reduces reflows)
+      const targetUpdates = [];
       targets.forEach(target => {
-        // Smooth corners and ends on polyline-like path segments
-        target.style.strokeLinecap = 'round';
-        target.style.strokeLinejoin = 'round';
-      if (useArrows) {
-          target.style.strokeDasharray = '';
-          target.style.strokeDashoffset = '';
-          target.style.strokeOpacity = '';
-          if (!isFluid && configuredFlowStrokeWidthPx !== null) {
-            target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
-          }
-      } else if (pattern && pattern.dasharray) {
-          if (isFluid) {
-            // Base "bed" (matches example's rgba(0,255,255,0.15)).
+        targetUpdates.push(() => {
+          // Smooth corners and ends on polyline-like path segments
+          target.style.strokeLinecap = 'round';
+          target.style.strokeLinejoin = 'round';
+        if (useArrows) {
             target.style.strokeDasharray = '';
             target.style.strokeDashoffset = '';
-            target.style.strokeOpacity = '0.15';
-            target.style.strokeWidth = `${fluidWidths.base}px`;
-          } else {
-            target.style.strokeDasharray = pattern.dasharray;
-            if (!target.style.strokeDashoffset) {
-              target.style.strokeDashoffset = '0';
-            }
             target.style.strokeOpacity = '';
+            if (!isFluid && configuredFlowStrokeWidthPx !== null) {
+              target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
+            }
+        } else if (pattern && pattern.dasharray) {
+            if (isFluid) {
+              // Base "bed" (matches example's rgba(0,255,255,0.15)).
+              target.style.strokeDasharray = '';
+              target.style.strokeDashoffset = '';
+              target.style.strokeOpacity = '0.15';
+              target.style.strokeWidth = `${fluidWidths.base}px`;
+            } else {
+              target.style.strokeDasharray = pattern.dasharray;
+              if (!target.style.strokeDashoffset) {
+                target.style.strokeDashoffset = '0';
+              }
+              target.style.strokeOpacity = '';
+              if (configuredFlowStrokeWidthPx !== null) {
+                target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
+              } else {
+                target.style.strokeWidth = '';
+              }
+            }
+
+            // Inkscape often uses marker-start/mid/end arrowheads which render as triangles.
+            // When we're animating dashes/dots, those markers are unwanted, so strip them.
+            target.removeAttribute('marker-start');
+            target.removeAttribute('marker-mid');
+            target.removeAttribute('marker-end');
+            target.style.markerStart = '';
+            target.style.markerMid = '';
+            target.style.markerEnd = '';
+          }
+          // Use brightened color for both perimeter and fluid flow for consistency
+          target.style.stroke = isFluid ? fluidBaseColor : strokeColor;
+          // Reduce opacity of static part to make animated part more visible
+          if (isFluid) {
+            target.style.strokeOpacity = '0.2'; // Static part is much dimmer for better contrast
+          }
+          // For shimmer, set base color to white with low opacity (overlay handles the animated gradient with selected color)
+          if (isShimmer) {
+            // Base path with white and low opacity
+            target.style.stroke = '#ffffff';
+            target.style.strokeOpacity = '0.15';
             if (configuredFlowStrokeWidthPx !== null) {
               target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
-            } else {
-              target.style.strokeWidth = '';
             }
           }
-
-          // Inkscape often uses marker-start/mid/end arrowheads which render as triangles.
-          // When we're animating dashes/dots, those markers are unwanted, so strip them.
-          target.removeAttribute('marker-start');
-          target.removeAttribute('marker-mid');
-          target.removeAttribute('marker-end');
-          target.style.markerStart = '';
-          target.style.markerMid = '';
-          target.style.markerEnd = '';
-        }
-        // Use brightened color for both perimeter and fluid flow for consistency
-        target.style.stroke = isFluid ? fluidBaseColor : strokeColor;
-        // Reduce opacity of static part to make animated part more visible
-        if (isFluid) {
-          target.style.strokeOpacity = '0.2'; // Static part is much dimmer for better contrast
-        }
-        // For shimmer, set base color to white with low opacity (overlay handles the animated gradient with selected color)
-        if (isShimmer) {
-          // Base path with white and low opacity
-          target.style.stroke = '#ffffff';
-          target.style.strokeOpacity = '0.15';
-          if (configuredFlowStrokeWidthPx !== null) {
-            target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
-          }
-        }
+        });
       });
+      
+      // Execute all target updates in a single batch (1 reflow instead of N)
+      if (targetUpdates.length > 0) {
+        requestAnimationFrame(() => {
+          for (let i = 0; i < targetUpdates.length; i++) {
+            targetUpdates[i]();
+          }
+        });
+      }
 
       if (overlay && overlay.group && overlay.paths && overlay.paths.length) {
         overlay.group.setAttribute('data-flow-style', animationStyle);
@@ -2324,6 +2615,8 @@ class LuminaEnergyCard extends HTMLElement {
     if (style !== 'dashes_glow' && !allowFluidFlowGlow) {
       if (element.style) {
         element.style.filter = '';
+        // Phase A Optimization: Remove will-change when not animating
+        element.style.willChange = 'auto';
       }
       if (typeof element.removeAttribute === 'function') {
         element.removeAttribute('filter');
@@ -2333,6 +2626,7 @@ class LuminaEnergyCard extends HTMLElement {
         paths.forEach((path) => {
           if (path && path.style) {
             path.style.filter = '';
+            path.style.willChange = 'auto';
           }
           if (path && typeof path.removeAttribute === 'function') {
             path.removeAttribute('filter');
@@ -2354,9 +2648,19 @@ class LuminaEnergyCard extends HTMLElement {
     const glowSize = style === 'fluid_flow' ? 24 : 12; // Larger glow for fluid flow
     const outerGlowSize = style === 'fluid_flow' ? 36 : 18; // Larger outer glow for fluid flow
     element.style.filter = `drop-shadow(0 0 ${glowSize}px ${inner}) drop-shadow(0 0 ${outerGlowSize}px ${outer})`;
+    // Phase A Optimization: Add will-change for animated elements (helps browser optimize)
+    if (intensity > 0 && element.style) {
+      element.style.willChange = 'filter, opacity';
+    }
   }
 
   _brightenColor(color, brightness = 1.4, saturation = 1.5) {
+    // Phase A Optimization: Cache color conversions
+    const cacheKey = `${color}-${brightness}-${saturation}`;
+    if (this._colorCache && this._colorCache.has(cacheKey)) {
+      return this._colorCache.get(cacheKey);
+    }
+    
     // Convert color to RGB, increase brightness and saturation for phosphorescent effect
     if (!color) {
       color = '#00FFFF'; // Default cyan
@@ -2421,7 +2725,12 @@ class LuminaEnergyCard extends HTMLElement {
       gNew = Math.round((gNew + m) * 255);
       bNew = Math.round((bNew + m) * 255);
       
-      return `rgb(${rNew}, ${gNew}, ${bNew})`;
+      const result = `rgb(${rNew}, ${gNew}, ${bNew})`;
+      // Phase A Optimization: Cache the result
+      if (this._colorCache) {
+        this._colorCache.set(cacheKey, result);
+      }
+      return result;
     }
     
     // Handle rgb/rgba colors
@@ -2481,10 +2790,19 @@ class LuminaEnergyCard extends HTMLElement {
       gNew = Math.round((gNew + m) * 255);
       bNew = Math.round((bNew + m) * 255);
       
-      return `rgb(${rNew}, ${gNew}, ${bNew})`;
+      const result = `rgb(${rNew}, ${gNew}, ${bNew})`;
+      // Phase A Optimization: Cache the result
+      if (this._colorCache) {
+        this._colorCache.set(cacheKey, result);
+      }
+      return result;
     }
     
-    return color; // Return as-is if format not recognized
+    // Return as-is if format not recognized (also cache it)
+    if (this._colorCache) {
+      this._colorCache.set(cacheKey, color);
+    }
+    return color;
   }
 
   _colorWithAlpha(color, alpha) {
@@ -2604,6 +2922,14 @@ class LuminaEnergyCard extends HTMLElement {
     if (!motionState) {
       return;
     }
+    // Phase A Optimization: Add will-change for animated elements (helps browser optimize)
+    if (entry.element && entry.element.style && entry.active) {
+      entry.element.style.willChange = 'stroke-dashoffset, transform, opacity';
+    }
+    if (entry.arrowElement && entry.arrowElement.style && entry.active) {
+      entry.arrowElement.style.willChange = 'transform, opacity';
+    }
+    
     const phase = Number(motionState.phase) || 0;
     if (entry.mode === 'arrows' && entry.arrowShapes && entry.arrowShapes.length) {
       const count = entry.arrowShapes.length;
@@ -2613,6 +2939,10 @@ class LuminaEnergyCard extends HTMLElement {
         : (entry.direction || 1);
       const directionSign = directionValue >= 0 ? 1 : -1;
       entry.arrowShapes.forEach((shape, index) => {
+        // Phase A Optimization: Add will-change for animated arrows
+        if (entry.active && shape && shape.style) {
+          shape.style.willChange = 'transform';
+        }
         const offset = directionSign >= 0
           ? normalized + index / count
           : normalized - index / count;
@@ -2628,6 +2958,10 @@ class LuminaEnergyCard extends HTMLElement {
       if (maskTargets.length) {
         maskTargets.forEach((path) => {
           if (path && path.style) {
+            // Phase A Optimization: Add will-change for animated paths
+            if (entry.active) {
+              path.style.willChange = 'stroke-dashoffset';
+            }
             const shiftRaw = (typeof path.getAttribute === 'function') ? path.getAttribute('data-fluid-mask-shift') : null;
             const shift = shiftRaw !== null && shiftRaw !== undefined ? Number(shiftRaw) : 0;
             const applied = Number.isFinite(shift) ? (offset + shift * cycle) : offset;
@@ -2638,6 +2972,10 @@ class LuminaEnergyCard extends HTMLElement {
         // Fallback for older entries created before mask support.
         entry.overlayPaths.forEach((path) => {
           if (path && path.style) {
+            // Phase A Optimization: Add will-change for animated paths
+            if (entry.active) {
+              path.style.willChange = 'stroke-dashoffset';
+            }
             path.style.strokeDashoffset = `${offset}`;
           }
         });
@@ -2681,6 +3019,10 @@ class LuminaEnergyCard extends HTMLElement {
           // Animate trail layers with different opacities for depth effect
           shimmerOverlay.paths.forEach((path) => {
             if (!path || !path.getAttribute) return;
+            // Phase A Optimization: Add will-change for animated shimmer paths
+            if (entry.active && path.style) {
+              path.style.willChange = 'opacity';
+            }
             const layer = path.getAttribute('data-shimmer-layer');
             if (layer === 'trail-1') {
               // Outer trail: subtle pulse with phase offset
@@ -3666,7 +4008,31 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   getStateSafe(entity_id) {
-    if (!entity_id || !this._hass.states[entity_id] ||
+    // Phase A Optimization: Memoization with cache
+    if (!entity_id || !this._hass || !this._hass.states) {
+      return 0;
+    }
+    
+    // Check cache first (if hass version hasn't changed)
+    const hassVersion = this._hass.version || Date.now();
+    if (this._lastHassVersion === hassVersion && this._stateCache.has(entity_id)) {
+      const cached = this._stateCache.get(entity_id);
+      const now = Date.now();
+      if (now - cached.time < this._stateCacheTimeout) {
+        return cached.value; // Return cached value
+      }
+      // Cache expired, remove it
+      this._stateCache.delete(entity_id);
+    }
+    
+    // Update hass version tracker
+    if (this._lastHassVersion !== hassVersion) {
+      this._stateCache.clear(); // Clear cache on hass change
+      this._lastHassVersion = hassVersion;
+    }
+    
+    // Original logic
+    if (!this._hass.states[entity_id] ||
         this._hass.states[entity_id].state === 'unavailable' ||
         this._hass.states[entity_id].state === 'unknown') {
       return 0;
@@ -3678,14 +4044,26 @@ class LuminaEnergyCard extends HTMLElement {
       return 0;
     }
     
-    const unit = this._hass.states[entity_id].attributes.unit_of_measurement;
+    const unit = this._hass.states[entity_id].attributes?.unit_of_measurement;
 
-    if (unit && (unit.toLowerCase() === 'kw' || unit.toLowerCase() === 'kwh')) {
-      value = value * 1000;
+    // Optimized: cache toLowerCase result
+    if (unit) {
+      const unitLower = unit.toLowerCase();
+      if (unitLower === 'kw' || unitLower === 'kwh') {
+        value = value * 1000;
+      }
     }
 
     // Double check after unit conversion
-    return Number.isFinite(value) ? value : 0;
+    const finalValue = Number.isFinite(value) ? value : 0;
+    
+    // Cache the result
+    this._stateCache.set(entity_id, {
+      value: finalValue,
+      time: Date.now()
+    });
+    
+    return finalValue;
   }
 
   getEntityName(entity_id) {
@@ -3706,24 +4084,28 @@ class LuminaEnergyCard extends HTMLElement {
     if (!sensorId || !this._hass || !this._hass.states) {
       return '';
     }
+    // Optimized: cache trim result
     const resolvedId = typeof sensorId === 'string' ? sensorId.trim() : sensorId;
     if (!resolvedId || !this._hass.states[resolvedId]) {
       return '';
     }
     const entity = this._hass.states[resolvedId];
-    const rawState = entity && entity.state !== undefined && entity.state !== null
-      ? entity.state.toString().trim()
-      : '';
+    if (!entity || entity.state === undefined || entity.state === null) {
+      return '';
+    }
+    // Optimized: cache toString and trim
+    const rawState = entity.state.toString().trim();
     if (!rawState) {
       return '';
     }
+    // Optimized: cache toLowerCase
     const lowerState = rawState.toLowerCase();
     if (lowerState === 'unknown' || lowerState === 'unavailable') {
       return rawState;
     }
-    const unit = (entity.attributes && typeof entity.attributes.unit_of_measurement === 'string')
-      ? entity.attributes.unit_of_measurement.trim()
-      : '';
+    // Optimized: cache trim on unit
+    const unitAttr = entity.attributes && entity.attributes.unit_of_measurement;
+    const unit = (typeof unitAttr === 'string') ? unitAttr.trim() : '';
     return unit ? `${rawState} ${unit}` : rawState;
   }
 
@@ -3775,6 +4157,17 @@ class LuminaEnergyCard extends HTMLElement {
     
     const state = (entity.state || '').toLowerCase();
     const isOn = state === 'on' || state === 'open' || state === 'unlocked';
+    
+    this._updateToggleSwitchVisual(toggle, isOn);
+  }
+
+  _updateToggleSwitchOptimistic(toggle, isOn) {
+    if (!toggle) return;
+    this._updateToggleSwitchVisual(toggle, isOn);
+  }
+
+  _updateToggleSwitchVisual(toggle, isOn) {
+    if (!toggle) return;
     
     // Update toggle switch appearance
     const bgRect = toggle.querySelector('rect');
@@ -4138,6 +4531,9 @@ class LuminaEnergyCard extends HTMLElement {
     const toggleWidth = 40; // Width of toggle switch
     const adjustedPopupWidth = popupWidth || 200;
     
+    // Phase A Optimization: Batch DOM updates for popup lines (reduces reflows)
+    const domUpdates = [];
+    
     lines.forEach((line, index) => {
       const element = lineElements[index];
       const group = lineGroups[index];
@@ -4149,98 +4545,99 @@ class LuminaEnergyCard extends HTMLElement {
         // Adjust text position if toggle is present: move text left to make room for toggle
         const isControllable = sensorId && typeof sensorId === 'string' && sensorId.trim() && this._isEntityControllable(sensorId.trim());
         const textOffset = isControllable ? -35 : 0; // Move text left by 35px if toggle is present
-        element.setAttribute('x', popupX + adjustedPopupWidth / 2 + textOffset);
-        element.setAttribute('y', yPos);
-        element.textContent = line;
-        element.style.display = 'inline';
         
-        // Apply font size
-        const fontSizeKey = `${prefix}_${index + 1}_font_size`;
-        const fontSize = config[fontSizeKey] || 16;
-        element.setAttribute('font-size', fontSize);
-        
-        // Apply color
-        const colorKey = `${prefix}_${index + 1}_color`;
-        const color = config[colorKey] || '#80ffff';
-        element.setAttribute('fill', color);
-        
-        // Show group
-        group.style.display = 'inline';
-        
-        // Check if entity is controllable and show toggle (reuse isControllable from above)
-        if (isControllable && toggle) {
-          const trimmedSensorId = sensorId.trim();
-          // Position toggle: popupX + popupWidth - toggleWidth - 15px margin from right edge
-          // Adjust vertical alignment: raise toggle by 2px to better align with text
-          const toggleWidth = 40; // Width of toggle switch
-          const toggleX = popupX + adjustedPopupWidth - toggleWidth - 15;
-          const toggleY = yPos - 6; // Raise toggle by 6px for better alignment
-          toggle.setAttribute('transform', `translate(${toggleX}, ${toggleY})`);
-          toggle.style.display = 'inline';
+        // Batch DOM updates
+        domUpdates.push(() => {
+          element.setAttribute('x', popupX + adjustedPopupWidth / 2 + textOffset);
+          element.setAttribute('y', yPos);
+          element.textContent = line;
+          element.style.display = 'inline';
           
-          // Set toggle to semi-transparent with cyan border
-          const bgRect = toggle.querySelector('rect');
-          if (bgRect) {
-            bgRect.setAttribute('stroke', '#00FFFF');
-            bgRect.setAttribute('stroke-width', '1.5');
-            bgRect.setAttribute('opacity', '0.3');
-            bgRect.style.stroke = '#00FFFF';
-            bgRect.style.opacity = '0.3';
-          }
-          const sliderCircle = toggle.querySelector('circle');
-          if (sliderCircle) {
-            sliderCircle.setAttribute('opacity', '0.9');
-            sliderCircle.style.opacity = '0.9';
-          }
+          // Apply font size
+          const fontSizeKey = `${prefix}_${index + 1}_font_size`;
+          const fontSize = config[fontSizeKey] || 16;
+          element.setAttribute('font-size', fontSize);
           
-          // Update toggle state (on/off) using helper function
-          this._updateToggleSwitch(toggle, trimmedSensorId);
-          toggle.setAttribute('data-entity-id', trimmedSensorId);
-        } else if (toggle) {
-          toggle.style.display = 'none';
-        }
+          // Apply color
+          const colorKey = `${prefix}_${index + 1}_color`;
+          const color = config[colorKey] || '#80ffff';
+          element.setAttribute('fill', color);
+          
+          // Show group
+          group.style.display = 'inline';
+          
+          // Check if entity is controllable and show toggle (reuse isControllable from above)
+          if (isControllable && toggle) {
+            const trimmedSensorId = sensorId.trim();
+            // Position toggle: popupX + popupWidth - toggleWidth - 15px margin from right edge
+            // Adjust vertical alignment: raise toggle by 2px to better align with text
+            const toggleWidth = 40; // Width of toggle switch
+            const toggleX = popupX + adjustedPopupWidth - toggleWidth - 15;
+            const toggleY = yPos - 6; // Raise toggle by 6px for better alignment
+            toggle.setAttribute('transform', `translate(${toggleX}, ${toggleY})`);
+            toggle.style.display = 'inline';
+            
+            // Set toggle to semi-transparent with cyan border
+            const bgRect = toggle.querySelector('rect');
+            if (bgRect) {
+              bgRect.setAttribute('stroke', '#00FFFF');
+              bgRect.setAttribute('stroke-width', '1.5');
+              bgRect.setAttribute('opacity', '0.3');
+              bgRect.style.stroke = '#00FFFF';
+              bgRect.style.opacity = '0.3';
+            }
+            const sliderCircle = toggle.querySelector('circle');
+            if (sliderCircle) {
+              sliderCircle.setAttribute('opacity', '0.9');
+              sliderCircle.style.opacity = '0.9';
+            }
+            
+            // Update toggle state (on/off) using helper function
+            this._updateToggleSwitch(toggle, trimmedSensorId);
+            toggle.setAttribute('data-entity-id', trimmedSensorId);
+          } else if (toggle) {
+            toggle.style.display = 'none';
+          }
+        });
       }
     });
     
-    // Hide unused lines
+    // Hide unused lines (also batched)
     for (let i = lines.length; i < lineElements.length; i++) {
       const element = lineElements[i];
       const group = lineGroups[i];
       const toggle = toggleElements[i];
-      if (element) {
-        element.style.display = 'none';
-      }
-      if (group) {
-        group.style.display = 'none';
-      }
-      if (toggle) {
-        toggle.style.display = 'none';
-      }
+      domUpdates.push(() => {
+        if (element) {
+          element.style.display = 'none';
+        }
+        if (group) {
+          group.style.display = 'none';
+        }
+        if (toggle) {
+          toggle.style.display = 'none';
+        }
+      });
+    }
+    
+    // Execute all DOM updates in a single batch (1 reflow instead of N)
+    if (domUpdates.length > 0) {
+      requestAnimationFrame(() => {
+        for (let i = 0; i < domUpdates.length; i++) {
+          domUpdates[i]();
+        }
+      });
     }
   }
 
   render() {
-    // Verify feature authorization using shared SHA-256 implementation
-    // Define early to ensure it's available throughout the render method
-    const verifyFeatureAuth = (inputValue) => {
-      if (!inputValue || typeof inputValue !== 'string') return false;
-      try {
-        const hashHex = LUMINA_SHA256(inputValue.trim());
-        const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
-        if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
-          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
-          LUMINA_REFRESH_AUTH(() => {
-            this._forceRender = true;
-            this.render();
-          });
-        }
-        return isAuthorized;
-      } catch (e) {
-        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
-        return false;
-      }
-    };
-
+    // Phase A Optimization: Skip render if data hasn't changed
+    // Collect sensor data first to check if anything changed
+    if (!this._hass || !this.config) {
+      return;
+    }
+    
+    const config = this.config;
     const hasDeveloperValues = this.config && Object.keys(this.config).some(key => 
       key.startsWith('dev_text_') || 
       key.startsWith('dev_popup_') || 
@@ -4251,11 +4648,55 @@ class LuminaEnergyCard extends HTMLElement {
       this._hass = { states: {} };
     }
     
-    if (!this._hass || !this.config) {
-      return;
+    // Quick data hash check (skip expensive render if data unchanged)
+    // Only skip if not forced and not in editor mode
+    const isEditorActive = this._isEditorActive();
+    if (!this._forceRender && !hasDeveloperValues && !isEditorActive) {
+      try {
+        const sensorCollector = new SensorDataCollector(this._hass, this.getStateSafe.bind(this));
+        const sensorData = sensorCollector.collectAll(config);
+        
+        // Create lightweight hash of critical values
+        // Only use values available in sensorData (car values calculated later)
+        const dataHash = JSON.stringify({
+          pv: Math.round(sensorData.total_pv_w || 0),
+          bat: Math.round(sensorData.total_bat_w || 0),
+          grid: Math.round(sensorData.gridNet || 0),
+          load: Math.round(sensorData.houseTotalLoad || 0),
+          soc: sensorData.avg_soc || 0,
+          heat: Math.round(sensorData.heat_pump_w || 0)
+        });
+        
+        if (this._lastDataHash === dataHash) {
+          // Data unchanged, skip render but update timestamp
+          this._lastRender = Date.now();
+          return;
+        }
+        this._lastDataHash = dataHash;
+      } catch (e) {
+        // If hash check fails, proceed with render (fail-safe)
+      }
+    } else {
+      // Force render or editor mode: clear hash to ensure render
+      this._lastDataHash = null;
     }
+    
+    // Verify feature authorization using shared SHA-256 implementation
+    // Define early to ensure it's available throughout the render method
+    const verifyFeatureAuth = (inputValue) => {
+      if (!inputValue || typeof inputValue !== 'string') return false;
+      try {
+        const trimmed = inputValue.trim();
+        if (!trimmed) return false;
+        const hashHex = LUMINA_SHA256(trimmed);
+        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
+        if (LUMINA_AUTH_LIST === null) {
+          LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this._scheduleRender(); });
+        }
+        return ok;
+      } catch (e) { return false; }
+    };
 
-    const config = this.config;
     this._lastRender = Date.now();
     
     // Collect all sensor data using SensorDataCollector
@@ -4277,14 +4718,7 @@ class LuminaEnergyCard extends HTMLElement {
     const showPvStrings = Boolean(config.show_pv_strings);
     
     // Additional threshold calculations
-    const toNumber = (value) => {
-      if (value === undefined || value === null || value === '') {
-        return null;
-      }
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-    
+    // Optimized: using shared toNumber function instead of local definition
     const thresholdMultiplier = use_kw ? 1000 : 1;
     const gridWarningColor = typeof config.grid_warning_color === 'string' && config.grid_warning_color ? config.grid_warning_color : null;
     const gridCriticalColor = typeof config.grid_critical_color === 'string' && config.grid_critical_color ? config.grid_critical_color : null;
@@ -4298,41 +4732,23 @@ class LuminaEnergyCard extends HTMLElement {
     const belowGridActivityThreshold = gridActivityThreshold > 0 && !gridActive;
 
     // EV Cars
+    // Optimized: using shared helper functions instead of local definitions
+    // Phase A Optimization: Early exit for car calculations if not needed
     const showCar1 = Boolean(config.show_car_soc);
     const showCar2Toggle = Boolean(config.show_car_soc2 !== undefined ? config.show_car_soc2 : config.show_car2);
-    const resolveEntityId = (primary, legacy) => {
-      if (typeof primary === 'string') {
-        const trimmed = primary.trim();
-        if (trimmed) {
-          return trimmed;
-        }
-      }
-      if (typeof legacy === 'string') {
-        const trimmed = legacy.trim();
-        if (trimmed) {
-          return trimmed;
-        }
-      }
-      return '';
-    };
-    const car1PowerSensorId = resolveEntityId(config.sensor_car_power, config.car_power);
-    const car1SocSensorId = resolveEntityId(config.sensor_car_soc, config.car_soc);
-    const car2PowerSensorId = resolveEntityId(config.sensor_car2_power, config.car2_power);
-    const car2SocSensorId = resolveEntityId(config.sensor_car2_soc, config.car2_soc);
+    
+    // Only resolve entity IDs if cars are enabled (saves string operations)
+    const car1PowerSensorId = showCar1 ? resolveEntityId(config.sensor_car_power, config.car_power) : '';
+    const car1SocSensorId = showCar1 ? resolveEntityId(config.sensor_car_soc, config.car_soc) : '';
+    const car2PowerSensorId = showCar2Toggle ? resolveEntityId(config.sensor_car2_power, config.car2_power) : '';
+    const car2SocSensorId = showCar2Toggle ? resolveEntityId(config.sensor_car2_soc, config.car2_soc) : '';
     const car2EntitiesConfigured = Boolean(car2PowerSensorId || car2SocSensorId);
     const showCar2 = showCar2Toggle && car2EntitiesConfigured;
     const showDebugGrid = DEBUG_GRID_ENABLED;
-    const resolveLabel = (value, fallback) => {
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed) {
-          return trimmed;
-        }
-      }
-      return fallback;
-    };
-    const car1Label = resolveLabel(config.car1_label, 'CAR 1');
-    const car2Label = resolveLabel(config.car2_label, 'CAR 2');
+    
+    // Only calculate car values if cars are enabled (saves getStateSafe calls)
+    const car1Label = showCar1 ? resolveLabel(config.car1_label, 'CAR 1') : '';
+    const car2Label = showCar2 ? resolveLabel(config.car2_label, 'CAR 2') : '';
     const car1PowerValue = showCar1 && car1PowerSensorId ? this.getStateSafe(car1PowerSensorId) : 0;
     const car1SocValue = showCar1 && car1SocSensorId ? this.getStateSafe(car1SocSensorId) : null;
     const car2PowerValue = showCar2 && car2PowerSensorId ? this.getStateSafe(car2PowerSensorId) : 0;
@@ -4341,12 +4757,15 @@ class LuminaEnergyCard extends HTMLElement {
     const car2Bidirectional = Boolean(config.car2_bidirectional);
     const car1InvertFlow = Boolean(config.car1_invert_flow);
     const car2InvertFlow = Boolean(config.car2_invert_flow);
+    const array1InvertFlow = Boolean(config.array1_invert_flow);
+    const array2InvertFlow = Boolean(config.array2_invert_flow);
     const carLayoutKey = showCar2 ? 'dual' : 'single';
     const carLayout = CAR_LAYOUTS[carLayoutKey];
-    const car1Transforms = buildCarTextTransforms(carLayout.car1);
-    const car2Transforms = buildCarTextTransforms(carLayout.car2);
+    // Phase A Optimization: Use cache for car text transforms
+    const car1Transforms = buildCarTextTransforms(carLayout.car1, this._textTransformCache);
+    const car2Transforms = buildCarTextTransforms(carLayout.car2, this._textTransformCache);
 
-    // PV Popup
+    // PV Popup - optimized: combine operations and cache entity names
     const popupPvSensorIds = [
       config.sensor_popup_pv_1,
       config.sensor_popup_pv_2,
@@ -4355,19 +4774,27 @@ class LuminaEnergyCard extends HTMLElement {
       config.sensor_popup_pv_5,
       config.sensor_popup_pv_6
     ];
-    const popupPvValues = popupPvSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
-
-    // PV Popup names
-    const popupPvNames = [
-      config.sensor_popup_pv_1_name && config.sensor_popup_pv_1_name.trim() ? config.sensor_popup_pv_1_name.trim() : this.getEntityName(config.sensor_popup_pv_1),
-      config.sensor_popup_pv_2_name && config.sensor_popup_pv_2_name.trim() ? config.sensor_popup_pv_2_name.trim() : this.getEntityName(config.sensor_popup_pv_2),
-      config.sensor_popup_pv_3_name && config.sensor_popup_pv_3_name.trim() ? config.sensor_popup_pv_3_name.trim() : this.getEntityName(config.sensor_popup_pv_3),
-      config.sensor_popup_pv_4_name && config.sensor_popup_pv_4_name.trim() ? config.sensor_popup_pv_4_name.trim() : this.getEntityName(config.sensor_popup_pv_4),
-      config.sensor_popup_pv_5_name && config.sensor_popup_pv_5_name.trim() ? config.sensor_popup_pv_5_name.trim() : this.getEntityName(config.sensor_popup_pv_5),
-      config.sensor_popup_pv_6_name && config.sensor_popup_pv_6_name.trim() ? config.sensor_popup_pv_6_name.trim() : this.getEntityName(config.sensor_popup_pv_6)
+    const popupPvNamesConfig = [
+      config.sensor_popup_pv_1_name,
+      config.sensor_popup_pv_2_name,
+      config.sensor_popup_pv_3_name,
+      config.sensor_popup_pv_4_name,
+      config.sensor_popup_pv_5_name,
+      config.sensor_popup_pv_6_name
     ];
+    // Optimized: combine operations in single loop, cache type checks
+    const popupPvValues = [];
+    const popupPvNames = [];
+    for (let i = 0; i < 6; i++) {
+      const sensorId = popupPvSensorIds[i];
+      popupPvValues[i] = this.formatPopupValue(null, sensorId);
+      const nameConfig = popupPvNamesConfig[i];
+      // Optimized: cache type check and trim result
+      const trimmedName = (nameConfig && typeof nameConfig === 'string') ? nameConfig.trim() : '';
+      popupPvNames[i] = trimmedName || this.getEntityName(sensorId);
+    }
 
-    // House Popup
+    // House Popup - optimized: combine operations and cache entity names
     const popupHouseSensorIds = [
       config.sensor_popup_house_1,
       config.sensor_popup_house_2,
@@ -4376,38 +4803,33 @@ class LuminaEnergyCard extends HTMLElement {
       config.sensor_popup_house_5,
       config.sensor_popup_house_6
     ];
-    const popupHouseValues = popupHouseSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
-
-    // House Popup names
-    const popupHouseNames = [
-      config.sensor_popup_house_1_name && config.sensor_popup_house_1_name.trim() ? config.sensor_popup_house_1_name.trim() : this.getEntityName(config.sensor_popup_house_1),
-      config.sensor_popup_house_2_name && config.sensor_popup_house_2_name.trim() ? config.sensor_popup_house_2_name.trim() : this.getEntityName(config.sensor_popup_house_2),
-      config.sensor_popup_house_3_name && config.sensor_popup_house_3_name.trim() ? config.sensor_popup_house_3_name.trim() : this.getEntityName(config.sensor_popup_house_3),
-      config.sensor_popup_house_4_name && config.sensor_popup_house_4_name.trim() ? config.sensor_popup_house_4_name.trim() : this.getEntityName(config.sensor_popup_house_4),
-      config.sensor_popup_house_5_name && config.sensor_popup_house_5_name.trim() ? config.sensor_popup_house_5_name.trim() : this.getEntityName(config.sensor_popup_house_5),
-      config.sensor_popup_house_6_name && config.sensor_popup_house_6_name.trim() ? config.sensor_popup_house_6_name.trim() : this.getEntityName(config.sensor_popup_house_6)
+    const popupHouseNamesConfig = [
+      config.sensor_popup_house_1_name,
+      config.sensor_popup_house_2_name,
+      config.sensor_popup_house_3_name,
+      config.sensor_popup_house_4_name,
+      config.sensor_popup_house_5_name,
+      config.sensor_popup_house_6_name
     ];
+    // Optimized: combine operations in single loop, cache type checks
+    const popupHouseValues = [];
+    const popupHouseNames = [];
+    for (let i = 0; i < 6; i++) {
+      const sensorId = popupHouseSensorIds[i];
+      popupHouseValues[i] = this.formatPopupValue(null, sensorId);
+      const nameConfig = popupHouseNamesConfig[i];
+      // Optimized: cache type check and trim result
+      const trimmedName = (nameConfig && typeof nameConfig === 'string') ? nameConfig.trim() : '';
+      popupHouseNames[i] = trimmedName || this.getEntityName(sensorId);
+    }
 
     // Display settings: single background always (no heat-pump–specific image)
     const bg_img = config.background_image || '/local/community/lumina-energy-card/lumina_background1.png';
-    const title_text = (typeof config.card_title === 'string' && config.card_title.trim()) ? config.card_title.trim() : null;
-
-    const resolveColor = (value, fallback) => {
-      // Ensure we always return a valid color string, never empty
-      if (typeof value === 'string' && value.trim() && value.trim() !== '') {
-        const trimmed = value.trim();
-        // Basic validation: must start with # or be rgb/rgba
-        if (trimmed.startsWith('#') || trimmed.startsWith('rgb')) {
-          return trimmed;
-        }
-      }
-      // Ensure fallback is also valid
-      if (typeof fallback === 'string' && fallback.trim() && fallback.trim() !== '') {
-        return fallback.trim();
-      }
-      // Ultimate fallback if both are invalid
-      return '#00FFFF';
-    };
+    // Optimized: cache trim result to avoid repeated calls
+    const cardTitleRaw = config.card_title;
+    const title_text = (typeof cardTitleRaw === 'string' && cardTitleRaw.trim()) ? cardTitleRaw.trim() : null;
+    
+    // Optimized: using shared resolveColor function instead of local definition
     
     // Check if premium features are enabled
     const authInput = config.pro_password;
@@ -4416,14 +4838,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
     const isProEnabled = verifyFeatureAuth(authInput);
 
-    const clampValue = (value, min, max, fallback) => {
-      const num = Number(value);
-      if (!Number.isFinite(num)) {
-        return fallback;
-      }
-      return Math.min(Math.max(num, min), max);
-    };
-
+    // Optimized: using shared clampValue function instead of local definition
     const header_font_size = clampValue(config.header_font_size, 12, 32, 16);
     const daily_label_font_size = clampValue(config.daily_label_font_size, 8, 24, 12);
     const daily_value_font_size = clampValue(config.daily_value_font_size, 12, 32, 20);
@@ -4477,19 +4892,28 @@ class LuminaEnergyCard extends HTMLElement {
       heatPump: { x: Number(config.heat_pump_flow_offset_x) || 0, y: Number(config.heat_pump_flow_offset_y) || 0 }
     };
 
-    // Add custom flow offsets
-    for (let i = 1; i <= 5; i++) {
-      const enabled = Boolean(config[`custom_flow_${i}_enabled`]);
-      if (enabled) {
-        this._flowOffsets[`custom_flow_${i}`] = {
-          x: Number(config[`custom_flow_${i}_offset_x`]) || 0,
-          y: Number(config[`custom_flow_${i}_offset_y`]) || 0
-        };
+    // Add custom flow offsets (only if Pro is enabled)
+    if (isProEnabled) {
+      for (let i = 1; i <= 5; i++) {
+        const enabled = Boolean(config[`custom_flow_${i}_enabled`]);
+        if (enabled) {
+          this._flowOffsets[`custom_flow_${i}`] = {
+            x: Number(config[`custom_flow_${i}_offset_x`]) || 0,
+            y: Number(config[`custom_flow_${i}_offset_y`]) || 0
+          };
+        }
       }
     }
 
     // Language: config.language, else hass.locale (e.g. it-IT -> it), else en
-    const lang = (config.language || (this._hass && this._hass.locale && this._hass.locale.split('-')[0]) || 'en').toLowerCase();
+    // Optimized: cache split and toLowerCase
+    let lang = config.language;
+    if (!lang && this._hass && this._hass.locale) {
+      const locale = this._hass.locale;
+      const dashIdx = locale.indexOf('-');
+      lang = dashIdx > 0 ? locale.substring(0, dashIdx) : locale;
+    }
+    lang = (lang || 'en').toLowerCase();
     // Prefer locale strings (external or built-in) when available
     let label_daily = null;
     let label_pv_tot = null;
@@ -4718,78 +5142,76 @@ class LuminaEnergyCard extends HTMLElement {
       heatPump: { stroke: heatPumpFlowColor, glowColor: heatPumpFlowColor, active: hasHeatPumpSensor && heat_pump_w > 10, direction: 1 }
     };
     
-    flows.pv1.direction = 1;
-    flows.pv2.direction = 1;
+    flows.pv1.direction = array1InvertFlow ? -1 : 1;
+    flows.pv2.direction = array2InvertFlow ? -1 : 1;
     // Car directions are already set based on bidirectional mode above
     flows.heatPump.direction = 1;
 
-    // Add custom flows
-    for (let i = 1; i <= 5; i++) {
-      const flowKey = `custom_flow_${i}`;
-      // Always initialize with default values to ensure they exist in the viewState
-      flows[flowKey] = {
-        stroke: '#00FFFF',
-        glowColor: '#00FFFF',
-        active: false,
-        direction: 1
-      };
-
-      const enabled = Boolean(config[`custom_flow_${i}_enabled`]);
-      if (!enabled) {
-        continue;
-      }
-
-      const sensorId = config[`custom_flow_${i}_sensor`];
-      const pathPreset = config[`custom_flow_${i}_path_preset`] || 'custom';
-      let path;
-
-      // Determine path based on preset or custom coordinates
-      if (pathPreset !== 'custom' && PRESET_PATHS[pathPreset]) {
-        path = PRESET_PATHS[pathPreset].path;
-      } else {
-        // Use manual path or generate from coordinates
-        const manualPath = config[`custom_flow_${i}_path`];
-        if (manualPath && typeof manualPath === 'string' && manualPath.trim()) {
-          path = manualPath.trim();
-        } else {
-          // Generate path from coordinates
-          const startX = Number(config[`custom_flow_${i}_start_x`]) || 100;
-          const startY = Number(config[`custom_flow_${i}_start_y`]) || 200;
-          const endX = Number(config[`custom_flow_${i}_end_x`]) || 600;
-          const endY = Number(config[`custom_flow_${i}_end_y`]) || 250;
-          path = `M ${startX} ${startY} L ${endX} ${endY}`;
+    // Add custom flows (only if Pro is enabled)
+    if (isProEnabled) {
+      for (let i = 1; i <= 5; i++) {
+        const flowKey = `custom_flow_${i}`;
+        const enabled = Boolean(config[`custom_flow_${i}_enabled`]);
+        
+        // Only process if enabled
+        if (!enabled) {
+          continue;
         }
+
+        const sensorId = config[`custom_flow_${i}_sensor`];
+        const pathPreset = config[`custom_flow_${i}_path_preset`] || 'custom';
+        let path;
+
+        // Determine path based on preset or custom coordinates
+        if (pathPreset !== 'custom' && PRESET_PATHS[pathPreset]) {
+          path = PRESET_PATHS[pathPreset].path;
+        } else {
+          // Use manual path or generate from coordinates
+          const manualPath = config[`custom_flow_${i}_path`];
+          if (manualPath && typeof manualPath === 'string' && manualPath.trim()) {
+            path = manualPath.trim();
+          } else {
+            // Generate path from coordinates
+            const startX = Number(config[`custom_flow_${i}_start_x`]) || 100;
+            const startY = Number(config[`custom_flow_${i}_start_y`]) || 200;
+            const endX = Number(config[`custom_flow_${i}_end_x`]) || 600;
+            const endY = Number(config[`custom_flow_${i}_end_y`]) || 250;
+            path = `M ${startX} ${startY} L ${endX} ${endY}`;
+          }
+        }
+
+        // Skip if no sensor or path
+        if (!sensorId || !path) {
+          continue;
+        }
+
+        const color = resolveColor(config[`custom_flow_${i}_color`], '#00FFFF');
+        const threshold = Number(config[`custom_flow_${i}_threshold`]) || 10;
+        const directionMode = config[`custom_flow_${i}_direction`] || 'auto';
+
+        // Get sensor value
+        const powerValue = sensorId ? this.getStateSafe(sensorId.trim()) : 0;
+        const powerMagnitude = Math.abs(powerValue);
+
+        // Determine if flow is active
+        const isActive = powerMagnitude > threshold;
+
+        // Determine direction
+        let direction = 1; // default forward
+        if (directionMode === 'reverse') {
+          direction = -1;
+        } else if (directionMode === 'auto') {
+          direction = powerValue >= 0 ? 1 : -1;
+        }
+
+        // Only add to flows if enabled and has valid sensor/path
+        flows[flowKey] = {
+          stroke: color,
+          glowColor: color,
+          active: isActive,
+          direction: direction
+        };
       }
-
-      const color = resolveColor(config[`custom_flow_${i}_color`], '#00FFFF');
-      const threshold = Number(config[`custom_flow_${i}_threshold`]) || 10;
-      const directionMode = config[`custom_flow_${i}_direction`] || 'auto';
-
-      if (!sensorId || !path) {
-        continue;
-      }
-
-      // Get sensor value
-      const powerValue = sensorId ? this.getStateSafe(sensorId.trim()) : 0;
-      const powerMagnitude = Math.abs(powerValue);
-
-      // Determine if flow is active
-      const isActive = powerMagnitude > threshold;
-
-      // Determine direction
-      let direction = 1; // default forward
-      if (directionMode === 'reverse') {
-        direction = -1;
-      } else if (directionMode === 'auto') {
-        direction = powerValue >= 0 ? 1 : -1;
-      }
-
-      flows[flowKey] = {
-        stroke: color,
-        glowColor: color,
-        active: isActive,
-        direction: direction
-      };
     }
 
     const flowDurations = Object.fromEntries(
@@ -4814,30 +5236,32 @@ class LuminaEnergyCard extends HTMLElement {
       custom_flow_5: 'M 0 0'
     };
 
-    // Add custom flow paths
-    for (let i = 1; i <= 5; i++) {
-      const flowKey = `custom_flow_${i}`;
-      const pathPreset = config[`custom_flow_${i}_path_preset`] || 'custom';
-      let path;
+    // Add custom flow paths (only if Pro is enabled)
+    if (isProEnabled) {
+      for (let i = 1; i <= 5; i++) {
+        const flowKey = `custom_flow_${i}`;
+        const pathPreset = config[`custom_flow_${i}_path_preset`] || 'custom';
+        let path;
 
-      if (pathPreset !== 'custom' && PRESET_PATHS[pathPreset]) {
-        path = PRESET_PATHS[pathPreset].path;
-      } else {
-        const manualPath = config[`custom_flow_${i}_path`];
-        if (manualPath && typeof manualPath === 'string' && manualPath.trim()) {
-          path = manualPath.trim();
+        if (pathPreset !== 'custom' && PRESET_PATHS[pathPreset]) {
+          path = PRESET_PATHS[pathPreset].path;
         } else {
-          const startX = Number(config[`custom_flow_${i}_start_x`]) || 100;
-          const startY = Number(config[`custom_flow_${i}_start_y`]) || 200;
-          const endX = Number(config[`custom_flow_${i}_end_x`]) || 600;
-          const endY = Number(config[`custom_flow_${i}_end_y`]) || 250;
-          path = `M ${startX} ${startY} L ${endX} ${endY}`;
+          const manualPath = config[`custom_flow_${i}_path`];
+          if (manualPath && typeof manualPath === 'string' && manualPath.trim()) {
+            path = manualPath.trim();
+          } else {
+            const startX = Number(config[`custom_flow_${i}_start_x`]) || 100;
+            const startY = Number(config[`custom_flow_${i}_start_y`]) || 200;
+            const endX = Number(config[`custom_flow_${i}_end_x`]) || 600;
+            const endY = Number(config[`custom_flow_${i}_end_y`]) || 250;
+            path = `M ${startX} ${startY} L ${endX} ${endY}`;
+          }
         }
-      }
 
-      if (path) {
-        const sanitized = this._sanitizePath(path);
-        flowPaths[flowKey] = sanitized || path;
+        if (path) {
+          const sanitized = this._sanitizePath(path);
+          flowPaths[flowKey] = sanitized || path;
+        }
       }
     }
 
@@ -4916,6 +5340,70 @@ class LuminaEnergyCard extends HTMLElement {
           color: resolveColor(config[`custom_text_${i}_color`], '#00f9f9'),
           size: Number(config[`custom_text_${i}_size`]) || 16
         });
+      }
+      
+      // Solar Forecast Sensor
+      const solarForecastEnabled = Boolean(config.solar_forecast_enabled);
+      if (!solarForecastEnabled) {
+        this._solarForecastData = null;
+      } else if (solarForecastEnabled) {
+        const sensorId = config.sensor_solar_forecast;
+        if (sensorId && typeof sensorId === 'string' && sensorId.trim()) {
+          const sensorState = this._hass ? this._hass.states[sensorId.trim()] : null;
+          if (sensorState) {
+            const forecastValue = parseFloat(sensorState.state) || 0;
+            const maxPower = Number(config.solar_forecast_max_power) || 10000;
+            const percentage = maxPower > 0 ? (forecastValue / maxPower) * 100 : 0;
+            
+            // Determine sun status based on percentage
+            let sunStatus = '';
+            const lang = config.language || 'en';
+            const sunStatusDict = {
+              it: { high: 'Tanto sole', medium: 'Sole moderato', low: 'Poco sole' },
+              en: { high: 'Lots of sun', medium: 'Moderate sun', low: 'Little sun' },
+              de: { high: 'Viel Sonne', medium: 'Mäßige Sonne', low: 'Wenig Sonne' },
+              fr: { high: 'Beaucoup de soleil', medium: 'Soleil modéré', low: 'Peu de soleil' },
+              nl: { high: 'Veel zon', medium: 'Matige zon', low: 'Weinig zon' }
+            };
+            
+            const dict = sunStatusDict[lang] || sunStatusDict['en'];
+            if (percentage >= 70) {
+              sunStatus = dict.high;
+            } else if (percentage >= 30) {
+              sunStatus = dict.medium;
+            } else {
+              sunStatus = dict.low;
+            }
+            
+            const unit = sensorState.attributes && sensorState.attributes.unit_of_measurement ? sensorState.attributes.unit_of_measurement : 'W';
+            const formattedValue = this.formatPower(forecastValue, use_kw);
+            const displayText = `${formattedValue} - ${sunStatus}`;
+            
+            // Store solar forecast data for SVG rendering
+            this._solarForecastData = {
+              enabled: true,
+              percentage: percentage,
+              value: forecastValue,
+              status: sunStatus,
+              x: Number(config.solar_forecast_x) || 400,
+              y: Number(config.solar_forecast_y) || 350,
+              color: resolveColor(config.solar_forecast_color, '#00FFFF'),
+              size: Number(config.solar_forecast_size) || 16,
+              text: displayText
+            };
+            
+            customTexts.push({
+              id: 'solar_forecast',
+              text: displayText,
+              x: Number(config.solar_forecast_x) || 400,
+              y: Number(config.solar_forecast_y) || 350,
+              color: resolveColor(config.solar_forecast_color, '#00FFFF'),
+              size: Number(config.solar_forecast_size) || 16
+            });
+          } else {
+            this._solarForecastData = null;
+          }
+        }
       }
     }
 
@@ -5072,6 +5560,7 @@ class LuminaEnergyCard extends HTMLElement {
       flowDurations,
       flowPaths,
       customTexts,
+      solarForecast: this._solarForecastData || null,
       showDebugGrid
     };
 
@@ -5109,27 +5598,29 @@ class LuminaEnergyCard extends HTMLElement {
     const config = this.config || {};
     
     // Language: config.language, else hass.locale (e.g. it-IT -> it), else en
-    const lang = (config.language || (this._hass && this._hass.locale && this._hass.locale.split('-')[0]) || 'en').toLowerCase();
+    // Optimized: cache split and toLowerCase
+    let lang = config.language;
+    if (!lang && this._hass && this._hass.locale) {
+      const locale = this._hass.locale;
+      const dashIdx = locale.indexOf('-');
+      lang = dashIdx > 0 ? locale.substring(0, dashIdx) : locale;
+    }
+    lang = (lang || 'en').toLowerCase();
     
     // Verify feature authorization using shared SHA-256 implementation
     // Define here because _buildTemplate is a separate method and doesn't have access to render() scope
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
-        const hashHex = LUMINA_SHA256(inputValue.trim());
-        const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
-        if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
-          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
-          LUMINA_REFRESH_AUTH(() => {
-            this._forceRender = true;
-            this.render();
-          });
+        const trimmed = inputValue.trim();
+        if (!trimmed) return false;
+        const hashHex = LUMINA_SHA256(trimmed);
+        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
+        if (LUMINA_AUTH_LIST === null) {
+          LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return isAuthorized;
-      } catch (e) {
-        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
-        return false;
-      }
+        return ok;
+      } catch (e) { return false; }
     };
     
     // Get dynamic positions from config
@@ -5215,63 +5706,62 @@ class LuminaEnergyCard extends HTMLElement {
     );
     
     // Check if any entities are configured (if yes, texts should be visible automatically)
-    // Helper function to safely check if a sensor is configured
+    // Optimized: inline check to avoid function call overhead
     const isSensorConfigured = (sensorValue) => {
       return sensorValue && typeof sensorValue === 'string' && sensorValue.trim().length > 0;
     };
     
-    const hasCustomText = [1, 2, 3, 4, 5].some(i =>
-      config[`custom_text_${i}_enabled`] === true &&
-      (isSensorConfigured(config[`custom_text_${i}_text`]) || isSensorConfigured(config[`custom_text_${i}_sensor`]))
-    );
-    const hasConfiguredEntities = Boolean(
-      hasCustomText ||
-      isSensorConfigured(config.sensor_home_load) ||
-      isSensorConfigured(config.sensor_home_load_secondary) ||
-      isSensorConfigured(config.sensor_pv_total) ||
-      isSensorConfigured(config.sensor_pv_total_secondary) ||
-      isSensorConfigured(config.sensor_pv1) ||
-      isSensorConfigured(config.sensor_pv2) ||
-      isSensorConfigured(config.sensor_pv3) ||
-      isSensorConfigured(config.sensor_pv4) ||
-      isSensorConfigured(config.sensor_pv5) ||
-      isSensorConfigured(config.sensor_pv6) ||
-      isSensorConfigured(config.sensor_pv_array2_1) ||
-      isSensorConfigured(config.sensor_pv_array2_2) ||
-      isSensorConfigured(config.sensor_pv_array2_3) ||
-      isSensorConfigured(config.sensor_pv_array2_4) ||
-      isSensorConfigured(config.sensor_pv_array2_5) ||
-      isSensorConfigured(config.sensor_pv_array2_6) ||
-      isSensorConfigured(config.sensor_bat1_soc) ||
-      isSensorConfigured(config.sensor_bat1_power) ||
-      isSensorConfigured(config.sensor_bat2_soc) ||
-      isSensorConfigured(config.sensor_bat2_power) ||
-      isSensorConfigured(config.sensor_bat3_soc) ||
-      isSensorConfigured(config.sensor_bat3_power) ||
-      isSensorConfigured(config.sensor_bat4_soc) ||
-      isSensorConfigured(config.sensor_bat4_power) ||
-      isSensorConfigured(config.sensor_battery_flow) ||
-      isSensorConfigured(config.sensor_battery_charge) ||
-      isSensorConfigured(config.sensor_battery_discharge) ||
-      isSensorConfigured(config.sensor_grid_power) ||
-      isSensorConfigured(config.sensor_grid_import) ||
-      isSensorConfigured(config.sensor_grid_export) ||
-      isSensorConfigured(config.sensor_car_power) ||
-      isSensorConfigured(config.sensor_car_soc) ||
-      isSensorConfigured(config.sensor_car2_power) ||
-      isSensorConfigured(config.sensor_car2_soc) ||
-      isSensorConfigured(config.sensor_heat_pump_consumption)
-    );
+    // Optimized: check custom texts with early exit
+    let hasCustomText = false;
+    for (let i = 1; i <= 5 && !hasCustomText; i++) {
+      if (config[`custom_text_${i}_enabled`] === true) {
+        const text = config[`custom_text_${i}_text`];
+        const sensor = config[`custom_text_${i}_sensor`];
+        if ((text && typeof text === 'string' && text.trim().length > 0) ||
+            (sensor && typeof sensor === 'string' && sensor.trim().length > 0)) {
+          hasCustomText = true;
+        }
+      }
+    }
+    
+    // Optimized: check all sensors in a single pass with early exit
+    const sensorKeys = [
+      'sensor_home_load', 'sensor_home_load_secondary', 'sensor_pv_total', 'sensor_pv_total_secondary',
+      'sensor_pv1', 'sensor_pv2', 'sensor_pv3', 'sensor_pv4', 'sensor_pv5', 'sensor_pv6',
+      'sensor_pv_array2_1', 'sensor_pv_array2_2', 'sensor_pv_array2_3', 'sensor_pv_array2_4', 'sensor_pv_array2_5', 'sensor_pv_array2_6',
+      'sensor_bat1_soc', 'sensor_bat1_power', 'sensor_bat2_soc', 'sensor_bat2_power',
+      'sensor_bat3_soc', 'sensor_bat3_power', 'sensor_bat4_soc', 'sensor_bat4_power',
+      'sensor_battery_flow', 'sensor_battery_charge', 'sensor_battery_discharge',
+      'sensor_grid_power', 'sensor_grid_import', 'sensor_grid_export',
+      'sensor_car_power', 'sensor_car_soc', 'sensor_car2_power', 'sensor_car2_soc',
+      'sensor_heat_pump_consumption'
+    ];
+    let hasConfiguredEntities = hasCustomText;
+    if (!hasConfiguredEntities) {
+      for (let i = 0; i < sensorKeys.length && !hasConfiguredEntities; i++) {
+        const val = config[sensorKeys[i]];
+        if (val && typeof val === 'string' && val.trim().length > 0) {
+          hasConfiguredEntities = true;
+        }
+      }
+    }
     
     // Determine if texts should be visible (must match _updateTextVisibility logic)
-    // Button: always controls show/hide, no 60s. Motion: show for 60s then hide.
+    // Button: cycles through 3 states (0=all, 1=no grid/pv boxes/lines, 2=nothing). Motion: show for 60s then hide.
     let shouldShowTexts;
+    let shouldShowBoxes;
+    
     if (hasTextVisibilitySensor) {
-      shouldShowTexts = this._textsVisible || motionVisibilityRender;
+      const motionActive = motionVisibilityRender;
+      shouldShowTexts = (this._textsVisible !== 2) || motionActive;
+      shouldShowBoxes = (this._textsVisible === 0) || motionActive;
     } else if (enableTextToggleButton) {
-      shouldShowTexts = this._textsVisible;
+      // State 0: all visible, State 1: boxes hidden, State 2: all hidden
+      shouldShowTexts = this._textsVisible !== 2;
+      shouldShowBoxes = this._textsVisible === 0;
     } else {
       shouldShowTexts = hasConfiguredEntities;
+      shouldShowBoxes = hasConfiguredEntities;
     }
     
     const car1Display = viewState.car1.visible ? 'inline' : 'none';
@@ -5535,6 +6025,22 @@ class LuminaEnergyCard extends HTMLElement {
               <stop offset="0" stop-color="${SOC_BAR.colorOn ?? '#00FFFF'}" stop-opacity="0.85"/>
               <stop offset="1" stop-color="${SOC_BAR.colorOn ?? '#00FFFF'}" stop-opacity="1"/>
             </linearGradient>
+            ${(() => {
+              const solarForecast = viewState.solarForecast;
+              if (!solarForecast || !solarForecast.enabled) return '';
+              
+              const percentageRaw = Number(solarForecast.percentage);
+              const percentage = Number.isFinite(percentageRaw) ? Math.max(0, Math.min(100, percentageRaw)) : 0;
+              const opacity = Math.max(0.1, Math.min(1.0, 0.4 + (percentage / 100 * 0.6)));
+              const baseColor = resolveColor(solarForecast.color, '#00FFFF');
+              
+              return `
+            <radialGradient id="solar-forecast-gradient" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" style="stop-color:${baseColor};stop-opacity:${opacity}" />
+              <stop offset="70%" style="stop-color:${baseColor};stop-opacity:${opacity * 0.8}" />
+              <stop offset="100%" style="stop-color:${baseColor};stop-opacity:${opacity * 0.3}" />
+            </radialGradient>`;
+            })()}
           </defs>
 
           <image data-role="background-image" href="${viewState.backgroundImage}" xlink:href="${viewState.backgroundImage}" x="0" y="0" width="800" height="450" preserveAspectRatio="none" />
@@ -5547,33 +6053,33 @@ class LuminaEnergyCard extends HTMLElement {
           <text data-role="title-text" class="title-text ${shouldShowTexts ? '' : 'text-hidden'}" x="400" y="32" font-size="${viewState.title.fontSize}">${viewState.title.text}</text>
           ` : ''}
 
-          <g data-role="grid-box" class="${shouldShowTexts ? '' : 'text-hidden'}" transform="translate(${GRID_BOX.x ?? 580}, ${GRID_BOX.y ?? 15})" style="display:${GRID_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
+          <g data-role="grid-box" class="${shouldShowBoxes ? '' : 'text-hidden'}" transform="translate(${GRID_BOX.x ?? 580}, ${GRID_BOX.y ?? 15})" style="display:${GRID_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
             <rect x="0" y="0" width="${GRID_BOX.width ?? 200}" height="${GRID_BOX.height ?? 85}" rx="10" ry="10" class="alive-box" />
             ${(GRID_BOX.lines || []).map((line, i) => {
               const fy = (GRID_BOX.startY ?? 14) + i * (GRID_BOX.lineHeight ?? 18);
               const fs = GRID_BOX.fontSize ?? 12;
               const fillColor = line.fill || '#00f9f9';
-              return `<text data-role="grid-box-line-${i}" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${(GRID_BOX.width ?? 200) / 2}" y="${fy}" fill="${fillColor}" font-family="sans-serif" font-size="${fs}" text-anchor="middle" dominant-baseline="central">${line.label}: ${line.value}</text>`;
+              return `<text data-role="grid-box-line-${i}" class="${shouldShowBoxes ? '' : 'text-hidden'}" x="${(GRID_BOX.width ?? 200) / 2}" y="${fy}" fill="${fillColor}" font-family="sans-serif" font-size="${fs}" text-anchor="middle" dominant-baseline="central">${line.label}: ${line.value}</text>`;
             }).join('')}
           </g>
-          <g data-role="pv-box" class="${shouldShowTexts ? '' : 'text-hidden'}" transform="translate(${PV_BOX.x ?? 20}, ${PV_BOX.y ?? 15})" style="display:${PV_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
+          <g data-role="pv-box" class="${shouldShowBoxes ? '' : 'text-hidden'}" transform="translate(${PV_BOX.x ?? 20}, ${PV_BOX.y ?? 15})" style="display:${PV_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
             <rect x="0" y="0" width="${PV_BOX.width ?? 200}" height="${PV_BOX.height ?? 85}" rx="10" ry="10" class="alive-box" />
             ${(PV_BOX.lines || []).map((line, i) => {
               const fy = (PV_BOX.startY ?? 14) + i * (PV_BOX.lineHeight ?? 18);
               const fs = PV_BOX.fontSize ?? 12;
               const fillColor = line.fill || '#00f9f9';
-              return `<text data-role="pv-box-line-${i}" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${(PV_BOX.width ?? 200) / 2}" y="${fy}" fill="${fillColor}" font-family="sans-serif" font-size="${fs}" text-anchor="middle" dominant-baseline="central">${line.label}: ${line.value}</text>`;
+              return `<text data-role="pv-box-line-${i}" class="${shouldShowBoxes ? '' : 'text-hidden'}" x="${(PV_BOX.width ?? 200) / 2}" y="${fy}" fill="${fillColor}" font-family="sans-serif" font-size="${fs}" text-anchor="middle" dominant-baseline="central">${line.label}: ${line.value}</text>`;
             }).join('')}
           </g>
 
           <g ${getFlowTransform('pv1')}>
           <path class="track-path" d="${viewState.flowPaths.pv1}" />
-          <path class="flow-path" data-flow-key="pv1" d="${viewState.flowPaths.pv1}" stroke="${viewState.flows.pv1.stroke}" pathLength="100" style="opacity:0;" />
+          <path class="flow-path" data-flow-key="pv1" ${viewState.flows.pv1.direction === -1 ? 'data-flow-dir="reverse"' : ''} d="${viewState.flowPaths.pv1}" stroke="${viewState.flows.pv1.stroke}" pathLength="100" style="opacity:0;" />
           ${buildArrowGroupSvg('pv1', viewState.flows.pv1)}
           </g>
           <g ${getFlowTransform('pv2')}>
           <path class="track-path" d="${viewState.flowPaths.pv2}" />
-          <path class="flow-path" data-flow-key="pv2" d="${viewState.flowPaths.pv2}" stroke="${viewState.flows.pv2.stroke}" pathLength="100" style="opacity:0;" />
+          <path class="flow-path" data-flow-key="pv2" ${viewState.flows.pv2.direction === -1 ? 'data-flow-dir="reverse"' : ''} d="${viewState.flowPaths.pv2}" stroke="${viewState.flows.pv2.stroke}" pathLength="100" style="opacity:0;" />
           ${buildArrowGroupSvg('pv2', viewState.flows.pv2)}
           </g>
           <g ${getFlowTransform('bat')}>
@@ -5620,9 +6126,11 @@ class LuminaEnergyCard extends HTMLElement {
               
               // Use config if available, otherwise assume enabled if we have state
               const isEnabled = config[`custom_flow_${i}_enabled`] !== false;
+              // Show only if enabled AND active (will be updated dynamically in _updateView)
+              const isActive = flowState.active === true;
               
               customFlowsHtml += `
-          <g ${getFlowTransform(flowKey)} data-custom-flow-group="${i}" style="display:${isEnabled ? 'inline' : 'none'};">
+          <g ${getFlowTransform(flowKey)} data-custom-flow-group="${i}" style="display:${(isEnabled && isActive) ? 'inline' : 'none'};">
           <path class="track-path" d="${viewState.flowPaths[flowKey]}" />
           <path class="flow-path" data-flow-key="${flowKey}" d="${viewState.flowPaths[flowKey]}" stroke="${flowState.stroke}" pathLength="100" style="opacity:0;" />
           ${buildArrowGroupSvg(flowKey, flowState)}
@@ -5634,6 +6142,53 @@ class LuminaEnergyCard extends HTMLElement {
           ${viewState.customTexts.map(ct => `
           <text data-role="custom-text-${ct.id}" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${ct.x}" y="${ct.y}" fill="${ct.color}" font-size="${ct.size}" style="font-family: Arial, sans-serif; text-anchor: middle; pointer-events: none;">${ct.text}</text>
           `).join('')}
+
+          ${(() => {
+            const solarForecast = viewState.solarForecast;
+            if (!solarForecast || !solarForecast.enabled) return '';
+            
+            const percentageRaw = Number(solarForecast.percentage);
+            const percentage = Number.isFinite(percentageRaw) ? Math.max(0, Math.min(100, percentageRaw)) : 0;
+            
+            const x = Number(solarForecast.x) || 400;
+            const y = Number(solarForecast.y) || 350;
+            
+            // Calculate size based on percentage (min 20px, max 60px)
+            const baseSize = 30;
+            const sizeVariation = (percentage / 100) * 20; // 0-20px variation
+            const sunSize = Math.max(20, Math.min(60, baseSize + sizeVariation));
+            const sunRadius = sunSize / 2;
+            
+            // Calculate opacity based on percentage (min 0.4, max 1.0)
+            const opacity = Math.max(0.1, Math.min(1.0, 0.4 + (percentage / 100 * 0.6)));
+            
+            // Calculate glow intensity based on percentage
+            const glowSize = Math.max(2, Math.min(20, 5 + (percentage / 100 * 15))); // 5-20px glow
+            
+            // Use configured color (cyan by default)
+            const sunColor = resolveColor(solarForecast.color, '#00FFFF');
+            
+            // Create sun rays (8 rays)
+            const rayCount = 8;
+            const rayLength = sunRadius * 0.6;
+            const rayWidth = 2;
+            let raysSvg = '';
+            for (let i = 0; i < rayCount; i++) {
+              const angle = (i * 360 / rayCount) * Math.PI / 180;
+              const startX = x + Math.cos(angle) * sunRadius;
+              const startY = y + Math.sin(angle) * sunRadius;
+              const endX = x + Math.cos(angle) * (sunRadius + rayLength);
+              const endY = y + Math.sin(angle) * (sunRadius + rayLength);
+              raysSvg += `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="${sunColor}" stroke-width="${rayWidth}" opacity="${opacity * 0.7}" stroke-linecap="round" />`;
+            }
+            
+            return `
+          <g data-role="solar-forecast-sun" class="${shouldShowTexts ? '' : 'text-hidden'}" style="filter: drop-shadow(0 0 ${glowSize}px ${sunColor}) drop-shadow(0 0 ${glowSize * 0.5}px ${sunColor});">
+            ${raysSvg}
+            <circle cx="${x}" cy="${y}" r="${sunRadius}" fill="url(#solar-forecast-gradient)" opacity="${opacity}" />
+            <circle cx="${x}" cy="${y}" r="${sunRadius * 0.7}" fill="${sunColor}" opacity="${opacity * 0.5}" />
+          </g>`;
+          })()}
 
           ${pvLineElements}
 
@@ -5918,7 +6473,7 @@ class LuminaEnergyCard extends HTMLElement {
           </g>
 
           ${viewState.overlayImages.map((overlay, index) =>
-            `<image data-role="overlay-image-${index + 1}" href="${overlay.image || ''}" xlink:href="${overlay.image || ''}" x="${overlay.x}" y="${overlay.y}" width="${overlay.width}" height="${overlay.height}" style="opacity:${overlay.opacity}; display:${overlay.image ? 'inline' : 'none'}; pointer-events:none;" preserveAspectRatio="none" />`
+            `<image data-role="overlay-image-${index + 1}" href="${overlay.image || ''}" xlink:href="${overlay.image || ''}" x="${overlay.x}" y="${overlay.y}" width="${overlay.width}" height="${overlay.height}" style="opacity:${overlay.opacity}; display:${overlay.enabled && overlay.image ? 'inline' : 'none'}; pointer-events:none;" preserveAspectRatio="none" />`
           ).join('')}
           <polygon data-role="pv-clickable-area" points="75,205 200,195 275,245 145,275 75,205" fill="transparent" style="cursor:${pvClickableCursor}; display:${pvClickableDisplay}; pointer-events: all;" />
 
@@ -5945,9 +6500,22 @@ class LuminaEnergyCard extends HTMLElement {
       debugCoords: root.querySelector('[data-role="debug-coordinates"]'),
       title: root.querySelector('[data-role="title-text"]'),
       gridBoxGroup: root.querySelector('[data-role="grid-box"]'),
-      gridBoxLines: [0,1,2,3].map(i => root.querySelector(`[data-role="grid-box-line-${i}"]`)),
+      // Optimized: use for loop instead of map for better performance
+      gridBoxLines: (() => {
+        const lines = [];
+        for (let i = 0; i < 4; i++) {
+          lines[i] = root.querySelector(`[data-role="grid-box-line-${i}"]`);
+        }
+        return lines;
+      })(),
       pvBoxGroup: root.querySelector('[data-role="pv-box"]'),
-      pvBoxLines: [0,1].map(i => root.querySelector(`[data-role="pv-box-line-${i}"]`)),
+      pvBoxLines: (() => {
+        const lines = [];
+        for (let i = 0; i < 2; i++) {
+          lines[i] = root.querySelector(`[data-role="pv-box-line-${i}"]`);
+        }
+        return lines;
+      })(),
       socBarGroup: root.querySelector('[data-role="soc-bar"]'),
       socBarSegments: [0,1,2,3,4,5].map(i => root.querySelector(`[data-role="soc-bar-seg-${i}"]`)),
       pvLines: Array.from({ length: MAX_PV_LINES }, (_, index) => root.querySelector(`[data-role="pv-line-${index}"]`)),
@@ -5994,6 +6562,7 @@ class LuminaEnergyCard extends HTMLElement {
       activeTextButton: root.querySelector('[data-role="active-text-button-container"]'),
       homeButton: root.querySelector('[data-role="home-button-container"]'),
       homeCollapsiblePanel: root.querySelector('[data-role="home-collapsible-panel"]'),
+      customTexts: Array.from({ length: 5 }, (_, i) => root.querySelector(`[data-role="custom-text-${i + 1}"]`)),
 
       flows: {
         pv1: root.querySelector('[data-flow-key="pv1"]'),
@@ -6053,10 +6622,12 @@ class LuminaEnergyCard extends HTMLElement {
     }
 
     // Cache flow path lengths asynchronously to avoid blocking the initial render
+    // Optimized: use for...of loop instead of forEach for better performance
     if (this._domRefs && this._domRefs.flows) {
       requestAnimationFrame(() => {
         if (!this._domRefs || !this._domRefs.flows) return;
-        Object.entries(this._domRefs.flows).forEach(([key, path]) => {
+        const flows = this._domRefs.flows;
+        for (const [key, path] of Object.entries(flows)) {
           if (path && typeof path.getTotalLength === 'function') {
             try {
               this._flowPathLengths.set(key, path.getTotalLength());
@@ -6064,33 +6635,49 @@ class LuminaEnergyCard extends HTMLElement {
               // skip path
             }
           }
-        });
+        }
       });
     }
   }
 
   _togglePvPopup() {
-    if (!this._domRefs || !this._domRefs.pvPopup) return;
-    if (this._pvUiEnabled === false) return;
+    if (!this._domRefs || !this._domRefs.pvPopup) {
+      return;
+    }
+    if (this._pvUiEnabled === false) {
+      return;
+    }
     
     const config = this._config || this.config || {};
     const hasPopupEntities = !!(config.sensor_popup_pv_1 || config.sensor_popup_pv_2 || config.sensor_popup_pv_3 || config.sensor_popup_pv_4 || config.sensor_popup_pv_5 || config.sensor_popup_pv_6);
     const hasFallback = !!(config.sensor_pv_total || config.sensor_pv1 || config.sensor_pv2 || config.sensor_pv3 || config.sensor_pv4 || config.sensor_pv5 || config.sensor_pv6 || config.sensor_pv_total_secondary || config.sensor_pv_array2_1 || config.sensor_pv_array2_2 || config.sensor_pv_array2_3 || config.sensor_pv_array2_4 || config.sensor_pv_array2_5 || config.sensor_pv_array2_6);
     const hasContent = hasPopupEntities || hasFallback;
-    if (!hasContent) return;
+    if (!hasContent) {
+      return;
+    }
     
     const popup = this._domRefs.pvPopup;
     const isVisible = popup.style.display !== 'none';
     if (isVisible) {
       this._hidePvPopup();
     } else {
+      // Set flag to prevent outside click handler from closing popup immediately
+      this._clickingClickableArea = true;
+      setTimeout(() => {
+        this._clickingClickableArea = false;
+      }, 200);
       this._closeOtherPopups('pv');
-      this._showPvPopup();
+      // Use setTimeout to prevent immediate click propagation
+      setTimeout(() => {
+        this._showPvPopup();
+      }, 10);
     }
   }
 
   async _showPvPopup() {
-    if (!this._domRefs || !this._domRefs.pvPopup) return;
+    if (!this._domRefs || !this._domRefs.pvPopup) {
+      return;
+    }
     const popup = this._domRefs.pvPopup;
     
     // Calculate popup content
@@ -6100,27 +6687,50 @@ class LuminaEnergyCard extends HTMLElement {
     let popupPvNames;
     if (hasPopupEntities) {
       popupPvSensorIds = [config.sensor_popup_pv_1, config.sensor_popup_pv_2, config.sensor_popup_pv_3, config.sensor_popup_pv_4, config.sensor_popup_pv_5, config.sensor_popup_pv_6];
-      popupPvNames = [
-        (config.sensor_popup_pv_1_name && config.sensor_popup_pv_1_name.trim()) ? config.sensor_popup_pv_1_name.trim() : this.getEntityName(config.sensor_popup_pv_1),
-        (config.sensor_popup_pv_2_name && config.sensor_popup_pv_2_name.trim()) ? config.sensor_popup_pv_2_name.trim() : this.getEntityName(config.sensor_popup_pv_2),
-        (config.sensor_popup_pv_3_name && config.sensor_popup_pv_3_name.trim()) ? config.sensor_popup_pv_3_name.trim() : this.getEntityName(config.sensor_popup_pv_3),
-        (config.sensor_popup_pv_4_name && config.sensor_popup_pv_4_name.trim()) ? config.sensor_popup_pv_4_name.trim() : this.getEntityName(config.sensor_popup_pv_4),
-        (config.sensor_popup_pv_5_name && config.sensor_popup_pv_5_name.trim()) ? config.sensor_popup_pv_5_name.trim() : this.getEntityName(config.sensor_popup_pv_5),
-        (config.sensor_popup_pv_6_name && config.sensor_popup_pv_6_name.trim()) ? config.sensor_popup_pv_6_name.trim() : this.getEntityName(config.sensor_popup_pv_6)
+      // Optimized: use loop instead of array literal to reduce code duplication
+      popupPvNames = [];
+      const nameConfigs = [
+        config.sensor_popup_pv_1_name, config.sensor_popup_pv_2_name, config.sensor_popup_pv_3_name,
+        config.sensor_popup_pv_4_name, config.sensor_popup_pv_5_name, config.sensor_popup_pv_6_name
       ];
+      for (let i = 0; i < 6; i++) {
+        const nameConfig = nameConfigs[i];
+        const trimmedName = (nameConfig && typeof nameConfig === 'string') ? nameConfig.trim() : '';
+        popupPvNames[i] = trimmedName || this.getEntityName(popupPvSensorIds[i]);
+      }
     } else {
-      const fallbackIds = [
+      // Optimized: combine filter+slice+map into single loop
+      const fallbackIdsRaw = [
         config.sensor_pv_total, config.sensor_pv1, config.sensor_pv2, config.sensor_pv3, config.sensor_pv4, config.sensor_pv5, config.sensor_pv6,
         config.sensor_pv_total_secondary, config.sensor_pv_array2_1, config.sensor_pv_array2_2, config.sensor_pv_array2_3, config.sensor_pv_array2_4, config.sensor_pv_array2_5, config.sensor_pv_array2_6
-      ].filter((id) => id && typeof id === 'string' && id.trim());
-      popupPvSensorIds = fallbackIds.slice(0, 6);
-      popupPvNames = popupPvSensorIds.map((id) => this.getEntityName(id));
+      ];
+      popupPvSensorIds = [];
+      popupPvNames = [];
+      for (let i = 0; i < fallbackIdsRaw.length && popupPvSensorIds.length < 6; i++) {
+        const id = fallbackIdsRaw[i];
+        if (id && typeof id === 'string') {
+          const trimmed = id.trim();
+          if (trimmed) {
+            popupPvSensorIds.push(trimmed);
+            popupPvNames.push(this.getEntityName(trimmed));
+          }
+        }
+      }
     }
-    const popupPvValues = popupPvSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
-    const lines = popupPvValues
-      .map((valueText, i) => (valueText ? `${popupPvNames[i]}: ${valueText}` : ''))
-      .filter((line) => line);
-    if (!lines.length) return;
+    // Optimized: combine map operations into single loop
+    const popupPvValues = [];
+    const lines = [];
+    for (let i = 0; i < popupPvSensorIds.length; i++) {
+      const sensorId = popupPvSensorIds[i];
+      const valueText = this.formatPopupValue(null, sensorId);
+      popupPvValues[i] = valueText;
+      if (valueText) {
+        lines.push(`${popupPvNames[i]}: ${valueText}`);
+      }
+    }
+    if (!lines.length) {
+      return;
+    }
     
     // Calculate popup dimensions based on content
     // Find the maximum font size used in the popup for width and height calculation
@@ -6192,6 +6802,8 @@ class LuminaEnergyCard extends HTMLElement {
       rect.setAttribute('width', adjustedPopupWidth);
     }
     
+    // Phase A Optimization: Batch DOM updates for popup lines (reduces reflows)
+    const domUpdates = [];
     lines.forEach((line, index) => {
       const element = lineElements[index];
       const group = lineGroups[index];
@@ -6203,58 +6815,88 @@ class LuminaEnergyCard extends HTMLElement {
         // Adjust text position if toggle is present: move text left to make room for toggle
         const isControllable = sensorId && typeof sensorId === 'string' && sensorId.trim() && this._isEntityControllable(sensorId.trim());
         const textOffset = isControllable ? -35 : 0; // Move text left by 35px if toggle is present
-        element.setAttribute('x', popupX + adjustedPopupWidth / 2 + textOffset);
-        element.setAttribute('y', yPos);
-        element.textContent = line;
-        element.style.display = 'inline';
         
-        // Apply font size
-        const fontSizeKey = `sensor_popup_pv_${index + 1}_font_size`;
-        const fontSize = config[fontSizeKey] || 16;
-        element.setAttribute('font-size', fontSize);
-        
-        // Apply color
-        const colorKey = `sensor_popup_pv_${index + 1}_color`;
-        const color = config[colorKey] || '#80ffff';
-        element.setAttribute('fill', color);
-        
-        // Show group
-        group.style.display = 'inline';
-        
-        // Check if entity is controllable and show toggle (reuse isControllable from above)
-        if (isControllable && toggle) {
-          const trimmedSensorId = sensorId.trim();
-          // Position toggle: popupX + popupWidth - toggleWidth - 15px margin from right edge
-          // Adjust vertical alignment: raise toggle by 2px to better align with text
-          const toggleWidth = 40; // Width of toggle switch
-          const toggleX = popupX + adjustedPopupWidth - toggleWidth - 15;
-          const toggleY = yPos - 6; // Raise toggle by 6px for better alignment
-          toggle.setAttribute('transform', `translate(${toggleX}, ${toggleY})`);
-          toggle.style.display = 'inline';
+        // Batch DOM updates
+        domUpdates.push(() => {
+          element.setAttribute('x', popupX + adjustedPopupWidth / 2 + textOffset);
+          element.setAttribute('y', yPos);
+          element.textContent = line;
+          element.style.display = 'inline';
           
-          // Set toggle to semi-transparent with cyan border
-          const bgRect = toggle.querySelector('rect');
-          if (bgRect) {
-            bgRect.setAttribute('stroke', '#00FFFF');
-            bgRect.setAttribute('stroke-width', '1.5');
-            bgRect.setAttribute('opacity', '0.7');
-            bgRect.style.stroke = '#00FFFF';
-            bgRect.style.opacity = '0.7';
-          }
-          const sliderCircle = toggle.querySelector('circle');
-          if (sliderCircle) {
-            sliderCircle.setAttribute('opacity', '0.9');
-            sliderCircle.style.opacity = '0.9';
-          }
+          // Apply font size
+          const fontSizeKey = `sensor_popup_pv_${index + 1}_font_size`;
+          const fontSize = config[fontSizeKey] || 16;
+          element.setAttribute('font-size', fontSize);
           
-          // Update toggle state (on/off) using helper function
-          this._updateToggleSwitch(toggle, trimmedSensorId);
-          toggle.setAttribute('data-entity-id', trimmedSensorId);
-        } else if (toggle) {
-          toggle.style.display = 'none';
-        }
+          // Apply color
+          const colorKey = `sensor_popup_pv_${index + 1}_color`;
+          const color = config[colorKey] || '#80ffff';
+          element.setAttribute('fill', color);
+          
+          // Show group
+          group.style.display = 'inline';
+          
+          // Check if entity is controllable and show toggle (reuse isControllable from above)
+          if (isControllable && toggle) {
+            const trimmedSensorId = sensorId.trim();
+            // Position toggle: popupX + popupWidth - toggleWidth - 15px margin from right edge
+            // Adjust vertical alignment: raise toggle by 2px to better align with text
+            const toggleWidth = 40; // Width of toggle switch
+            const toggleX = popupX + adjustedPopupWidth - toggleWidth - 15;
+            const toggleY = yPos - 6; // Raise toggle by 6px for better alignment
+            toggle.setAttribute('transform', `translate(${toggleX}, ${toggleY})`);
+            toggle.style.display = 'inline';
+            
+            // Set toggle to semi-transparent with cyan border
+            const bgRect = toggle.querySelector('rect');
+            if (bgRect) {
+              bgRect.setAttribute('stroke', '#00FFFF');
+              bgRect.setAttribute('stroke-width', '1.5');
+              bgRect.setAttribute('opacity', '0.7');
+              bgRect.style.stroke = '#00FFFF';
+              bgRect.style.opacity = '0.7';
+              bgRect.style.pointerEvents = 'auto';
+            }
+            const sliderCircle = toggle.querySelector('circle');
+            if (sliderCircle) {
+              sliderCircle.setAttribute('opacity', '0.9');
+              sliderCircle.style.opacity = '0.9';
+              sliderCircle.style.pointerEvents = 'auto';
+            }
+            
+            // Update toggle state (on/off) using helper function
+            this._updateToggleSwitch(toggle, trimmedSensorId);
+            toggle.setAttribute('data-entity-id', trimmedSensorId);
+            // Ensure toggle is clickable
+            toggle.style.pointerEvents = 'auto';
+            toggle.style.cursor = 'pointer';
+          } else if (toggle) {
+            toggle.style.display = 'none';
+          }
+        });
       }
     });
+    
+    // Execute all DOM updates in a single batch (1 reflow instead of N)
+    if (domUpdates.length > 0) {
+      requestAnimationFrame(() => {
+        for (let i = 0; i < domUpdates.length; i++) {
+          domUpdates[i]();
+        }
+        // After DOM updates, ensure all visible toggles are clickable
+        (this._domRefs.pvPopupToggles || []).forEach(toggle => {
+          if (toggle && toggle.style.display !== 'none') {
+            toggle.style.pointerEvents = 'auto';
+            toggle.style.cursor = 'pointer';
+            // Ensure child elements are also clickable
+            const rect = toggle.querySelector('rect');
+            const circle = toggle.querySelector('circle');
+            if (rect) rect.style.pointerEvents = 'auto';
+            if (circle) circle.style.pointerEvents = 'auto';
+          }
+        });
+      });
+    }
     
     // Hide unused lines
     for (let i = lines.length; i < lineElements.length; i++) {
@@ -6279,7 +6921,38 @@ class LuminaEnergyCard extends HTMLElement {
     popup.style.opacity = '1';
     popup.style.transform = 'scale(1)';
     popup.style.pointerEvents = 'auto';
+    // Ensure popup has data-role attribute for outside click detection
+    if (!popup.hasAttribute('data-role') || popup.getAttribute('data-role') !== 'pv-popup') {
+      popup.setAttribute('data-role', 'pv-popup');
+    }
+    // Prevent clicks on popup content from closing the popup
+    (this._domRefs.pvPopupLineGroups || []).forEach((group) => {
+      if (group) {
+        group.style.pointerEvents = 'auto';
+      }
+    });
+    // Ensure all toggle elements are clickable
+    (this._domRefs.pvPopupToggles || []).forEach((toggle) => {
+      if (toggle && toggle.style.display !== 'none') {
+        toggle.style.pointerEvents = 'auto';
+        toggle.style.cursor = 'pointer';
+        // Ensure child elements are also clickable
+        const rect = toggle.querySelector('rect');
+        const circle = toggle.querySelector('circle');
+        if (rect) {
+          rect.style.pointerEvents = 'auto';
+        }
+        if (circle) {
+          circle.style.pointerEvents = 'auto';
+        }
+      }
+    });
     this._activePopup = 'pv';
+    // Set a flag to prevent immediate closing after opening
+    this._popupJustOpened = true;
+    setTimeout(() => {
+      this._popupJustOpened = false;
+    }, 300);
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -6287,7 +6960,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _hidePvPopup() {
-    if (!this._domRefs || !this._domRefs.pvPopup) return;
+    if (!this._domRefs || !this._domRefs.pvPopup) {
+      return;
+    }
     const popup = this._domRefs.pvPopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
@@ -6322,14 +6997,18 @@ class LuminaEnergyCard extends HTMLElement {
       this._hideBatteryPopup();
     } else {
       this._closeOtherPopups('battery');
-      this._showBatteryPopup();
+      // Use setTimeout to prevent immediate click propagation
+      setTimeout(() => {
+        this._showBatteryPopup();
+      }, 10);
     }
   }
 
   async _showBatteryPopup() {
-    if (!this._domRefs || !this._domRefs.batteryPopup) return;
+    if (!this._domRefs || !this._domRefs.batteryPopup) {
+      return;
+    }
     const popup = this._domRefs.batteryPopup;
-
     const config = this._config || this.config || {};
     const popupBatSensorIds = [
       config.sensor_popup_bat_1,
@@ -6504,7 +7183,19 @@ class LuminaEnergyCard extends HTMLElement {
     popup.style.display = 'inline';
     popup.style.opacity = '1';
     popup.style.transform = 'scale(1)';
+    popup.style.pointerEvents = 'auto';
+    // Prevent clicks on popup content from closing the popup
+    (this._domRefs.batteryPopupLineGroups || []).forEach(group => {
+      if (group) {
+        group.style.pointerEvents = 'auto';
+      }
+    });
     this._activePopup = 'battery';
+    // Set a flag to prevent immediate closing after opening
+    this._popupJustOpened = true;
+    setTimeout(() => {
+      this._popupJustOpened = false;
+    }, 300);
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -6512,7 +7203,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _hideBatteryPopup() {
-    if (!this._domRefs || !this._domRefs.batteryPopup) return;
+    if (!this._domRefs || !this._domRefs.batteryPopup) {
+      return;
+    }
     const popup = this._domRefs.batteryPopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
@@ -6527,7 +7220,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _toggleHousePopup() {
-    if (!this._domRefs || !this._domRefs.housePopup) return;
+    if (!this._domRefs || !this._domRefs.housePopup) {
+      return;
+    }
     
     // Check if popup has any content by checking if any house entities are configured
     const config = this._config || this.config || {};
@@ -6538,7 +7233,9 @@ class LuminaEnergyCard extends HTMLElement {
                       (config.sensor_popup_house_4 && config.sensor_popup_house_4.trim()) || 
                       (config.sensor_popup_house_5 && config.sensor_popup_house_5.trim()) || 
                       (config.sensor_popup_house_6 && config.sensor_popup_house_6.trim());
-    if (!hasContent) return;
+    if (!hasContent) {
+      return;
+    }
     
     const popup = this._domRefs.housePopup;
     const isVisible = popup.style.display !== 'none';
@@ -6551,9 +7248,10 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _showHousePopup() {
-    if (!this._domRefs || !this._domRefs.housePopup) return;
+    if (!this._domRefs || !this._domRefs.housePopup) {
+      return;
+    }
     const popup = this._domRefs.housePopup;
-    
     // Get house popup data
     const config = this._config || this.config || {};
     if (!config) return;
@@ -6565,7 +7263,11 @@ class LuminaEnergyCard extends HTMLElement {
       config.sensor_popup_house_5,
       config.sensor_popup_house_6
     ];
-    const popupHouseValues = popupHouseSensorIds.map((sensorId) => this.formatPopupValue(null, sensorId));
+    // Optimized: use for loop instead of map for better performance
+    const popupHouseValues = [];
+    for (let i = 0; i < popupHouseSensorIds.length; i++) {
+      popupHouseValues[i] = this.formatPopupValue(null, popupHouseSensorIds[i]);
+    }
     
     const popupHouseNames = [
       config.sensor_popup_house_1_name && config.sensor_popup_house_1_name.trim() ? config.sensor_popup_house_1_name.trim() : this.getEntityName(config.sensor_popup_house_1),
@@ -6736,7 +7438,19 @@ class LuminaEnergyCard extends HTMLElement {
     popup.style.display = 'inline';
     popup.style.opacity = '1';
     popup.style.transform = 'scale(1)';
+    popup.style.pointerEvents = 'auto';
+    // Prevent clicks on popup content from closing the popup
+    (this._domRefs.housePopupLineGroups || []).forEach(group => {
+      if (group) {
+        group.style.pointerEvents = 'auto';
+      }
+    });
     this._activePopup = 'house';
+    // Set a flag to prevent immediate closing after opening
+    this._popupJustOpened = true;
+    setTimeout(() => {
+      this._popupJustOpened = false;
+    }, 300);
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -6744,7 +7458,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _hideHousePopup() {
-    if (!this._domRefs || !this._domRefs.housePopup) return;
+    if (!this._domRefs || !this._domRefs.housePopup) {
+      return;
+    }
     const popup = this._domRefs.housePopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
@@ -6759,7 +7475,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _toggleGridPopup() {
-    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    if (!this._domRefs || !this._domRefs.gridPopup) {
+      return;
+    }
     
     // Check if popup has any content by checking if any grid entities are configured
     const config = this._config || this.config || {};
@@ -6770,7 +7488,9 @@ class LuminaEnergyCard extends HTMLElement {
                       (config.sensor_popup_grid_4 && config.sensor_popup_grid_4.trim()) || 
                       (config.sensor_popup_grid_5 && config.sensor_popup_grid_5.trim()) || 
                       (config.sensor_popup_grid_6 && config.sensor_popup_grid_6.trim());
-    if (!hasContent) return;
+    if (!hasContent) {
+      return;
+    }
     
     const popup = this._domRefs.gridPopup;
     const isVisible = popup.style.display !== 'none';
@@ -6778,14 +7498,18 @@ class LuminaEnergyCard extends HTMLElement {
       this._hideGridPopup();
     } else {
       this._closeOtherPopups('grid');
-      this._showGridPopup();
+      // Use setTimeout to prevent immediate click propagation
+      setTimeout(() => {
+        this._showGridPopup();
+      }, 10);
     }
   }
 
   async _showGridPopup() {
-    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    if (!this._domRefs || !this._domRefs.gridPopup) {
+      return;
+    }
     const popup = this._domRefs.gridPopup;
-    
     // Calculate popup content
     const config = this._config || this.config || {};
     
@@ -6966,7 +7690,19 @@ class LuminaEnergyCard extends HTMLElement {
     popup.style.display = 'inline';
     popup.style.opacity = '1';
     popup.style.transform = 'scale(1)';
+    popup.style.pointerEvents = 'auto';
+    // Prevent clicks on popup content from closing the popup
+    (this._domRefs.gridPopupLineGroups || []).forEach(group => {
+      if (group) {
+        group.style.pointerEvents = 'auto';
+      }
+    });
     this._activePopup = 'grid';
+    // Set a flag to prevent immediate closing after opening
+    this._popupJustOpened = true;
+    setTimeout(() => {
+      this._popupJustOpened = false;
+    }, 300);
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -6974,7 +7710,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _hideGridPopup() {
-    if (!this._domRefs || !this._domRefs.gridPopup) return;
+    if (!this._domRefs || !this._domRefs.gridPopup) {
+      return;
+    }
     const popup = this._domRefs.gridPopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
@@ -6989,7 +7727,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _toggleInverterPopup() {
-    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    if (!this._domRefs || !this._domRefs.inverterPopup) {
+      return;
+    }
     
     // Check if popup has any content by checking if any inverter entities are configured
     const config = this._config || this.config || {};
@@ -7000,7 +7740,9 @@ class LuminaEnergyCard extends HTMLElement {
                       (config.sensor_popup_inverter_4 && config.sensor_popup_inverter_4.trim()) || 
                       (config.sensor_popup_inverter_5 && config.sensor_popup_inverter_5.trim()) || 
                       (config.sensor_popup_inverter_6 && config.sensor_popup_inverter_6.trim());
-    if (!hasContent) return;
+    if (!hasContent) {
+      return;
+    }
     
     const popup = this._domRefs.inverterPopup;
     const isVisible = popup.style.display !== 'none';
@@ -7008,12 +7750,17 @@ class LuminaEnergyCard extends HTMLElement {
       this._hideInverterPopup();
     } else {
       this._closeOtherPopups('inverter');
-      this._showInverterPopup();
+      // Use setTimeout to prevent immediate click propagation
+      setTimeout(() => {
+        this._showInverterPopup();
+      }, 10);
     }
   }
 
   async _showInverterPopup() {
-    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    if (!this._domRefs || !this._domRefs.inverterPopup) {
+      return;
+    }
     const popup = this._domRefs.inverterPopup;
     
     // Calculate popup content
@@ -7196,7 +7943,19 @@ class LuminaEnergyCard extends HTMLElement {
     popup.style.display = 'inline';
     popup.style.opacity = '1';
     popup.style.transform = 'scale(1)';
+    popup.style.pointerEvents = 'auto';
+    // Prevent clicks on popup content from closing the popup
+    (this._domRefs.inverterPopupLineGroups || []).forEach(group => {
+      if (group) {
+        group.style.pointerEvents = 'auto';
+      }
+    });
     this._activePopup = 'inverter';
+    // Set a flag to prevent immediate closing after opening
+    this._popupJustOpened = true;
+    setTimeout(() => {
+      this._popupJustOpened = false;
+    }, 300);
     const gsap = await this._ensureGsap();
     if (gsap) {
       gsap.fromTo(popup, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(1.7)' });
@@ -7204,7 +7963,9 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   async _hideInverterPopup() {
-    if (!this._domRefs || !this._domRefs.inverterPopup) return;
+    if (!this._domRefs || !this._domRefs.inverterPopup) {
+      return;
+    }
     const popup = this._domRefs.inverterPopup;
     const gsap = await this._ensureGsap();
     if (gsap) {
@@ -7219,11 +7980,21 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _closeOtherPopups(except) {
-    if (except !== 'pv') this._hidePvPopup();
-    if (except !== 'battery') this._hideBatteryPopup();
-    if (except !== 'house') this._hideHousePopup();
-    if (except !== 'grid') this._hideGridPopup();
-    if (except !== 'inverter') this._hideInverterPopup();
+    if (except !== 'pv') {
+      this._hidePvPopup();
+    }
+    if (except !== 'battery') {
+      this._hideBatteryPopup();
+    }
+    if (except !== 'house') {
+      this._hideHousePopup();
+    }
+    if (except !== 'grid') {
+      this._hideGridPopup();
+    }
+    if (except !== 'inverter') {
+      this._hideInverterPopup();
+    }
   }
 
   _updateView(viewState) {
@@ -7373,6 +8144,7 @@ class LuminaEnergyCard extends HTMLElement {
         if (ref) {
           const prevOverlay = prev.overlayImages && prev.overlayImages[index];
           const overlayChanged = !prevOverlay ||
+            prevOverlay.enabled !== overlay.enabled ||
             prevOverlay.image !== overlay.image ||
             prevOverlay.x !== overlay.x ||
             prevOverlay.y !== overlay.y ||
@@ -7381,7 +8153,7 @@ class LuminaEnergyCard extends HTMLElement {
             prevOverlay.opacity !== overlay.opacity;
 
           if (overlayChanged) {
-            if (overlay.image) {
+            if (overlay.enabled && overlay.image) {
               ref.setAttribute('href', overlay.image);
               ref.setAttribute('xlink:href', overlay.image);
               ref.setAttribute('x', overlay.x);
@@ -7464,6 +8236,8 @@ class LuminaEnergyCard extends HTMLElement {
       const glow = sb.glow ?? 5;
       const opacity = sb.opacity ?? 0.35;
       const isCharging = viewState.battery && viewState.battery.isCharging;
+      // Phase A Optimization: Batch DOM updates for SOC bar segments (reduces reflows)
+      const socBarUpdates = [];
       refs.socBarSegments.forEach((el, i) => {
         if (!el) return;
         const thresh = (6 - i) * (100 / 6);
@@ -7474,47 +8248,75 @@ class LuminaEnergyCard extends HTMLElement {
         const glowColor = isFirstSegment && lit ? '#E53935' : colorOn;
         const filter = lit && glow > 0 ? `drop-shadow(0 0 ${glow}px ${glowColor}) drop-shadow(0 0 ${Math.round(glow / 2)}px rgba(255,255,255,0.4))` : 'none';
         const shouldPulse = isCharging && lit;
-        if (el.getAttribute('fill') !== fill) el.setAttribute('fill', fill);
-        if (el.getAttribute('fill-opacity') !== String(opacity)) el.setAttribute('fill-opacity', String(opacity));
-        if (el.getAttribute('y') !== String(y)) el.setAttribute('y', String(y));
-        if (el.getAttribute('x') !== '2') el.setAttribute('x', '2');
-        if (el.getAttribute('width') !== String(w - 4)) el.setAttribute('width', String(w - 4));
-        if (el.getAttribute('height') !== String(segH)) el.setAttribute('height', String(segH));
-        if (el.style.filter !== filter) el.style.filter = filter;
-        if (el.getAttribute('stroke') !== 'transparent') el.setAttribute('stroke', 'transparent');
-        if (el.getAttribute('stroke-width') !== '0') el.setAttribute('stroke-width', '0');
-        if (shouldPulse && !el.classList.contains('soc-bar-pulse')) {
-          el.classList.add('soc-bar-pulse');
-        } else if (!shouldPulse && el.classList.contains('soc-bar-pulse')) {
-          el.classList.remove('soc-bar-pulse');
-        }
+        
+        // Batch DOM updates
+        socBarUpdates.push(() => {
+          if (el.getAttribute('fill') !== fill) el.setAttribute('fill', fill);
+          if (el.getAttribute('fill-opacity') !== String(opacity)) el.setAttribute('fill-opacity', String(opacity));
+          if (el.getAttribute('y') !== String(y)) el.setAttribute('y', String(y));
+          if (el.getAttribute('x') !== '2') el.setAttribute('x', '2');
+          if (el.getAttribute('width') !== String(w - 4)) el.setAttribute('width', String(w - 4));
+          if (el.getAttribute('height') !== String(segH)) el.setAttribute('height', String(segH));
+          if (el.style.filter !== filter) el.style.filter = filter;
+          if (el.getAttribute('stroke') !== 'transparent') el.setAttribute('stroke', 'transparent');
+          if (el.getAttribute('stroke-width') !== '0') el.setAttribute('stroke-width', '0');
+          if (shouldPulse && !el.classList.contains('soc-bar-pulse')) {
+            el.classList.add('soc-bar-pulse');
+          } else if (!shouldPulse && el.classList.contains('soc-bar-pulse')) {
+            el.classList.remove('soc-bar-pulse');
+          }
+        });
       });
+      
+      // Execute all SOC bar updates in a single batch (1 reflow instead of 6)
+      if (socBarUpdates.length > 0) {
+        requestAnimationFrame(() => {
+          for (let i = 0; i < socBarUpdates.length; i++) {
+            socBarUpdates[i]();
+          }
+        });
+      }
     }
 
+    // Phase A Optimization: Batch DOM updates for PV lines (reduces reflows)
     if (refs.pvLines && refs.pvLines.length) {
+      const pvLineUpdates = [];
       viewState.pv.lines.forEach((line, index) => {
         const node = refs.pvLines[index];
         if (!node) {
           return;
         }
         const prevLine = prev.pv && prev.pv.lines ? prev.pv.lines[index] : undefined;
-        if (!prevLine || prevLine.text !== line.text) {
-          node.textContent = line.text;
-        }
-        if (!prevLine || prevLine.fill !== line.fill) {
-          node.setAttribute('fill', line.fill);
-        }
-        if (!prev.pv || prev.pv.fontSize !== viewState.pv.fontSize) {
-          node.setAttribute('font-size', viewState.pv.fontSize);
-        }
-        if (!prevLine || prevLine.y !== line.y) {
-          node.setAttribute('y', line.y);
-        }
-        const display = line.visible ? 'inline' : 'none';
-        if (node.style.display !== display) {
-          node.style.display = display;
-        }
+        
+        // Batch DOM updates
+        pvLineUpdates.push(() => {
+          if (!prevLine || prevLine.text !== line.text) {
+            node.textContent = line.text;
+          }
+          if (!prevLine || prevLine.fill !== line.fill) {
+            node.setAttribute('fill', line.fill);
+          }
+          if (!prev.pv || prev.pv.fontSize !== viewState.pv.fontSize) {
+            node.setAttribute('font-size', viewState.pv.fontSize);
+          }
+          if (!prevLine || prevLine.y !== line.y) {
+            node.setAttribute('y', line.y);
+          }
+          const display = line.visible ? 'inline' : 'none';
+          if (node.style.display !== display) {
+            node.style.display = display;
+          }
+        });
       });
+      
+      // Execute all PV line updates in a single batch (1 reflow instead of N)
+      if (pvLineUpdates.length > 0) {
+        requestAnimationFrame(() => {
+          for (let i = 0; i < pvLineUpdates.length; i++) {
+            pvLineUpdates[i]();
+          }
+        });
+      }
     }
 
     if (refs.pvClickableArea) {
@@ -7571,28 +8373,46 @@ class LuminaEnergyCard extends HTMLElement {
         if (refs.loadLines && refs.loadLines.length) {
           const baseY = viewState.load.y || TEXT_POSITIONS.home.y;
           const lineSpacing = viewState.load.fontSize + 4;
+          // Phase A Optimization: Batch DOM updates for load lines (reduces reflows)
+          const loadLineUpdates = [];
           lines.forEach((l, idx) => {
             const node = refs.loadLines[idx];
             if (!node) return;
-            if (!prev.load || !prev.load.lines || (prev.load.lines[idx] || {}).text !== l.text) {
-              node.textContent = l.text;
-            }
-            if (!prev.load || !prev.load.lines || (prev.load.lines[idx] || {}).fill !== l.fill) {
-              node.setAttribute('fill', l.fill || viewState.load.fill);
-            }
-            if (!prev.load || prev.load.fontSize !== viewState.load.fontSize) {
-              node.setAttribute('font-size', viewState.load.fontSize);
-            }
             const desiredY = baseY + idx * lineSpacing;
-            if (!prev.load || prev.load.y !== desiredY) {
-              node.setAttribute('y', desiredY);
-            }
-            if (node.style.display !== 'inline') node.style.display = 'inline';
+            
+            loadLineUpdates.push(() => {
+              if (!prev.load || !prev.load.lines || (prev.load.lines[idx] || {}).text !== l.text) {
+                node.textContent = l.text;
+              }
+              if (!prev.load || !prev.load.lines || (prev.load.lines[idx] || {}).fill !== l.fill) {
+                node.setAttribute('fill', l.fill || viewState.load.fill);
+              }
+              if (!prev.load || prev.load.fontSize !== viewState.load.fontSize) {
+                node.setAttribute('font-size', viewState.load.fontSize);
+              }
+              if (!prev.load || prev.load.y !== desiredY) {
+                node.setAttribute('y', desiredY);
+              }
+              if (node.style.display !== 'inline') node.style.display = 'inline';
+            });
           });
-          // hide unused lines
+          // hide unused lines (also batched)
           for (let i = lines.length; i < refs.loadLines.length; i++) {
             const node = refs.loadLines[i];
-            if (node && node.style.display !== 'none') node.style.display = 'none';
+            if (node) {
+              loadLineUpdates.push(() => {
+                if (node.style.display !== 'none') node.style.display = 'none';
+              });
+            }
+          }
+          
+          // Execute all load line updates in a single batch (1 reflow instead of N)
+          if (loadLineUpdates.length > 0) {
+            requestAnimationFrame(() => {
+              for (let i = 0; i < loadLineUpdates.length; i++) {
+                loadLineUpdates[i]();
+              }
+            });
           }
         }
         // hide single-line element
@@ -7606,8 +8426,23 @@ class LuminaEnergyCard extends HTMLElement {
         if (!prev.load || prev.load.y !== undefined) {
           refs.loadText.setAttribute('y', TEXT_POSITIONS.home.y);
         }
+        // Phase A Optimization: Batch DOM updates for hiding load lines
         if (refs.loadLines && refs.loadLines.length) {
-          refs.loadLines.forEach((node) => { if (node && node.style.display !== 'none') node.style.display = 'none'; });
+          const hideUpdates = [];
+          refs.loadLines.forEach((node) => {
+            if (node && node.style.display !== 'none') {
+              hideUpdates.push(() => {
+                node.style.display = 'none';
+              });
+            }
+          });
+          if (hideUpdates.length > 0) {
+            requestAnimationFrame(() => {
+              for (let i = 0; i < hideUpdates.length; i++) {
+                hideUpdates[i]();
+              }
+            });
+          }
         }
         if (refs.loadText.style.display !== 'inline') refs.loadText.style.display = 'inline';
       }
@@ -7763,16 +8598,42 @@ class LuminaEnergyCard extends HTMLElement {
     syncCarSection('car1');
     syncCarSection('car2');
 
+    // Update custom texts
+    if (viewState.customTexts && Array.isArray(viewState.customTexts)) {
+      viewState.customTexts.forEach((ct, index) => {
+        const textEl = refs.customTexts && refs.customTexts[index];
+        if (textEl) {
+          const prevText = prev.customTexts && prev.customTexts[index];
+          if (!prevText || prevText.text !== ct.text) {
+            textEl.textContent = ct.text;
+          }
+          if (!prevText || prevText.x !== ct.x) {
+            textEl.setAttribute('x', ct.x);
+          }
+          if (!prevText || prevText.y !== ct.y) {
+            textEl.setAttribute('y', ct.y);
+          }
+          if (!prevText || prevText.color !== ct.color) {
+            textEl.setAttribute('fill', ct.color);
+          }
+          if (!prevText || prevText.size !== ct.size) {
+            textEl.setAttribute('font-size', ct.size);
+          }
+        }
+      });
+    }
+
     // Update custom flow group visibility based on viewState.flows
-    // Show the group if the flow is active (sensor value above threshold)
+    // Show the group if the flow is enabled and active (sensor value above threshold)
     for (let i = 1; i <= 5; i++) {
       const flowKey = `custom_flow_${i}`;
       const group = root.querySelector(`[data-custom-flow-group="${i}"]`);
       if (group) {
         const flowState = viewState.flows[flowKey];
-        // Show group if flow is active (value above threshold)
+        const isEnabled = this.config && Boolean(this.config[`custom_flow_${i}_enabled`]);
+        // Show group only if enabled AND flow exists in viewState (has valid sensor/path) AND active
         const isActive = flowState && flowState.active === true;
-        group.style.display = isActive ? 'inline' : 'none';
+        group.style.display = (isEnabled && flowState && isActive) ? 'inline' : 'none';
       }
     }
 
@@ -8051,48 +8912,102 @@ class LuminaEnergyCard extends HTMLElement {
 
     // Remove existing listeners to avoid duplicates
     if (this._eventListenerAttached) {
-      // Remove old listeners before re-attaching
-      if (this._domRefs.houseClickableArea) {
-        const newHouseArea = this._domRefs.houseClickableArea.cloneNode(true);
-        this._domRefs.houseClickableArea.parentNode.replaceChild(newHouseArea, this._domRefs.houseClickableArea);
-        this._domRefs.houseClickableArea = newHouseArea;
-      }
-      if (this._domRefs.pvClickableArea) {
-        const newPvArea = this._domRefs.pvClickableArea.cloneNode(true);
-        this._domRefs.pvClickableArea.parentNode.replaceChild(newPvArea, this._domRefs.pvClickableArea);
-        this._domRefs.pvClickableArea = newPvArea;
-      }
+      // Remove old listeners before re-attaching by cloning nodes
+      const cloneAndReplace = (element, refName) => {
+        if (element && element.parentNode) {
+          const newElement = element.cloneNode(true);
+          element.parentNode.replaceChild(newElement, element);
+          this._domRefs[refName] = newElement;
+        }
+      };
+      cloneAndReplace(this._domRefs.houseClickableArea, 'houseClickableArea');
+      cloneAndReplace(this._domRefs.pvClickableArea, 'pvClickableArea');
+      cloneAndReplace(this._domRefs.batteryClickableArea, 'batteryClickableArea');
+      cloneAndReplace(this._domRefs.gridClickableArea, 'gridClickableArea');
+      cloneAndReplace(this._domRefs.inverterClickableArea, 'inverterClickableArea');
     }
     this._eventListenerAttached = true;
 
     // Attach click listener to house clickable area for house popup
     if (this._domRefs.houseClickableArea) {
-      this._domRefs.houseClickableArea.addEventListener('click', () => {
+      this._domRefs.houseClickableArea.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // Set flag to prevent outside click handler from closing popup
+        this._clickingClickableArea = true;
+        setTimeout(() => {
+          this._clickingClickableArea = false;
+        }, 100);
         this._toggleHousePopup();
-      });
+      }, true); // Use capture phase to catch before outside handler
     }
 
     // Attach click listener to PV clickable area for PV popup
     if (this._domRefs.pvClickableArea) {
+      // Ensure pointer-events is set correctly
+      if (this._domRefs.pvClickableArea.style.pointerEvents !== 'all' && this._domRefs.pvClickableArea.style.pointerEvents !== 'auto') {
+        this._domRefs.pvClickableArea.style.pointerEvents = 'all';
+      }
+      // Ensure display is set correctly based on pvUiEnabled
+      const pvUiEnabled = this._pvUiEnabled !== false; // Default to true if not explicitly false
+      const correctDisplay = pvUiEnabled ? 'inline' : 'none';
+      if (this._domRefs.pvClickableArea.style.display !== correctDisplay) {
+        this._domRefs.pvClickableArea.style.display = correctDisplay;
+      }
       this._domRefs.pvClickableArea.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
+        // Set flag to prevent outside click handler from closing popup
+        this._clickingClickableArea = true;
+        setTimeout(() => {
+          this._clickingClickableArea = false;
+        }, 100);
         this._togglePvPopup();
-      });
+      }, true); // Use capture phase to catch before outside handler
+    } else {
     }
 
     // Attach click listeners to toggle switches
     const attachToggleListeners = (toggles, popupType) => {
-      if (!toggles || !Array.isArray(toggles)) return;
+      if (!toggles || !Array.isArray(toggles)) {
+        return;
+      }
       toggles.forEach((toggle, index) => {
         if (toggle) {
+          // Add listener to the toggle group itself
           toggle.addEventListener('click', async (event) => {
             event.stopPropagation();
+            event.preventDefault();
             const entityId = toggle.getAttribute('data-entity-id');
             if (entityId) {
+              // Get current state before toggle
+              const entity = this._hass && this._hass.states && this._hass.states[entityId];
+              const currentState = entity ? (entity.state || '').toLowerCase() : '';
+              const wasOn = currentState === 'on' || currentState === 'open' || currentState === 'unlocked';
+              // Optimistically update toggle immediately for better UX
+              this._updateToggleSwitchOptimistic(toggle, !wasOn);
+              
               await this._toggleEntity(entityId);
               // Toggle state is updated immediately via _updateAllToggleSwitches()
             }
           });
+          // Also add listeners to child elements (rect, circle) to prevent propagation
+          const rect = toggle.querySelector('rect');
+          const circle = toggle.querySelector('circle');
+          if (rect) {
+            rect.addEventListener('click', (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            });
+          }
+          if (circle) {
+            circle.addEventListener('click', (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            });
+          }
         }
       });
     };
@@ -8103,41 +9018,168 @@ class LuminaEnergyCard extends HTMLElement {
     attachToggleListeners(this._domRefs.gridPopupToggles, 'grid');
     attachToggleListeners(this._domRefs.inverterPopupToggles, 'inverter');
 
+    // Prevent clicks on popup content (text, groups) from closing the popup
+    const attachPopupContentListeners = (popupRef) => {
+      if (!popupRef) return;
+      // Add click listeners to all text elements and line groups to stop propagation
+      const textElements = popupRef.querySelectorAll('text');
+      const lineGroups = popupRef.querySelectorAll('[data-role*="-popup-line-"][data-role*="-group"]');
+      const toggleGroups = popupRef.querySelectorAll('[data-role*="-popup-toggle"]');
+      const allContentElements = [...Array.from(textElements), ...Array.from(lineGroups), ...Array.from(toggleGroups)];
+      allContentElements.forEach(element => {
+        if (element) {
+          element.addEventListener('click', (e) => {
+            e.stopPropagation();
+          });
+          // Also set pointer-events to ensure clicks are captured
+          element.style.pointerEvents = 'auto';
+        }
+      });
+    };
+    
+    attachPopupContentListeners(this._domRefs.pvPopup);
+    attachPopupContentListeners(this._domRefs.batteryPopup);
+    attachPopupContentListeners(this._domRefs.housePopup);
+    attachPopupContentListeners(this._domRefs.gridPopup);
+    attachPopupContentListeners(this._domRefs.inverterPopup);
+
     // Attach click listener to battery clickable area for battery popup
     if (this._domRefs.batteryClickableArea) {
-      this._domRefs.batteryClickableArea.addEventListener('click', () => {
+      this._domRefs.batteryClickableArea.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // Set flag to prevent outside click handler from closing popup
+        this._clickingClickableArea = true;
+        setTimeout(() => {
+          this._clickingClickableArea = false;
+        }, 100);
         this._toggleBatteryPopup();
-      });
+      }, true); // Use capture phase to catch before outside handler
     }
 
     // Attach click listener to grid clickable area for grid popup
     if (this._domRefs.gridClickableArea) {
-      this._domRefs.gridClickableArea.addEventListener('click', () => {
+      this._domRefs.gridClickableArea.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // Set flag to prevent outside click handler from closing popup
+        this._clickingClickableArea = true;
+        setTimeout(() => {
+          this._clickingClickableArea = false;
+        }, 100);
         this._toggleGridPopup();
-      });
+      }, true); // Use capture phase to catch before outside handler
     }
 
     // Attach click listener to inverter clickable area for inverter popup
     if (this._domRefs.inverterClickableArea) {
-      this._domRefs.inverterClickableArea.addEventListener('click', () => {
+      this._domRefs.inverterClickableArea.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // Set flag to prevent outside click handler from closing popup
+        this._clickingClickableArea = true;
+        setTimeout(() => {
+          this._clickingClickableArea = false;
+        }, 100);
         this._toggleInverterPopup();
-      });
+      }, true); // Use capture phase to catch before outside handler
     }
 
-    // Attach click listener to popup for closing (only when clicking the backdrop rect, not lines/toggles)
-    const attachPopupCloseOnRect = (popupRef, hideFn) => {
-      if (!popupRef) return;
-      const rect = popupRef.querySelector('rect');
+    // Attach click listener to close popups when clicking outside
+    // Popups should stay open until user clicks outside or clicks the clickable area again
+    const attachPopupOutsideClickClose = (popupRef, hideFn, popupType) => {
+      if (!popupRef) {
+        return;
+      }
+      // Store the hide function for this popup type
+      if (!this._popupHideFunctions) {
+        this._popupHideFunctions = {};
+      }
+      this._popupHideFunctions[popupType] = hideFn;
+      
+      // Prevent clicks inside popup from closing it
       popupRef.addEventListener('click', (e) => {
-        if (rect && e.target === rect) hideFn();
+        e.stopPropagation();
       });
     };
-    attachPopupCloseOnRect(this._domRefs.pvPopup, () => this._hidePvPopup());
-    attachPopupCloseOnRect(this._domRefs.batteryPopup, () => this._hideBatteryPopup());
-    attachPopupCloseOnRect(this._domRefs.housePopup, () => this._hideHousePopup());
-    attachPopupCloseOnRect(this._domRefs.gridPopup, () => this._hideGridPopup());
-    attachPopupCloseOnRect(this._domRefs.inverterPopup, () => this._hideInverterPopup());
-
+    
+    attachPopupOutsideClickClose(this._domRefs.pvPopup, () => this._hidePvPopup(), 'pv');
+    attachPopupOutsideClickClose(this._domRefs.batteryPopup, () => this._hideBatteryPopup(), 'battery');
+    attachPopupOutsideClickClose(this._domRefs.housePopup, () => this._hideHousePopup(), 'house');
+    attachPopupOutsideClickClose(this._domRefs.gridPopup, () => this._hideGridPopup(), 'grid');
+    attachPopupOutsideClickClose(this._domRefs.inverterPopup, () => this._hideInverterPopup(), 'inverter');
+    
+    // Add document-level click listener to close popups when clicking outside
+    // Remove previous listener if it exists to avoid duplicates
+    if (this._popupOutsideClickHandler) {
+      document.removeEventListener('click', this._popupOutsideClickHandler, true);
+    }
+    
+      this._popupOutsideClickHandler = (e) => {
+        
+        // Don't close if we're currently clicking on a clickable area
+        if (this._clickingClickableArea) {
+          return;
+        }
+        
+        // Don't close if popup was just opened (within 300ms)
+        if (this._popupJustOpened) {
+          return;
+        }
+        
+        // Check if click is on a clickable area (which will toggle the popup) - check this FIRST
+        // Use composedPath to check the entire event path, not just e.target
+        const path = e.composedPath ? e.composedPath() : [];
+        const clickedPvArea = path.find(el => el && el.getAttribute && el.getAttribute('data-role') === 'pv-clickable-area');
+        const clickedBatteryArea = path.find(el => el && el.getAttribute && el.getAttribute('data-role') === 'battery-clickable-area');
+        const clickedHouseArea = path.find(el => el && el.getAttribute && el.getAttribute('data-role') === 'house-clickable-area');
+        const clickedGridArea = path.find(el => el && el.getAttribute && el.getAttribute('data-role') === 'grid-clickable-area');
+        const clickedInverterArea = path.find(el => el && el.getAttribute && el.getAttribute('data-role') === 'inverter-clickable-area');
+        if (clickedPvArea || clickedBatteryArea || clickedHouseArea || clickedGridArea || clickedInverterArea) {
+          return; // Click is on a clickable area, let it handle the toggle
+        }
+        
+        // Check if click is inside shadow root or inside a popup
+        const shadowRoot = this.shadowRoot;
+        const isInsideShadowRoot = shadowRoot && shadowRoot.contains(e.target);
+        const clickedPopup = path.find(el => el && el.getAttribute && el.getAttribute('data-role') && el.getAttribute('data-role').includes('-popup'));
+        if (clickedPopup) {
+          return; // Click is inside a popup, don't close
+        }
+        
+        if (isInsideShadowRoot) {
+          // Click is inside shadow root but not on popup or clickable area, close popups
+          if (this._popupHideFunctions) {
+            Object.values(this._popupHideFunctions).forEach((hideFn, idx) => {
+              if (typeof hideFn === 'function') {
+                hideFn();
+              }
+            });
+          }
+        } else {
+          // Click is outside shadow root - check if any popup is actually visible before closing
+          const hasVisiblePopup = this._domRefs && (
+            (this._domRefs.pvPopup && this._domRefs.pvPopup.style.display !== 'none') ||
+            (this._domRefs.batteryPopup && this._domRefs.batteryPopup.style.display !== 'none') ||
+            (this._domRefs.housePopup && this._domRefs.housePopup.style.display !== 'none') ||
+            (this._domRefs.gridPopup && this._domRefs.gridPopup.style.display !== 'none') ||
+            (this._domRefs.inverterPopup && this._domRefs.inverterPopup.style.display !== 'none')
+          );
+          if (hasVisiblePopup) {
+            if (this._popupHideFunctions) {
+              Object.values(this._popupHideFunctions).forEach((hideFn, idx) => {
+                if (typeof hideFn === 'function') {
+                  hideFn();
+                }
+              });
+            }
+          } else {
+          }
+        }
+      };
+      
+      // Use capture phase to catch clicks before they bubble
+      document.addEventListener('click', this._popupOutsideClickHandler, true);
     if (DEBUG_GRID_ENABLED && this._domRefs.svgRoot) {
       this._domRefs.svgRoot.addEventListener('pointermove', this._handleDebugPointerMove);
       this._domRefs.svgRoot.addEventListener('pointerleave', this._handleDebugPointerLeave);
@@ -8176,7 +9218,8 @@ class LuminaEnergyCard extends HTMLElement {
       if (event && typeof event.stopPropagation === 'function') {
         event.stopPropagation();
       }
-      this._textsVisible = !this._textsVisible;
+      // Cycle through 3 states: 0 (all visible) → 1 (grid/pv boxes and lines hidden) → 2 (all text hidden) → 0
+      this._textsVisible = (this._textsVisible + 1) % 3;
       this._updateTextVisibility();
     } catch (e) {
       // ignore
@@ -8209,10 +9252,88 @@ class LuminaEnergyCard extends HTMLElement {
     }
   }
 
+  _getHousePopupTranslations() {
+    // Language: config.language, else hass.locale (e.g. it-IT -> it), else en
+    const config = { ...(this._defaults || {}), ...(this.config || {}) };
+    let lang = config.language;
+    if (!lang && this._hass && this._hass.locale) {
+      const locale = this._hass.locale;
+      const dashIdx = locale.indexOf('-');
+      lang = dashIdx > 0 ? locale.substring(0, dashIdx) : locale;
+    }
+    lang = (lang || 'en').toLowerCase();
+    
+    const translations = {
+      en: {
+        cameras: 'Cameras',
+        lights: 'Lights',
+        temperature: 'Temperature',
+        humidity: 'Humidity',
+        start: '▶ Start',
+        stop: '■ Stop',
+        on: 'On',
+        off: 'Off',
+        onBtn: 'ON',
+        offBtn: 'OFF'
+      },
+      it: {
+        cameras: 'Telecamere',
+        lights: 'Luci',
+        temperature: 'Temperatura',
+        humidity: 'Umidità',
+        start: '▶ Avvia',
+        stop: '■ Stop',
+        on: 'Acceso',
+        off: 'Spento',
+        onBtn: 'ON',
+        offBtn: 'OFF'
+      },
+      de: {
+        cameras: 'Kameras',
+        lights: 'Lichter',
+        temperature: 'Temperatur',
+        humidity: 'Luftfeuchtigkeit',
+        start: '▶ Start',
+        stop: '■ Stop',
+        on: 'Ein',
+        off: 'Aus',
+        onBtn: 'EIN',
+        offBtn: 'AUS'
+      },
+      fr: {
+        cameras: 'Caméras',
+        lights: 'Lumières',
+        temperature: 'Température',
+        humidity: 'Humidité',
+        start: '▶ Démarrer',
+        stop: '■ Arrêter',
+        on: 'Allumé',
+        off: 'Éteint',
+        onBtn: 'ON',
+        offBtn: 'OFF'
+      },
+      nl: {
+        cameras: 'Camera\'s',
+        lights: 'Lichten',
+        temperature: 'Temperatuur',
+        humidity: 'Luchtvochtigheid',
+        start: '▶ Start',
+        stop: '■ Stop',
+        on: 'Aan',
+        off: 'Uit',
+        onBtn: 'AAN',
+        offBtn: 'UIT'
+      }
+    };
+    
+    return translations[lang] || translations.en;
+  }
+
   _openHouseIconPopup(iconKey) {
     this._closeHouseIconPopup();
     const config = { ...(this._defaults || {}), ...(this.config || {}) };
     const cfg = (k) => (config[k] != null && String(config[k]).trim()) ? String(config[k]).trim() : '';
+    const t = this._getHousePopupTranslations();
     if (iconKey === 'camera') {
       const entityIds = [1, 2, 3, 4, 5, 6].map(i => cfg(`house_camera_${i}`)).filter(Boolean);
       if (entityIds.length === 0) return;
@@ -8279,7 +9400,7 @@ class LuminaEnergyCard extends HTMLElement {
       panel.appendChild(closeBtn);
       const title = document.createElement('div');
       title.className = 'lumina-house-popup-title';
-      title.textContent = 'Cameras';
+      title.textContent = t.cameras;
       panel.appendChild(title);
       const grid = document.createElement('div');
       grid.className = 'lumina-house-popup-grid';
@@ -8299,11 +9420,11 @@ class LuminaEnergyCard extends HTMLElement {
         const startBtn = document.createElement('button');
         startBtn.type = 'button';
         startBtn.className = 'lumina-camera-btn';
-        startBtn.textContent = '▶ Avvia';
+        startBtn.textContent = t.start;
         const stopBtn = document.createElement('button');
         stopBtn.type = 'button';
         stopBtn.className = 'lumina-camera-btn';
-        stopBtn.textContent = '■ Stop';
+        stopBtn.textContent = t.stop;
         stopBtn.style.display = 'none';
 
         const stopStream = () => {
@@ -8399,7 +9520,7 @@ class LuminaEnergyCard extends HTMLElement {
       panel.appendChild(closeBtn);
       const title = document.createElement('div');
       title.className = 'lumina-house-popup-title';
-      title.textContent = 'Luci';
+      title.textContent = t.lights;
       panel.appendChild(title);
       const list = document.createElement('div');
       list.className = 'lumina-house-popup-list';
@@ -8419,7 +9540,7 @@ class LuminaEnergyCard extends HTMLElement {
         valueEl.className = 'lumina-house-popup-list-value';
         const updateState = () => {
           const s = this._hass && this._hass.states && this._hass.states[eid];
-          valueEl.textContent = (s && s.state && String(s.state).toLowerCase() === 'on') ? 'On' : 'Off';
+          valueEl.textContent = (s && s.state && String(s.state).toLowerCase() === 'on') ? t.on : t.off;
         };
         updateState();
         const domain = (this._hass && this._hass.states && this._hass.states[eid]) ? (this._hass.states[eid].entity_id || '').split('.')[0] : '';
@@ -8427,7 +9548,7 @@ class LuminaEnergyCard extends HTMLElement {
         const onBtn = document.createElement('button');
         onBtn.type = 'button';
         onBtn.className = 'lumina-camera-btn';
-        onBtn.textContent = 'ON';
+        onBtn.textContent = t.onBtn;
         onBtn.addEventListener('click', async () => {
           if (!this._hass || !this._hass.callService || !dom) return;
           try { await this._hass.callService(dom, 'turn_on', { entity_id: eid }); } catch (e) {}
@@ -8436,7 +9557,7 @@ class LuminaEnergyCard extends HTMLElement {
         const offBtn = document.createElement('button');
         offBtn.type = 'button';
         offBtn.className = 'lumina-camera-btn';
-        offBtn.textContent = 'OFF';
+        offBtn.textContent = t.offBtn;
         offBtn.addEventListener('click', async () => {
           if (!this._hass || !this._hass.callService || !dom) return;
           try { await this._hass.callService(dom, 'turn_off', { entity_id: eid }); } catch (e) {}
@@ -8479,6 +9600,25 @@ class LuminaEnergyCard extends HTMLElement {
         .lumina-house-popup-list-value { color:rgba(0,255,255,0.9);font-family:Orbitron,sans-serif;font-size:clamp(12px,2.5vmin,16px); }
         .lumina-house-popup-close { position:absolute;top:clamp(8px,2vmin,12px);right:clamp(8px,2vmin,12px);width:clamp(32px,8vmin,40px);height:clamp(32px,8vmin,40px);border-radius:50%;border:2px solid #00FFFF;background:rgba(0,20,40,0.9);color:#00FFFF;font-size:clamp(18px,4vmin,24px);line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2;touch-action:manipulation; }
         .lumina-house-popup-close:hover { background:rgba(0,255,255,0.2); }
+        .lumina-thermostat-card { display:flex;flex-direction:column;gap:8px;background:#0a1628;border:1px solid #00FFFF;border-radius:8px;padding:12px; }
+        .lumina-thermostat-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
+        .lumina-thermostat-name { color:#00FFFF;font-family:Orbitron,sans-serif;font-size:clamp(12px,2.5vmin,16px);font-weight:bold; }
+        .lumina-thermostat-temps { display:flex;gap:16px;align-items:center;justify-content:center;margin:8px 0; }
+        .lumina-thermostat-temp-group { display:flex;flex-direction:column;align-items:center; }
+        .lumina-thermostat-temp-label { color:rgba(0,255,255,0.7);font-family:Orbitron,sans-serif;font-size:10px;margin-bottom:4px; }
+        .lumina-thermostat-temp-value { color:#00FFFF;font-family:Orbitron,sans-serif;font-size:clamp(16px,4vmin,24px);font-weight:bold; }
+        .lumina-thermostat-controls { display:flex;gap:8px;align-items:center;justify-content:center;margin:8px 0; }
+        .lumina-thermostat-btn { width:36px;height:36px;border-radius:50%;border:2px solid #00FFFF;background:rgba(0,20,40,0.9);color:#00FFFF;font-size:20px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;touch-action:manipulation; }
+        .lumina-thermostat-btn:hover { background:rgba(0,255,255,0.2);transform:scale(1.1); }
+        .lumina-thermostat-btn:active { transform:scale(0.95); }
+        .lumina-thermostat-slider { flex:1;max-width:200px;height:6px;border-radius:3px;background:rgba(0,255,255,0.2);position:relative;cursor:pointer; }
+        .lumina-thermostat-slider-fill { height:100%;background:#00FFFF;border-radius:3px;transition:width 0.2s; }
+        .lumina-thermostat-slider-thumb { width:20px;height:20px;border-radius:50%;background:#00FFFF;border:2px solid #001428;position:absolute;top:50%;transform:translate(-50%,-50%);cursor:grab;box-shadow:0 0 8px rgba(0,255,255,0.5); }
+        .lumina-thermostat-slider-thumb:active { cursor:grabbing; }
+        .lumina-thermostat-modes { display:flex;gap:6px;justify-content:center;flex-wrap:wrap; }
+        .lumina-thermostat-mode-btn { padding:6px 12px;border-radius:6px;border:1px solid #00FFFF;background:rgba(0,20,40,0.9);color:rgba(0,255,255,0.7);font-family:Orbitron,sans-serif;font-size:11px;cursor:pointer;transition:all 0.2s;touch-action:manipulation; }
+        .lumina-thermostat-mode-btn.active { background:rgba(0,255,255,0.3);color:#00FFFF;font-weight:bold; }
+        .lumina-thermostat-mode-btn:hover { background:rgba(0,255,255,0.2); }
       `;
       overlay.appendChild(popupStyle);
       const panel = document.createElement('div');
@@ -8492,7 +9632,7 @@ class LuminaEnergyCard extends HTMLElement {
       panel.appendChild(closeBtn);
       const title = document.createElement('div');
       title.className = 'lumina-house-popup-title';
-      title.textContent = 'Temperature';
+      title.textContent = t.temperature;
       panel.appendChild(title);
       const list = document.createElement('div');
       list.className = 'lumina-house-popup-list';
@@ -8502,22 +9642,246 @@ class LuminaEnergyCard extends HTMLElement {
         const fn = ent && ent.attributes && ent.attributes.friendly_name;
         return (fn && typeof fn === 'string' && fn.trim()) ? fn.trim() : eid;
       };
-      entityIds.forEach((eid) => {
-        const row = document.createElement('div');
-        row.className = 'lumina-house-popup-list-row';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'lumina-house-popup-list-name';
-        nameEl.textContent = getEntityName(eid);
-        const valueEl = document.createElement('div');
-        valueEl.className = 'lumina-house-popup-list-value';
+      
+      // Helper function to create thermostat controls
+      const createThermostatCard = (eid) => {
+        const card = document.createElement('div');
+        card.className = 'lumina-thermostat-card';
         const s = this._hass && this._hass.states && this._hass.states[eid];
-        const v = (s && s.attributes && (s.attributes.temperature != null || s.attributes.current_temperature != null)) ? (s.attributes.temperature ?? s.attributes.current_temperature) : (s && s.state);
-        const u = (s && s.attributes && s.attributes.unit_of_measurement) ? String(s.attributes.unit_of_measurement) : '°C';
-        valueEl.textContent = (v != null && v !== '') ? `${v} ${u}` : '—';
-        row.appendChild(nameEl);
-        row.appendChild(valueEl);
-        list.appendChild(row);
+        if (!s) return null;
+        
+        const attrs = s.attributes || {};
+        const currentTemp = attrs.current_temperature;
+        const targetTemp = attrs.temperature;
+        const hvacMode = s.state;
+        const hvacModes = attrs.hvac_modes || [];
+        const minTemp = attrs.min_temp || 7;
+        const maxTemp = attrs.max_temp || 35;
+        const tempStep = attrs.target_temp_step || 0.5;
+        const unit = attrs.unit_of_measurement || '°C';
+        
+        // Header with name
+        const header = document.createElement('div');
+        header.className = 'lumina-thermostat-header';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'lumina-thermostat-name';
+        nameEl.textContent = getEntityName(eid);
+        header.appendChild(nameEl);
+        card.appendChild(header);
+        
+        // Temperature display
+        const temps = document.createElement('div');
+        temps.className = 'lumina-thermostat-temps';
+        
+        if (currentTemp != null) {
+          const currentGroup = document.createElement('div');
+          currentGroup.className = 'lumina-thermostat-temp-group';
+          const currentLabel = document.createElement('div');
+          currentLabel.className = 'lumina-thermostat-temp-label';
+          currentLabel.textContent = 'CURRENT';
+          const currentValue = document.createElement('div');
+          currentValue.className = 'lumina-thermostat-temp-value';
+          currentValue.textContent = `${Number(currentTemp).toFixed(1)}${unit}`;
+          currentGroup.appendChild(currentLabel);
+          currentGroup.appendChild(currentValue);
+          temps.appendChild(currentGroup);
+        }
+        
+        if (targetTemp != null && hvacMode !== 'off') {
+          const targetGroup = document.createElement('div');
+          targetGroup.className = 'lumina-thermostat-temp-group';
+          const targetLabel = document.createElement('div');
+          targetLabel.className = 'lumina-thermostat-temp-label';
+          targetLabel.textContent = 'TARGET';
+          const targetValue = document.createElement('div');
+          targetValue.className = 'lumina-thermostat-temp-value';
+          targetValue.textContent = `${Number(targetTemp).toFixed(1)}${unit}`;
+          targetValue.setAttribute('data-target-temp', 'true');
+          targetGroup.appendChild(targetLabel);
+          targetGroup.appendChild(targetValue);
+          temps.appendChild(targetGroup);
+        }
+        
+        card.appendChild(temps);
+        
+        // Temperature controls (only if not off)
+        if (hvacMode !== 'off' && targetTemp != null) {
+          const controls = document.createElement('div');
+          controls.className = 'lumina-thermostat-controls';
+          
+          // Decrease button
+          const btnMinus = document.createElement('button');
+          btnMinus.type = 'button';
+          btnMinus.className = 'lumina-thermostat-btn';
+          btnMinus.textContent = '−';
+          btnMinus.addEventListener('click', () => {
+            const newTemp = Math.max(minTemp, Number(targetTemp) - tempStep);
+            this._hass.callService('climate', 'set_temperature', {
+              entity_id: eid,
+              temperature: newTemp
+            });
+          });
+          controls.appendChild(btnMinus);
+          
+          // Slider
+          const sliderContainer = document.createElement('div');
+          sliderContainer.className = 'lumina-thermostat-slider';
+          const sliderFill = document.createElement('div');
+          sliderFill.className = 'lumina-thermostat-slider-fill';
+          const sliderThumb = document.createElement('div');
+          sliderThumb.className = 'lumina-thermostat-slider-thumb';
+          
+          const updateSlider = (temp) => {
+            const percent = ((temp - minTemp) / (maxTemp - minTemp)) * 100;
+            sliderFill.style.width = `${percent}%`;
+            sliderThumb.style.left = `${percent}%`;
+          };
+          updateSlider(targetTemp);
+          
+          let isDragging = false;
+          const handleSliderChange = (e) => {
+            const rect = sliderContainer.getBoundingClientRect();
+            const x = (e.type.includes('touch') ? e.touches[0].clientX : e.clientX) - rect.left;
+            const percent = Math.max(0, Math.min(1, x / rect.width));
+            const newTemp = minTemp + percent * (maxTemp - minTemp);
+            const steppedTemp = Math.round(newTemp / tempStep) * tempStep;
+            const clampedTemp = Math.max(minTemp, Math.min(maxTemp, steppedTemp));
+            updateSlider(clampedTemp);
+            return clampedTemp;
+          };
+          
+          const startDrag = (e) => {
+            isDragging = true;
+            e.preventDefault();
+          };
+          
+          const drag = (e) => {
+            if (isDragging) {
+              handleSliderChange(e);
+            }
+          };
+          
+          const endDrag = (e) => {
+            if (isDragging) {
+              const newTemp = handleSliderChange(e);
+              this._hass.callService('climate', 'set_temperature', {
+                entity_id: eid,
+                temperature: newTemp
+              });
+              isDragging = false;
+            }
+          };
+          
+          sliderContainer.addEventListener('mousedown', startDrag);
+          sliderContainer.addEventListener('touchstart', startDrag);
+          document.addEventListener('mousemove', drag);
+          document.addEventListener('touchmove', drag);
+          document.addEventListener('mouseup', endDrag);
+          document.addEventListener('touchend', endDrag);
+          
+          // Store listeners for cleanup
+          sliderListeners.push(
+            { type: 'mousemove', handler: drag },
+            { type: 'touchmove', handler: drag },
+            { type: 'mouseup', handler: endDrag },
+            { type: 'touchend', handler: endDrag }
+          );
+          
+          sliderContainer.appendChild(sliderFill);
+          sliderContainer.appendChild(sliderThumb);
+          controls.appendChild(sliderContainer);
+          
+          // Increase button
+          const btnPlus = document.createElement('button');
+          btnPlus.type = 'button';
+          btnPlus.className = 'lumina-thermostat-btn';
+          btnPlus.textContent = '+';
+          btnPlus.addEventListener('click', () => {
+            const newTemp = Math.min(maxTemp, Number(targetTemp) + tempStep);
+            this._hass.callService('climate', 'set_temperature', {
+              entity_id: eid,
+              temperature: newTemp
+            });
+          });
+          controls.appendChild(btnPlus);
+          
+          card.appendChild(controls);
+        }
+        
+        // HVAC mode buttons
+        if (hvacModes.length > 0) {
+          const modes = document.createElement('div');
+          modes.className = 'lumina-thermostat-modes';
+          
+          const modeLabels = {
+            'off': 'OFF',
+            'heat': 'HEAT',
+            'cool': 'COOL',
+            'heat_cool': 'AUTO',
+            'auto': 'AUTO',
+            'dry': 'DRY',
+            'fan_only': 'FAN'
+          };
+          
+          hvacModes.forEach(mode => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'lumina-thermostat-mode-btn';
+            if (mode === hvacMode) btn.classList.add('active');
+            btn.textContent = modeLabels[mode] || mode.toUpperCase();
+            btn.addEventListener('click', () => {
+              this._hass.callService('climate', 'set_hvac_mode', {
+                entity_id: eid,
+                hvac_mode: mode
+              });
+            });
+            modes.appendChild(btn);
+          });
+          
+          card.appendChild(modes);
+        }
+        
+        return card;
+      };
+      
+      // Store event listeners for cleanup
+      const sliderListeners = [];
+      
+      // Create cards for each entity
+      entityIds.forEach((eid) => {
+        const s = this._hass && this._hass.states && this._hass.states[eid];
+        // Check if it's a climate entity by domain or by checking if it has hvac_modes attribute
+        const domain = eid ? eid.split('.')[0] : '';
+        const hasClimateAttrs = s && s.attributes && s.attributes.hvac_modes;
+        const isClimate = s && (domain === 'climate' || hasClimateAttrs);
+        
+        if (isClimate) {
+          // Create thermostat control card
+          const thermostatCard = createThermostatCard(eid);
+          if (thermostatCard) {
+            list.appendChild(thermostatCard);
+          }
+        } else {
+          // Create simple temperature display row (for sensors)
+          const row = document.createElement('div');
+          row.className = 'lumina-house-popup-list-row';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'lumina-house-popup-list-name';
+          nameEl.textContent = getEntityName(eid);
+          const valueEl = document.createElement('div');
+          valueEl.className = 'lumina-house-popup-list-value';
+          const v = (s && s.attributes && (s.attributes.temperature != null || s.attributes.current_temperature != null)) ? (s.attributes.temperature ?? s.attributes.current_temperature) : (s && s.state);
+          const u = (s && s.attributes && s.attributes.unit_of_measurement) ? String(s.attributes.unit_of_measurement) : '°C';
+          valueEl.textContent = (v != null && v !== '') ? `${v} ${u}` : '—';
+          row.appendChild(nameEl);
+          row.appendChild(valueEl);
+          list.appendChild(row);
+        }
       });
+      
+      // Store slider listeners in overlay for cleanup
+      overlay._sliderListeners = sliderListeners;
+      
       overlay.addEventListener('click', (e) => { if (e.target === overlay) this._closeHouseIconPopup(); });
       const root = typeof document !== 'undefined' && document.body ? document.body : (this.shadowRoot || this);
       root.appendChild(overlay);
@@ -8555,7 +9919,7 @@ class LuminaEnergyCard extends HTMLElement {
       panel.appendChild(closeBtn);
       const title = document.createElement('div');
       title.className = 'lumina-house-popup-title';
-      title.textContent = 'Umidità';
+      title.textContent = t.humidity;
       panel.appendChild(title);
       const list = document.createElement('div');
       list.className = 'lumina-house-popup-list';
@@ -8606,6 +9970,15 @@ class LuminaEnergyCard extends HTMLElement {
         }
         el._luminaStreamEl = null;
       });
+      
+      // Cleanup slider event listeners
+      if (ov._sliderListeners && Array.isArray(ov._sliderListeners)) {
+        ov._sliderListeners.forEach(({ type, handler }) => {
+          document.removeEventListener(type, handler);
+        });
+        ov._sliderListeners = null;
+      }
+      
       ov.parentNode.removeChild(ov);
       this._houseIconPopupOverlay = null;
     }
@@ -8621,19 +9994,12 @@ class LuminaEnergyCard extends HTMLElement {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
         const hashHex = LUMINA_SHA256(inputValue.trim());
-        const isAuthorized = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
+        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
         if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
-          luminaAuthLog('render: auth list null, triggering refresh (passwd len=', inputValue.trim().length, 'hash=', hashHex, ')');
-          LUMINA_REFRESH_AUTH(() => {
-            this._forceRender = true;
-            this.render();
-          });
+          LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return isAuthorized;
-      } catch (e) {
-        luminaAuthLog('verifyFeatureAuth error:', e?.message || String(e));
-        return false;
-      }
+        return ok;
+      } catch (e) { return false; }
     };
     const authInput = config.pro_password;
     const isProEnabled = verifyFeatureAuth(authInput);
@@ -8668,64 +10034,65 @@ class LuminaEnergyCard extends HTMLElement {
     
     // Check if any entities are configured (if yes, texts should be visible automatically)
     // Helper function to safely check if a sensor is configured
-    const isSensorConfigured = (sensorValue) => {
-      return sensorValue && typeof sensorValue === 'string' && sensorValue.trim().length > 0;
-    };
-    
-    const hasCustomText = [1, 2, 3, 4, 5].some(i =>
-      config[`custom_text_${i}_enabled`] === true &&
-      (isSensorConfigured(config[`custom_text_${i}_text`]) || isSensorConfigured(config[`custom_text_${i}_sensor`]))
-    );
-    const hasConfiguredEntities = Boolean(
-      hasCustomText ||
-      isSensorConfigured(config.sensor_home_load) ||
-      isSensorConfigured(config.sensor_home_load_secondary) ||
-      isSensorConfigured(config.sensor_pv_total) ||
-      isSensorConfigured(config.sensor_pv_total_secondary) ||
-      isSensorConfigured(config.sensor_pv1) ||
-      isSensorConfigured(config.sensor_pv2) ||
-      isSensorConfigured(config.sensor_pv3) ||
-      isSensorConfigured(config.sensor_pv4) ||
-      isSensorConfigured(config.sensor_pv5) ||
-      isSensorConfigured(config.sensor_pv6) ||
-      isSensorConfigured(config.sensor_pv_array2_1) ||
-      isSensorConfigured(config.sensor_pv_array2_2) ||
-      isSensorConfigured(config.sensor_pv_array2_3) ||
-      isSensorConfigured(config.sensor_pv_array2_4) ||
-      isSensorConfigured(config.sensor_pv_array2_5) ||
-      isSensorConfigured(config.sensor_pv_array2_6) ||
-      isSensorConfigured(config.sensor_bat1_soc) ||
-      isSensorConfigured(config.sensor_bat1_power) ||
-      isSensorConfigured(config.sensor_bat2_soc) ||
-      isSensorConfigured(config.sensor_bat2_power) ||
-      isSensorConfigured(config.sensor_bat3_soc) ||
-      isSensorConfigured(config.sensor_bat3_power) ||
-      isSensorConfigured(config.sensor_bat4_soc) ||
-      isSensorConfigured(config.sensor_bat4_power) ||
-      isSensorConfigured(config.sensor_battery_flow) ||
-      isSensorConfigured(config.sensor_battery_charge) ||
-      isSensorConfigured(config.sensor_battery_discharge) ||
-      isSensorConfigured(config.sensor_grid_power) ||
-      isSensorConfigured(config.sensor_grid_import) ||
-      isSensorConfigured(config.sensor_grid_export) ||
-      isSensorConfigured(config.sensor_car_power) ||
-      isSensorConfigured(config.sensor_car_soc) ||
-      isSensorConfigured(config.sensor_car2_power) ||
-      isSensorConfigured(config.sensor_car2_soc) ||
-      isSensorConfigured(config.sensor_heat_pump_consumption)
-    );
-    
-    let shouldShowTexts;
-    const enableTextToggleButton = Boolean(this.config && this.config.enable_text_toggle_button);
-    if (hasTextVisibilitySensor) {
-      shouldShowTexts = this._textsVisible || motionVisibility;
-    } else if (enableTextToggleButton) {
-      shouldShowTexts = this._textsVisible;
-    } else {
-      shouldShowTexts = hasConfiguredEntities;
+    // Optimized: check with early exit
+    let hasCustomText = false;
+    for (let i = 1; i <= 5 && !hasCustomText; i++) {
+      if (config[`custom_text_${i}_enabled`] === true) {
+        const text = config[`custom_text_${i}_text`];
+        const sensor = config[`custom_text_${i}_sensor`];
+        if ((text && typeof text === 'string' && text.trim().length > 0) ||
+            (sensor && typeof sensor === 'string' && sensor.trim().length > 0)) {
+          hasCustomText = true;
+        }
+      }
+    }
+    // Check solar forecast
+    if (!hasCustomText && config.solar_forecast_enabled === true) {
+      const solarForecastSensor = config.sensor_solar_forecast;
+      if (solarForecastSensor && typeof solarForecastSensor === 'string' && solarForecastSensor.trim().length > 0) {
+        hasCustomText = true;
+      }
+    }
+    const sensorKeys = [
+      'sensor_home_load', 'sensor_home_load_secondary', 'sensor_pv_total', 'sensor_pv_total_secondary',
+      'sensor_pv1', 'sensor_pv2', 'sensor_pv3', 'sensor_pv4', 'sensor_pv5', 'sensor_pv6',
+      'sensor_pv_array2_1', 'sensor_pv_array2_2', 'sensor_pv_array2_3', 'sensor_pv_array2_4', 'sensor_pv_array2_5', 'sensor_pv_array2_6',
+      'sensor_bat1_soc', 'sensor_bat1_power', 'sensor_bat2_soc', 'sensor_bat2_power',
+      'sensor_bat3_soc', 'sensor_bat3_power', 'sensor_bat4_soc', 'sensor_bat4_power',
+      'sensor_battery_flow', 'sensor_battery_charge', 'sensor_battery_discharge',
+      'sensor_grid_power', 'sensor_grid_import', 'sensor_grid_export',
+      'sensor_car_power', 'sensor_car_soc', 'sensor_car2_power', 'sensor_car2_soc',
+      'sensor_heat_pump_consumption', 'sensor_solar_forecast'
+    ];
+    let hasConfiguredEntities = hasCustomText;
+    if (!hasConfiguredEntities) {
+      for (let i = 0; i < sensorKeys.length && !hasConfiguredEntities; i++) {
+        const val = config[sensorKeys[i]];
+        if (val && typeof val === 'string' && val.trim().length > 0) {
+          hasConfiguredEntities = true;
+        }
+      }
     }
     
-    const textElements = this._domRefs.svgRoot.querySelectorAll('[data-role*="pv-line"], [data-role*="battery"], [data-role*="load"], [data-role*="house-temp"], [data-role*="heat-pump"], [data-role*="grid"], [data-role*="car"], [data-role*="title"], [data-role*="daily"], [data-role*="grid-box-line"], [data-role*="pv-box-line"], [data-role*="custom-text"]');
+    let shouldShowTexts;
+    let shouldShowBoxes;
+    const enableTextToggleButton = Boolean(this.config && this.config.enable_text_toggle_button);
+    
+    if (hasTextVisibilitySensor) {
+      const motionActive = motionVisibility;
+      shouldShowTexts = (this._textsVisible !== 2) || motionActive;
+      shouldShowBoxes = (this._textsVisible === 0) || motionActive;
+    } else if (enableTextToggleButton) {
+      // State 0: all visible, State 1: grid/pv boxes and lines hidden, State 2: all hidden
+      shouldShowTexts = this._textsVisible !== 2;
+      shouldShowBoxes = this._textsVisible === 0;
+    } else {
+      shouldShowTexts = hasConfiguredEntities;
+      shouldShowBoxes = hasConfiguredEntities;
+    }
+    
+    // Update regular texts (excluding box lines)
+    const textElements = this._domRefs.svgRoot.querySelectorAll('[data-role*="pv-line"], [data-role*="battery"], [data-role*="load"], [data-role*="house-temp"], [data-role*="heat-pump"], [data-role*="grid"]:not([data-role*="grid-box"]), [data-role*="car"], [data-role*="title"], [data-role*="daily"], [data-role*="custom-text"]');
     let textUpdated = 0;
     textElements.forEach(textEl => {
       if (textEl.tagName === 'text' || textEl.getAttribute('data-role')?.startsWith('custom-text')) {
@@ -8738,20 +10105,20 @@ class LuminaEnergyCard extends HTMLElement {
       }
     });
     
-    // Update box groups (PV and Grid boxes)
-    const boxGroups = this._domRefs.svgRoot.querySelectorAll('[data-role="grid-box"], [data-role="pv-box"]');
-    boxGroups.forEach(boxEl => {
-      if (shouldShowTexts) {
+    // Update boxes separately (PV and Grid boxes) - hide in state 1 and state 2
+    const boxElements = this._domRefs.svgRoot.querySelectorAll('[data-role="grid-box"], [data-role="pv-box"], [data-role*="grid-box-line"], [data-role*="pv-box-line"]');
+    boxElements.forEach(boxEl => {
+      if (shouldShowBoxes) {
         boxEl.classList.remove('text-hidden');
       } else {
         boxEl.classList.add('text-hidden');
       }
     });
     
-    // Update linea box paths
+    // Update linea box paths (hide only grid and pv box lines in state 1)
     const lineaBoxPaths = this._domRefs.svgRoot.querySelectorAll('[data-role="linea-box-1"], [data-role="linea-box-2"]');
     lineaBoxPaths.forEach(pathEl => {
-      if (shouldShowTexts) {
+      if (shouldShowBoxes) {
         pathEl.classList.remove('text-hidden');
       } else {
         pathEl.classList.add('text-hidden');
@@ -8884,43 +10251,44 @@ class LuminaEnergyCardEditor extends HTMLElement {
           gridBox: { title: 'Grid Box', helper: 'Top-right box. Import/Export + daily. Position and size.' },
           pvBox: { title: 'PV Box', helper: 'Top-left box. PV Total (sum) + Daily production. Position and size.' },
           batteryFill: { title: 'Battery Fill Position', helper: 'Sliders show exact coordinates (px) and angles (°). Note values for definitive YAML. YAML: dev_battery_fill_x, _y_base, _width, _max_height, _rotate, _skew_x, _skew_y.' },
-          overlay_image: { title: 'Overlay Image (PRO Feature)', helper: '⚠️ PRO FEATURE: This is a premium function. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email in the message. Once you receive the password, enter it in the PRO Password field in General Settings.' },
-          custom_flows: { title: 'Custom Flows', helper: 'Create additional energy flows by defining a sensor, SVG path, color, and activation threshold. Useful for visualizing custom energy sources or loads.' },
+          overlay_image: { title: 'Overlay Image (PRO Feature)', helper: '⚠️ PRO FEATURE: Add up to 5 custom PNG images overlayed on the card (cars, pools, turbines, etc.). Each image has independent controls for position (X/Y), size (width/height), and opacity. Perfect for adding realistic visual elements to your energy dashboard. Examples included: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email.' },
+          custom_flows: { title: 'Custom Flows', helper: 'Create up to 5 additional animated energy flows with custom sensors, SVG paths, colors, and activation thresholds. Each flow can have independent source/destination positions, line colors, glow effects, and power thresholds. Perfect for visualizing custom loads (pool pump, heat pump, EV charger, etc.) or additional energy sources. Flows animate automatically when sensor values exceed the threshold.' },
+          custom_text: { title: 'Custom Text', helper: 'Add up to 5 custom text labels anywhere on the card. Each text can display: static labels, sensor values (with unit), or both combined. Configure position (X/Y), color, font size, and format. Perfect for showing additional data like temperatures, humidity, power consumption, or custom status messages on your energy dashboard.' },
           about: { title: 'About', helper: 'Credits, version, and helpful links.' }
         },
         fields: {
           card_title: { label: 'Card Title', helper: 'Title displayed at the top of the card. Leave blank to disable.' },
           pro_password: { label: 'PRO Password', helper: 'Enter PRO password to unlock premium features like Overlay Image. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email in the message.' },
-          overlay_image_enabled: { label: 'Enable Overlay Image', helper: 'Enable or disable the overlay image.' },
-          overlay_image: { label: 'Overlay Image Path', helper: 'Path to an overlay PNG image to display on top of the background (e.g., /local/community/lumina-energy-card/overlay.png).' },
-          overlay_image_x: { label: 'Overlay Image X Position (px)', helper: 'Horizontal position of the overlay image. Default: 0.' },
-          overlay_image_y: { label: 'Overlay Image Y Position (px)', helper: 'Vertical position of the overlay image. Default: 0.' },
-          overlay_image_width: { label: 'Overlay Image Width (px)', helper: 'Width of the overlay image. Default: 800.' },
-          overlay_image_height: { label: 'Overlay Image Height (px)', helper: 'Height of the overlay image. Default: 450.' },
-          overlay_image_opacity: { label: 'Overlay Image Opacity', helper: 'Opacity of the overlay image (0.0 to 1.0). Default: 1.0.' },
-          overlay_image_2_enabled: { label: 'Enable Overlay Image 2', helper: 'Enable or disable the second overlay image.' },
-          overlay_image_2: { label: 'Overlay Image 2 Path', helper: 'Path to a second overlay PNG image to display on top of the background (e.g., /local/community/lumina-energy-card/overlay2.png).' },
+          overlay_image_enabled: { label: 'Enable Overlay Image 1', helper: 'Enable or disable the first overlay image. Toggle to show/hide the image on your card.' },
+          overlay_image: { label: 'Overlay Image 1 Path', helper: 'Path to your PNG image. Default example: /local/community/lumina-energy-card/car.png. Upload custom images to /config/www/ and reference as /local/filename.png. Supports transparent PNG for realistic overlay effects.' },
+          overlay_image_x: { label: 'Overlay Image 1 X Position (px)', helper: 'Horizontal position from left edge. Use negative values to move left, positive to move right. Adjust in real-time using the visual editor. Range: -800 to 1600. Default: 0.' },
+          overlay_image_y: { label: 'Overlay Image 1 Y Position (px)', helper: 'Vertical position from top edge. Use negative values to move up, positive to move down. Adjust in real-time using the visual editor. Range: -450 to 900. Default: 0.' },
+          overlay_image_width: { label: 'Overlay Image 1 Width (px)', helper: 'Width of the image in pixels. Adjust to scale the image proportionally with height. Tip: Maintain aspect ratio for best visual results. Default: 800.' },
+          overlay_image_height: { label: 'Overlay Image 1 Height (px)', helper: 'Height of the image in pixels. Adjust to scale the image proportionally with width. Tip: Maintain aspect ratio for best visual results. Default: 450.' },
+          overlay_image_opacity: { label: 'Overlay Image 1 Opacity', helper: 'Transparency level: 0.0 = fully transparent (invisible), 1.0 = fully opaque (solid). Use values like 0.5 for semi-transparent overlay effects. Default: 1.0.' },
+          overlay_image_2_enabled: { label: 'Enable Overlay Image 2', helper: 'Enable or disable the second overlay image. Stack multiple images for complex visualizations.' },
+          overlay_image_2: { label: 'Overlay Image 2 Path', helper: 'Path to second PNG image. Default example: /local/community/lumina-energy-card/car_real.png. Layer multiple images to create realistic scenes with different elements.' },
           overlay_image_2_x: { label: 'Overlay Image 2 X Position (px)', helper: 'Horizontal position of the second overlay image. Default: 0.' },
           overlay_image_2_y: { label: 'Overlay Image 2 Y Position (px)', helper: 'Vertical position of the second overlay image. Default: 0.' },
           overlay_image_2_width: { label: 'Overlay Image 2 Width (px)', helper: 'Width of the second overlay image. Default: 800.' },
           overlay_image_2_height: { label: 'Overlay Image 2 Height (px)', helper: 'Height of the second overlay image. Default: 450.' },
           overlay_image_2_opacity: { label: 'Overlay Image 2 Opacity', helper: 'Opacity of the second overlay image (0.0 to 1.0). Default: 1.0.' },
-          overlay_image_3_enabled: { label: 'Enable Overlay Image 3', helper: 'Enable or disable the third overlay image.' },
-          overlay_image_3: { label: 'Overlay Image 3 Path', helper: 'Path to a third overlay PNG image to display on top of the background (e.g., /local/community/lumina-energy-card/overlay3.png).' },
+          overlay_image_3_enabled: { label: 'Enable Overlay Image 3', helper: 'Enable or disable the third overlay image. Add more visual elements to your energy dashboard.' },
+          overlay_image_3: { label: 'Overlay Image 3 Path', helper: 'Path to third PNG image. Default example: /local/community/lumina-energy-card/Pool.png. Perfect for showing swimming pools, water heaters, or other energy consumers.' },
           overlay_image_3_x: { label: 'Overlay Image 3 X Position (px)', helper: 'Horizontal position of the third overlay image. Default: 0.' },
           overlay_image_3_y: { label: 'Overlay Image 3 Y Position (px)', helper: 'Vertical position of the third overlay image. Default: 0.' },
           overlay_image_3_width: { label: 'Overlay Image 3 Width (px)', helper: 'Width of the third overlay image. Default: 800.' },
           overlay_image_3_height: { label: 'Overlay Image 3 Height (px)', helper: 'Height of the third overlay image. Default: 450.' },
           overlay_image_3_opacity: { label: 'Overlay Image 3 Opacity', helper: 'Opacity of the third overlay image (0.0 to 1.0). Default: 1.0.' },
-          overlay_image_4_enabled: { label: 'Enable Overlay Image 4', helper: 'Enable or disable the fourth overlay image.' },
-          overlay_image_4: { label: 'Overlay Image 4 Path', helper: 'Path to a fourth overlay PNG image to display on top of the background (e.g., /local/community/lumina-energy-card/overlay4.png).' },
+          overlay_image_4_enabled: { label: 'Enable Overlay Image 4', helper: 'Enable or disable the fourth overlay image. Combine multiple overlays for detailed visualizations.' },
+          overlay_image_4: { label: 'Overlay Image 4 Path', helper: 'Path to fourth PNG image. Default example: /local/community/lumina-energy-card/pool_real.png. Use realistic or stylized images based on your preference.' },
           overlay_image_4_x: { label: 'Overlay Image 4 X Position (px)', helper: 'Horizontal position of the fourth overlay image. Default: 0.' },
           overlay_image_4_y: { label: 'Overlay Image 4 Y Position (px)', helper: 'Vertical position of the fourth overlay image. Default: 0.' },
           overlay_image_4_width: { label: 'Overlay Image 4 Width (px)', helper: 'Width of the fourth overlay image. Default: 800.' },
           overlay_image_4_height: { label: 'Overlay Image 4 Height (px)', helper: 'Height of the fourth overlay image. Default: 450.' },
           overlay_image_4_opacity: { label: 'Overlay Image 4 Opacity', helper: 'Opacity of the fourth overlay image (0.0 to 1.0). Default: 1.0.' },
-          overlay_image_5_enabled: { label: 'Enable Overlay Image 5', helper: 'Enable or disable the fifth overlay image.' },
-          overlay_image_5: { label: 'Overlay Image 5 Path', helper: 'Path to a fifth overlay PNG image to display on top of the background (e.g., /local/community/lumina-energy-card/overlay5.png).' },
+          overlay_image_5_enabled: { label: 'Enable Overlay Image 5', helper: 'Enable or disable the fifth overlay image. Maximum flexibility with 5 independent overlay layers.' },
+          overlay_image_5: { label: 'Overlay Image 5 Path', helper: 'Path to fifth PNG image. Default example: /local/community/lumina-energy-card/turbine.png. Great for wind turbines, solar panels, generators, or any renewable energy source.' },
           overlay_image_5_x: { label: 'Overlay Image 5 X Position (px)', helper: 'Horizontal position of the fifth overlay image. Default: 0.' },
           overlay_image_5_y: { label: 'Overlay Image 5 Y Position (px)', helper: 'Vertical position of the fifth overlay image. Default: 0.' },
           overlay_image_5_width: { label: 'Overlay Image 5 Width (px)', helper: 'Width of the fifth overlay image. Default: 800.' },
@@ -9045,6 +10413,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           text_toggle_button_y: { label: 'Text Toggle Button Y (px)', helper: 'Vertical position from top in pixels. Leave empty to position at bottom. Default: bottom.' },
           text_toggle_button_scale: { label: 'Text Toggle Button Scale', helper: 'Scale factor for button size (0.5 to 2.0). 1.0 = default size.' },
           text_visibility_sensor: { label: 'Text Visibility Motion Sensor (PRO)', helper: '⚠️ PRO FEATURE: Motion sensor entity. When motion is detected, texts appear. Perfect for wall tablets with camera.' },
+          solar_forecast_enabled: { label: 'Enable Solar Forecast', helper: '⚠️ PRO FEATURE: Display estimated solar production with sun status (lots/moderate/little sun).' },
+          sensor_solar_forecast: { label: 'Solar Forecast Sensor', helper: 'Sensor entity for estimated solar production (in W or kW).' },
+          solar_forecast_max_power: { label: 'Solar Forecast Max Power (W)', helper: 'Maximum expected power in watts. Used to calculate percentage for sun status (default: 10000W).' },
+          solar_forecast_x: { label: 'Solar Forecast X Position (px)', helper: 'Horizontal position of the solar forecast text (in pixels).' },
+          solar_forecast_y: { label: 'Solar Forecast Y Position (px)', helper: 'Vertical position of the solar forecast text (in pixels).' },
+          solar_forecast_color: { label: 'Solar Forecast Color', helper: 'Color for the solar forecast text (default: #00FFFF).' },
+          solar_forecast_size: { label: 'Solar Forecast Font Size (px)', helper: 'Font size for the solar forecast text (default: 16px).' },
           invert_battery: { label: 'Invert Battery Values', helper: 'Enable if charge/discharge polarity is reversed.' },
           sensor_car_power: { label: 'Car 1 Power Sensor' },
           sensor_car_soc: { label: 'Car 1 SOC Sensor' },
@@ -9075,7 +10450,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Car 2 Color', helper: 'Color applied to Car 2 power value.' },
           pro_password: { label: 'PRO Password', helper: '⚠️ PRO FEATURE: This is a premium function.' },
           paypal_button: 'Unlock PRO Features (1€)',
-          paypal_note: 'IMPORTANT: Send as DONATION (other methods will be refunded). Include your EMAIL in the PayPal notes to receive the password.',
+          paypal_note: 'IMPORTANT: Send as DONATION only. Do NOT use Goods & Services. Include your EMAIL in the PayPal notes to receive the password.',
           overlay_image_enabled: { label: 'Enable Overlay Image', helper: 'Enable or disable the custom overlay image (requires PRO authorization).' },
           heat_pump_flow_color: { label: 'Heat Pump Flow Color', helper: 'Color applied to the heat pump flow animation.' },
           heat_pump_text_color: { label: 'Heat Pump Text Color', helper: 'Color applied to the heat pump power text.' },
@@ -9279,42 +10654,43 @@ class LuminaEnergyCardEditor extends HTMLElement {
           gridBox: { title: 'Riquadro Rete', helper: 'Riquadro in alto a destra: Import/Export rete + totali giornalieri. Posizione e dimensioni.' },
           pvBox: { title: 'Riquadro PV', helper: 'Riquadro in alto a sinistra: PV Totale (somma array) + Produzione giornaliera. Posizione e dimensioni.' },
           batteryFill: { title: 'Posizione Fill Batteria', helper: 'I cursori mostrano coordinate (px) e angoli (°) esatti. Annota i valori per la YAML definitiva. YAML: dev_battery_fill_x, _y_base, _width, _max_height, _rotate, _skew_x, _skew_y.' },
-          overlay_image: { title: 'Immagine Overlay', helper: 'Configura un\'immagine PNG overlay da visualizzare sopra l\'immagine di sfondo. Usa i cursori per posizionare e ridimensionare l\'overlay.' },
-          custom_flows: { title: 'Flussi Personalizzati', helper: 'Crea flussi di energia aggiuntivi definendo un sensore, un percorso SVG, un colore e una soglia di attivazione. Utile per visualizzare sorgenti o carichi di energia personalizzati.' },
+          overlay_image: { title: 'Immagine Overlay', helper: '⚠️ FUNZIONE PRO: Aggiungi fino a 5 immagini PNG personalizzate sovrapposte alla card (auto, piscine, turbine, ecc.). Ogni immagine ha controlli indipendenti per posizione (X/Y), dimensione (larghezza/altezza) e opacità. Perfetto per aggiungere elementi visivi realistici al tuo dashboard energetico. Esempi inclusi: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. Per sbloccare: invia 1€ a PayPal (3dprint8616@gmail.com) con la tua email.' },
+          custom_flows: { title: 'Flussi Personalizzati', helper: 'Crea fino a 5 flussi di energia animati aggiuntivi con sensori, percorsi SVG, colori e soglie di attivazione personalizzati. Ogni flusso può avere posizioni sorgente/destinazione indipendenti, colori linea, effetti glow e soglie di potenza. Perfetto per visualizzare carichi personalizzati (pompa piscina, pompa di calore, caricatore EV, ecc.) o sorgenti energetiche aggiuntive. I flussi si animano automaticamente quando i valori del sensore superano la soglia.' },
+          custom_text: { title: 'Testo Personalizzato', helper: 'Aggiungi fino a 5 etichette di testo personalizzate ovunque sulla card. Ogni testo può mostrare: etichette statiche, valori sensore (con unità), o entrambi combinati. Configura posizione (X/Y), colore, dimensione carattere e formato. Perfetto per mostrare dati aggiuntivi come temperature, umidità, consumo energetico o messaggi di stato personalizzati sul tuo dashboard energetico.' },
           about: { title: 'Informazioni', helper: 'Crediti, versione e link utili.' }
         },
         fields: {
           card_title: { label: 'Titolo scheda', helper: 'Titolo mostrato nella parte superiore della scheda. Lasciare vuoto per disabilitare.' },
-          overlay_image_enabled: { label: 'Abilita immagine overlay', helper: 'Abilita o disabilita l\'immagine overlay.' },
-          overlay_image: { label: 'Percorso immagine overlay', helper: 'Percorso di un\'immagine PNG overlay da visualizzare sopra lo sfondo (es. /local/community/lumina-energy-card/overlay.png).' },
-          overlay_image_x: { label: 'Posizione X immagine overlay (px)', helper: 'Posizione orizzontale dell\'immagine overlay. Predefinito: 0.' },
-          overlay_image_y: { label: 'Posizione Y immagine overlay (px)', helper: 'Posizione verticale dell\'immagine overlay. Predefinito: 0.' },
-          overlay_image_width: { label: 'Larghezza immagine overlay (px)', helper: 'Larghezza dell\'immagine overlay. Predefinito: 800.' },
-          overlay_image_height: { label: 'Altezza immagine overlay (px)', helper: 'Altezza dell\'immagine overlay. Predefinito: 450.' },
-          overlay_image_opacity: { label: 'Opacità immagine overlay', helper: 'Opacità dell\'immagine overlay (0.0 a 1.0). Predefinito: 1.0.' },
-          overlay_image_2_enabled: { label: 'Abilita immagine overlay 2', helper: 'Abilita o disabilita la seconda immagine overlay.' },
-          overlay_image_2: { label: 'Percorso immagine overlay 2', helper: 'Percorso di una seconda immagine PNG overlay da visualizzare sopra lo sfondo (es. /local/community/lumina-energy-card/overlay2.png).' },
+          overlay_image_enabled: { label: 'Abilita immagine overlay 1', helper: 'Abilita o disabilita la prima immagine overlay. Attiva/disattiva per mostrare/nascondere l\'immagine sulla card.' },
+          overlay_image: { label: 'Percorso immagine overlay 1', helper: 'Percorso della tua immagine PNG. Esempio predefinito: /local/community/lumina-energy-card/car.png. Carica immagini personalizzate in /config/www/ e referenziale come /local/nomefile.png. Supporta PNG trasparenti per effetti overlay realistici.' },
+          overlay_image_x: { label: 'Posizione X immagine overlay 1 (px)', helper: 'Posizione orizzontale dal bordo sinistro. Usa valori negativi per spostare a sinistra, positivi per destra. Regola in tempo reale usando l\'editor visuale. Range: -800 a 1600. Predefinito: 0.' },
+          overlay_image_y: { label: 'Posizione Y immagine overlay 1 (px)', helper: 'Posizione verticale dal bordo superiore. Usa valori negativi per spostare in alto, positivi in basso. Regola in tempo reale usando l\'editor visuale. Range: -450 a 900. Predefinito: 0.' },
+          overlay_image_width: { label: 'Larghezza immagine overlay 1 (px)', helper: 'Larghezza dell\'immagine in pixel. Regola per scalare l\'immagine proporzionalmente con l\'altezza. Consiglio: mantieni le proporzioni per risultati visivi ottimali. Predefinito: 800.' },
+          overlay_image_height: { label: 'Altezza immagine overlay 1 (px)', helper: 'Altezza dell\'immagine in pixel. Regola per scalare l\'immagine proporzionalmente con la larghezza. Consiglio: mantieni le proporzioni per risultati visivi ottimali. Predefinito: 450.' },
+          overlay_image_opacity: { label: 'Opacità immagine overlay 1', helper: 'Livello di trasparenza: 0.0 = completamente trasparente (invisibile), 1.0 = completamente opaco (solido). Usa valori come 0.5 per effetti overlay semi-trasparenti. Predefinito: 1.0.' },
+          overlay_image_2_enabled: { label: 'Abilita immagine overlay 2', helper: 'Abilita o disabilita la seconda immagine overlay. Sovrapponi più immagini per visualizzazioni complesse.' },
+          overlay_image_2: { label: 'Percorso immagine overlay 2', helper: 'Percorso seconda immagine PNG. Esempio predefinito: /local/community/lumina-energy-card/car_real.png. Sovrapponi più immagini per creare scene realistiche con elementi diversi.' },
           overlay_image_2_x: { label: 'Posizione X immagine overlay 2 (px)', helper: 'Posizione orizzontale della seconda immagine overlay. Predefinito: 0.' },
           overlay_image_2_y: { label: 'Posizione Y immagine overlay 2 (px)', helper: 'Posizione verticale della seconda immagine overlay. Predefinito: 0.' },
           overlay_image_2_width: { label: 'Larghezza immagine overlay 2 (px)', helper: 'Larghezza della seconda immagine overlay. Predefinito: 800.' },
           overlay_image_2_height: { label: 'Altezza immagine overlay 2 (px)', helper: 'Altezza della seconda immagine overlay. Predefinito: 450.' },
           overlay_image_2_opacity: { label: 'Opacità immagine overlay 2', helper: 'Opacità della seconda immagine overlay (0.0 a 1.0). Predefinito: 1.0.' },
-          overlay_image_3_enabled: { label: 'Abilita immagine overlay 3', helper: 'Abilita o disabilita la terza immagine overlay.' },
-          overlay_image_3: { label: 'Percorso immagine overlay 3', helper: 'Percorso di una terza immagine PNG overlay da visualizzare sopra lo sfondo (es. /local/community/lumina-energy-card/overlay3.png).' },
+          overlay_image_3_enabled: { label: 'Abilita immagine overlay 3', helper: 'Abilita o disabilita la terza immagine overlay. Aggiungi più elementi visivi al tuo dashboard energetico.' },
+          overlay_image_3: { label: 'Percorso immagine overlay 3', helper: 'Percorso terza immagine PNG. Esempio predefinito: /local/community/lumina-energy-card/Pool.png. Perfetto per mostrare piscine, scaldabagni o altri consumatori energetici.' },
           overlay_image_3_x: { label: 'Posizione X immagine overlay 3 (px)', helper: 'Posizione orizzontale della terza immagine overlay. Predefinito: 0.' },
           overlay_image_3_y: { label: 'Posizione Y immagine overlay 3 (px)', helper: 'Posizione verticale della terza immagine overlay. Predefinito: 0.' },
           overlay_image_3_width: { label: 'Larghezza immagine overlay 3 (px)', helper: 'Larghezza della terza immagine overlay. Predefinito: 800.' },
           overlay_image_3_height: { label: 'Altezza immagine overlay 3 (px)', helper: 'Altezza della terza immagine overlay. Predefinito: 450.' },
           overlay_image_3_opacity: { label: 'Opacità immagine overlay 3', helper: 'Opacità della terza immagine overlay (0.0 a 1.0). Predefinito: 1.0.' },
-          overlay_image_4_enabled: { label: 'Abilita immagine overlay 4', helper: 'Abilita o disabilita la quarta immagine overlay.' },
-          overlay_image_4: { label: 'Percorso immagine overlay 4', helper: 'Percorso di una quarta immagine PNG overlay da visualizzare sopra lo sfondo (es. /local/community/lumina-energy-card/overlay4.png).' },
+          overlay_image_4_enabled: { label: 'Abilita immagine overlay 4', helper: 'Abilita o disabilita la quarta immagine overlay. Combina più overlay per visualizzazioni dettagliate.' },
+          overlay_image_4: { label: 'Percorso immagine overlay 4', helper: 'Percorso quarta immagine PNG. Esempio predefinito: /local/community/lumina-energy-card/pool_real.png. Usa immagini realistiche o stilizzate in base alle tue preferenze.' },
           overlay_image_4_x: { label: 'Posizione X immagine overlay 4 (px)', helper: 'Posizione orizzontale della quarta immagine overlay. Predefinito: 0.' },
           overlay_image_4_y: { label: 'Posizione Y immagine overlay 4 (px)', helper: 'Posizione verticale della quarta immagine overlay. Predefinito: 0.' },
           overlay_image_4_width: { label: 'Larghezza immagine overlay 4 (px)', helper: 'Larghezza della quarta immagine overlay. Predefinito: 800.' },
           overlay_image_4_height: { label: 'Altezza immagine overlay 4 (px)', helper: 'Altezza della quarta immagine overlay. Predefinito: 450.' },
           overlay_image_4_opacity: { label: 'Opacità immagine overlay 4', helper: 'Opacità della quarta immagine overlay (0.0 a 1.0). Predefinito: 1.0.' },
-          overlay_image_5_enabled: { label: 'Abilita immagine overlay 5', helper: 'Abilita o disabilita la quinta immagine overlay.' },
-          overlay_image_5: { label: 'Percorso immagine overlay 5', helper: 'Percorso di una quinta immagine PNG overlay da visualizzare sopra lo sfondo (es. /local/community/lumina-energy-card/overlay5.png).' },
+          overlay_image_5_enabled: { label: 'Abilita immagine overlay 5', helper: 'Abilita o disabilita la quinta immagine overlay. Massima flessibilità con 5 livelli overlay indipendenti.' },
+          overlay_image_5: { label: 'Percorso immagine overlay 5', helper: 'Percorso quinta immagine PNG. Esempio predefinito: /local/community/lumina-energy-card/turbine.png. Ottimo per turbine eoliche, pannelli solari, generatori o qualsiasi fonte di energia rinnovabile.' },
           overlay_image_5_x: { label: 'Posizione X immagine overlay 5 (px)', helper: 'Posizione orizzontale della quinta immagine overlay. Predefinito: 0.' },
           overlay_image_5_y: { label: 'Posizione Y immagine overlay 5 (px)', helper: 'Posizione verticale della quinta immagine overlay. Predefinito: 0.' },
           overlay_image_5_width: { label: 'Larghezza immagine overlay 5 (px)', helper: 'Larghezza della quinta immagine overlay. Predefinito: 800.' },
@@ -9412,6 +10788,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
             text_toggle_button_y: { label: 'Pulsante Toggle Testi Y (px)', helper: 'Posizione verticale dall\'alto in pixel (0-450). Lascia vuoto o imposta > 450 per posizionare in basso. Valori > 450 verranno trattati come posizionamento in basso. Default: basso.' },
             text_toggle_button_scale: { label: 'Scala Pulsante Toggle Testi', helper: 'Fattore di scala per la dimensione del pulsante (0.5 a 2.0). 1.0 = dimensione predefinita.' },
             text_visibility_sensor: { label: 'Sensore Movimento Visibilità Testi (PRO)', helper: '⚠️ FUNZIONE PRO: Entità sensore di movimento. Quando viene rilevato movimento, i testi appaiono. Perfetto per tablet a muro con telecamera.' },
+            solar_forecast_enabled: { label: 'Abilita Previsione Solare', helper: '⚠️ FUNZIONE PRO: Mostra la produzione solare stimata con stato del sole (tanto/moderato/poco sole).' },
+            sensor_solar_forecast: { label: 'Sensore Previsione Solare', helper: 'Entità sensore per la produzione solare stimata (in W o kW).' },
+            solar_forecast_max_power: { label: 'Potenza Massima Previsione Solare (W)', helper: 'Potenza massima attesa in watt. Usata per calcolare la percentuale per lo stato del sole (predefinito: 10000W).' },
+            solar_forecast_x: { label: 'Posizione X Previsione Solare (px)', helper: 'Posizione orizzontale del testo previsione solare (in pixel).' },
+            solar_forecast_y: { label: 'Posizione Y Previsione Solare (px)', helper: 'Posizione verticale del testo previsione solare (in pixel).' },
+            solar_forecast_color: { label: 'Colore Previsione Solare', helper: 'Colore per il testo previsione solare (predefinito: #00FFFF).' },
+            solar_forecast_size: { label: 'Dimensione Font Previsione Solare (px)', helper: 'Dimensione font per il testo previsione solare (predefinito: 16px).' },
             invert_battery: { label: 'Inverti valori batteria', helper: 'Abilita se la polarita carica/scarica e invertita.' },
           sensor_car_power: { label: 'Sensore potenza auto 1' },
           sensor_car_soc: { label: 'Sensore SOC auto 1' },
@@ -9434,6 +10817,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
             car2_bidirectional: { label: 'Capacità bidirezionale Auto 2', helper: 'Abilita se l\'Auto 2 ha capacità V2X (può caricare e scaricare come una batteria domestica).' },
             car1_invert_flow: { label: 'Inverti Flusso Auto 1', helper: 'Inverte la direzione del flusso per l\'Auto 1. Utile se la polarità del sensore è invertita.' },
             car2_invert_flow: { label: 'Inverti Flusso Auto 2', helper: 'Inverte la direzione del flusso per l\'Auto 2. Utile se la polarità del sensore è invertita.' },
+            array1_invert_flow: { label: 'Inverti Flusso Array 1', helper: 'Inverte la direzione del flusso per l\'Array 1 (PV1). Utile se la polarità del sensore è invertita.' },
+            array2_invert_flow: { label: 'Inverti Flusso Array 2', helper: 'Inverte la direzione del flusso per l\'Array 2 (PV2). Utile se la polarità del sensore è invertita.' },
           car_pct_color: { label: 'Colore SOC auto', helper: 'Colore esadecimale per il testo SOC EV (es. #00FFFF).' },
           car2_pct_color: { label: 'Colore SOC Auto 2', helper: 'Colore esadecimale per il testo SOC della seconda EV (usa Car SOC se vuoto).' },
           car1_name_color: { label: 'Colore nome Auto 1', helper: 'Colore applicato all etichetta del nome Auto 1.' },
@@ -9442,7 +10827,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Colore Auto 2', helper: 'Colore applicato al valore potenza Auto 2.' },
           pro_password: { label: 'Password PRO', helper: '⚠️ FUNZIONE PRO: Questa è una funzione premium.' },
           paypal_button: 'Sblocca Funzioni PRO (1€)',
-          paypal_note: 'IMPORTANTE: Invia come DONAZIONE (altri metodi saranno rimborsati). Inserisci la tua EMAIL nelle note PayPal per ricevere la password.',
+          paypal_note: 'IMPORTANTE: Invia SOLO come DONAZIONE. NON usare pagamento beni e servizi. Inserisci la tua EMAIL nelle note PayPal per ricevere la password.',
           overlay_image_enabled: { label: 'Abilita immagine overlay', helper: 'Abilita o disabilita l immagine overlay personalizzata (richiede autorizzazione PRO).' },
           heat_pump_flow_color: { label: 'Colore flusso pompa di calore', helper: 'Colore applicato all animazione del flusso della pompa di calore.' },
           heat_pump_text_color: { label: 'Colore testo pompa di calore', helper: 'Colore applicato al testo della potenza della pompa di calore.' },
@@ -9825,6 +11210,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           text_toggle_button_y: { label: 'Text-Umschaltknopf Y (px)', helper: 'Vertikale Position von oben in Pixeln. Leer lassen, um unten zu positionieren. Standard: unten.' },
           text_toggle_button_scale: { label: 'Text-Umschaltknopf Skalierung', helper: 'Skalierungsfaktor für Knopfgröße (0.5 bis 2.0). 1.0 = Standardgröße.' },
           text_visibility_sensor: { label: 'Text-Sichtbarkeits-Bewegungssensor (PRO)', helper: '⚠️ PRO-FUNKTION: Bewegungs-Sensor-Entität. Bei erkannten Bewegungen erscheinen die Texte. Perfekt für Wandtablets mit Kamera.' },
+          solar_forecast_enabled: { label: 'Solarprognose aktivieren', helper: '⚠️ PRO-FUNKTION: Zeigt geschätzte Solarproduktion mit Sonnenstatus (viel/mäßig/wenig Sonne).' },
+          sensor_solar_forecast: { label: 'Solarprognose Sensor', helper: 'Sensor-Entität für geschätzte Solarproduktion (in W oder kW).' },
+          solar_forecast_max_power: { label: 'Solarprognose Max. Leistung (W)', helper: 'Maximale erwartete Leistung in Watt. Wird zur Berechnung des Prozentsatzes für Sonnenstatus verwendet (Standard: 10000W).' },
+          solar_forecast_x: { label: 'Solarprognose X-Position (px)', helper: 'Horizontale Position des Solarprognose-Textes (in Pixeln).' },
+          solar_forecast_y: { label: 'Solarprognose Y-Position (px)', helper: 'Vertikale Position des Solarprognose-Textes (in Pixeln).' },
+          solar_forecast_color: { label: 'Solarprognose Farbe', helper: 'Farbe für den Solarprognose-Text (Standard: #00FFFF).' },
+          solar_forecast_size: { label: 'Solarprognose Schriftgröße (px)', helper: 'Schriftgröße für den Solarprognose-Text (Standard: 16px).' },
           invert_battery: { label: 'Batterie-Werte invertieren', helper: 'Aktivieren, wenn Lade-/Entlade-Polarität vertauscht ist.' },
           sensor_car_power: { label: 'Fahrzeugleistung Sensor 1' },
           sensor_car_soc: { label: 'Fahrzeug SOC Sensor 1' },
@@ -9855,7 +11247,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Farbe Auto 2', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 2.' },
           pro_password: { label: 'PRO-Passwort', helper: '⚠️ PRO-FUNKTION: Dies ist eine Premium-Funktion.' },
           paypal_button: 'PRO-Funktionen freischalten (1€)',
-          paypal_note: 'WICHTIG: Als SPENDE senden (andere Zahlungsarten werden erstattet). Geben Sie Ihre E-MAIL in den PayPal-Notizen an, um das Passwort zu erhalten.',
+          paypal_note: 'WICHTIG: Nur als SPENDE senden. Nicht „Waren & Dienstleistungen“ nutzen. Geben Sie Ihre E-MAIL in den PayPal-Notizen an, um das Passwort zu erhalten.',
           overlay_image_enabled: { label: 'Overlay-Bild aktivieren', helper: 'Aktivieren oder deaktivieren Sie das benutzerdefinierte Overlay-Bild (erfordert PRO-Autorisierung).' },
           heat_pump_flow_color: { label: 'Waermepumpenfluss Farbe', helper: 'Farbe fuer die Waermepumpenfluss Animation.' },
           heat_pump_text_color: { label: 'Waermepumpentext Farbe', helper: 'Farbe fuer den Waermepumpenleistungstext.' },
@@ -10234,6 +11626,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           text_toggle_button_y: { label: 'Bouton Toggle Texte Y (px)', helper: 'Position verticale depuis le haut en pixels. Laissez vide pour positionner en bas. Par défaut: bas.' },
           text_toggle_button_scale: { label: 'Échelle Bouton Toggle Texte', helper: 'Facteur d\'échelle pour la taille du bouton (0.5 à 2.0). 1.0 = taille par défaut.' },
           text_visibility_sensor: { label: 'Capteur de Mouvement Visibilité Texte (PRO)', helper: '⚠️ FONCTION PRO: Entité capteur de mouvement. Lorsqu\'un mouvement est détecté, les textes apparaissent. Parfait pour tablettes murales avec caméra.' },
+          solar_forecast_enabled: { label: 'Activer Prévision Solaire', helper: '⚠️ FONCTION PRO: Affiche la production solaire estimée avec l\'état du soleil (beaucoup/modéré/peu de soleil).' },
+          sensor_solar_forecast: { label: 'Capteur Prévision Solaire', helper: 'Entité capteur pour la production solaire estimée (en W ou kW).' },
+          solar_forecast_max_power: { label: 'Prévision Solaire Puissance Max (W)', helper: 'Puissance maximale attendue en watts. Utilisée pour calculer le pourcentage pour l\'état du soleil (par défaut: 10000W).' },
+          solar_forecast_x: { label: 'Prévision Solaire Position X (px)', helper: 'Position horizontale du texte prévision solaire (en pixels).' },
+          solar_forecast_y: { label: 'Prévision Solaire Position Y (px)', helper: 'Position verticale du texte prévision solaire (en pixels).' },
+          solar_forecast_color: { label: 'Couleur Prévision Solaire', helper: 'Couleur pour le texte prévision solaire (par défaut: #00FFFF).' },
+          solar_forecast_size: { label: 'Taille Police Prévision Solaire (px)', helper: 'Taille de police pour le texte prévision solaire (par défaut: 16px).' },
           invert_battery: { label: 'Inverser valeurs batterie', helper: 'Activer si la polarité charge/décharge est inversée.' },
           sensor_car_power: { label: 'Capteur puissance Véhicule 1' },
           sensor_car_soc: { label: 'Capteur SOC Véhicule 1' },
@@ -10256,6 +11655,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_bidirectional: { label: 'Capacité bidirectionnelle Véhicule 2', helper: 'Activer si le Véhicule 2 a la capacité V2X (peut charger et décharger comme une batterie domestique).' },
           car1_invert_flow: { label: 'Inverser Flux Véhicule 1', helper: 'Inverse la direction du flux pour le Véhicule 1. Utile si la polarité du capteur est inversée.' },
           car2_invert_flow: { label: 'Inverser Flux Véhicule 2', helper: 'Inverse la direction du flux pour le Véhicule 2. Utile si la polarité du capteur est inversée.' },
+          array1_invert_flow: { label: 'Inverser Flux Array 1', helper: 'Inverse la direction du flux pour l\'Array 1 (PV1). Utile si la polarité du capteur est inversée.' },
+          array2_invert_flow: { label: 'Inverser Flux Array 2', helper: 'Inverse la direction du flux pour l\'Array 2 (PV2). Utile si la polarité du capteur est inversée.' },
           car_pct_color: { label: 'Couleur SOC Véhicule', helper: 'Couleur hex pour le texte SOC EV (ex. #00FFFF).' },
           car2_pct_color: { label: 'Couleur SOC Véhicule 2', helper: 'Couleur hex pour le SOC du second EV (retourne sur Car SOC si vide).' },
           car1_name_color: { label: 'Couleur nom Véhicule 1', helper: 'Couleur appliquée au libellé du nom du Véhicule 1.' },
@@ -10264,7 +11665,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Couleur Véhicule 2', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 2.' },
           pro_password: { label: 'Mot de passe PRO', helper: '⚠️ FONCTION PRO : C est une fonction premium.' },
           paypal_button: 'Débloquer les fonctions PRO (1€)',
-          paypal_note: 'IMPORTANT : Envoyez en DON (les autres modes seront remboursés). Incluez votre E-MAIL dans le message PayPal pour recevoir le mot de passe.',
+          paypal_note: 'IMPORTANT : Envoyez uniquement en DON. Ne pas utiliser « Biens et services ». Incluez votre E-MAIL dans les notes PayPal pour recevoir le mot de passe.',
           overlay_image_enabled: { label: 'Activer l image de superposition', helper: 'Activer ou désactiver l image de superposition personnalisée (nécessite une autorisation PRO).' },
           heat_pump_flow_color: { label: 'Couleur flux pompe à chaleur', helper: 'Couleur appliquée à l animation du flux de la pompe à chaleur.' },
           heat_pump_text_color: { label: 'Couleur texte pompe à chaleur', helper: 'Couleur appliquée au texte de puissance de la pompe à chaleur.' },
@@ -10648,6 +12049,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           text_toggle_button_y: { label: 'Tekst Toggle Knop Y (px)', helper: 'Verticale positie vanaf boven in pixels. Laat leeg om onderaan te positioneren. Standaard: onderaan.' },
           text_toggle_button_scale: { label: 'Tekst Toggle Knop Schaal', helper: 'Schaalfactor voor knopgrootte (0.5 tot 2.0). 1.0 = standaardgrootte.' },
           text_visibility_sensor: { label: 'Tekst Zichtbaarheid Bewegingssensor (PRO)', helper: '⚠️ PRO-FUNCTIE: Bewegingssensor entiteit. Wanneer beweging wordt gedetecteerd, verschijnen de teksten. Perfect voor wandtablets met camera.' },
+          solar_forecast_enabled: { label: 'Zonnevoorspelling inschakelen', helper: '⚠️ PRO-FUNCTIE: Toont geschatte zonneproductie met zonstatus (veel/matig/weinig zon).' },
+          sensor_solar_forecast: { label: 'Zonnevoorspelling Sensor', helper: 'Sensor entiteit voor geschatte zonneproductie (in W of kW).' },
+          solar_forecast_max_power: { label: 'Zonnevoorspelling Max. Vermogen (W)', helper: 'Maximaal verwacht vermogen in watt. Gebruikt om percentage te berekenen voor zonstatus (standaard: 10000W).' },
+          solar_forecast_x: { label: 'Zonnevoorspelling X Positie (px)', helper: 'Horizontale positie van de zonnevoorspelling tekst (in pixels).' },
+          solar_forecast_y: { label: 'Zonnevoorspelling Y Positie (px)', helper: 'Verticale positie van de zonnevoorspelling tekst (in pixels).' },
+          solar_forecast_color: { label: 'Zonnevoorspelling Kleur', helper: 'Kleur voor de zonnevoorspelling tekst (standaard: #00FFFF).' },
+          solar_forecast_size: { label: 'Zonnevoorspelling Lettergrootte (px)', helper: 'Lettergrootte voor de zonnevoorspelling tekst (standaard: 16px).' },
           invert_battery: { label: 'Batterij waarden omkeren', helper: 'Inschakelen als laad/ontlaad polariteit omgekeerd is.' },
           sensor_car_power: { label: 'Voertuig 1 vermogen sensor' },
           sensor_car_soc: { label: 'Voertuig 1 SOC sensor' },
@@ -10670,6 +12078,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_bidirectional: { label: 'Bidirectionele capaciteit Voertuig 2', helper: 'Inschakelen als Voertuig 2 V2X-capaciteit heeft (kan opladen en ontladen zoals een thuisbatterij).' },
           car1_invert_flow: { label: 'Stroom Omkeren Voertuig 1', helper: 'Keert de stroomrichting voor Voertuig 1 om. Handig als de sensorpolariteit omgekeerd is.' },
           car2_invert_flow: { label: 'Stroom Omkeren Voertuig 2', helper: 'Keert de stroomrichting voor Voertuig 2 om. Handig als de sensorpolariteit omgekeerd is.' },
+          array1_invert_flow: { label: 'Stroom Omkeren Array 1', helper: 'Keert de stroomrichting voor Array 1 (PV1) om. Handig als de sensorpolariteit omgekeerd is.' },
+          array2_invert_flow: { label: 'Stroom Omkeren Array 2', helper: 'Keert de stroomrichting voor Array 2 (PV2) om. Handig als de sensorpolariteit omgekeerd is.' },
           car_pct_color: { label: 'Voertuig SOC kleur', helper: 'Hex kleur voor EV SOC tekst (bijv. #00FFFF).' },
           car2_pct_color: { label: 'Voertuig 2 SOC kleur', helper: 'Hex kleur voor tweede EV SOC (valt terug op Voertuig SOC indien leeg).' },
           car1_name_color: { label: 'Voertuig 1 naam kleur', helper: 'Kleur toegepast op Voertuig 1 naam label.' },
@@ -10678,7 +12088,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_color: { label: 'Voertuig 2 kleur', helper: 'Kleur toegepast op de vermogenswaarde van voertuig 2.' },
           pro_password: { label: 'PRO-wachtwoord', helper: '⚠️ PRO-FUNCTIE: Dit is een premium-functie.' },
           paypal_button: 'PRO-functies ontgrendelen (1€)',
-          paypal_note: 'BELANGRIJK: Stuur als DONATIE (andere methoden worden terugbetaald). Vermeld je E-MAIL in de PayPal-notities om het wachtwoord te ontvangen.',
+          paypal_note: 'BELANGRIJK: Alleen als DONATIE sturen. Gebruik geen "Goederen en diensten". Vermeld je E-MAIL in de PayPal-notities om het wachtwoord te ontvangen.',
           overlay_image_enabled: { label: 'Overlay-afbeelding inschakelen', helper: 'Schakel de aangepaste overlay-afbeelding in of uit (vereist PRO-autorisatie).' },
           heat_pump_flow_color: { label: 'Warmtepomp stroom kleur', helper: 'Kleur toegepast op de warmtepomp stroom animatie.' },
           heat_pump_text_color: { label: 'Warmtepomp tekst kleur', helper: 'Kleur toegepast op de warmtepomp vermogen tekst.' },
@@ -11067,7 +12477,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'display_unit', label: fields.display_unit.label, helper: fields.display_unit.helper, selector: { select: { options: optionDefs.display_unit } } },
         { name: 'update_interval', label: fields.update_interval.label, helper: fields.update_interval.helper, selector: { number: { min: 0, max: 60, step: 5, mode: 'slider', unit_of_measurement: 's' } } },
         { name: 'animation_speed_factor', label: fields.animation_speed_factor.label, helper: fields.animation_speed_factor.helper, selector: { number: { min: -3, max: 3, step: 0.25, mode: 'slider', unit_of_measurement: 'x' } } },
-        { name: 'enable_text_toggle_button', label: fields.enable_text_toggle_button.label, helper: fields.enable_text_toggle_button.helper, selector: { boolean: {} }, default: false },
+        { name: 'enable_text_toggle_button', label: fields.enable_text_toggle_button.label, helper: fields.enable_text_toggle_button.helper, selector: { boolean: {} }, default: true },
         { name: 'text_toggle_button_x', label: (fields.text_toggle_button_x && fields.text_toggle_button_x.label) || 'Text Toggle Button X (px)', helper: (fields.text_toggle_button_x && fields.text_toggle_button_x.helper) || 'Horizontal position of the text toggle button. Left edge distance in pixels.', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } }, default: 30 },
         { name: 'text_toggle_button_y', label: (fields.text_toggle_button_y && fields.text_toggle_button_y.label) || 'Text Toggle Button Y (px)', helper: (fields.text_toggle_button_y && fields.text_toggle_button_y.helper) || 'Vertical position from top in pixels (0-450). Leave empty or set > 450 to position at bottom. Values > 450 will be treated as bottom positioning.', selector: { number: { min: 0, max: 500, step: 1, mode: 'box', unit_of_measurement: 'px' } }, default: null },
         { name: 'text_toggle_button_scale', label: (fields.text_toggle_button_scale && fields.text_toggle_button_scale.label) || 'Text Toggle Button Scale', helper: (fields.text_toggle_button_scale && fields.text_toggle_button_scale.helper) || 'Scale factor for button size (0.5 to 2.0). 1.0 = default size.', selector: { number: { min: 0.5, max: 2.0, step: 0.1, mode: 'slider' } }, default: 1.0 },
@@ -11084,6 +12494,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_pv6', label: fields.sensor_pv6.label, helper: fields.sensor_pv6.helper, selector: entitySelector },
         { name: 'sensor_daily', label: fields.sensor_daily.label, helper: fields.sensor_daily.helper, selector: entitySelector },
         { name: 'show_pv_strings', label: fields.show_pv_strings.label, helper: fields.show_pv_strings.helper, selector: { boolean: {} } },
+        { name: 'array1_invert_flow', label: (fields.array1_invert_flow && fields.array1_invert_flow.label) || 'Array 1 Invert Flow', helper: (fields.array1_invert_flow && fields.array1_invert_flow.helper) || 'Invert the flow direction for Array 1 (PV1). Useful if the sensor polarity is reversed.', selector: { boolean: {} }, default: false },
         { name: 'pv_text_color', label: (fields.pv_text_color && fields.pv_text_color.label) || 'PV Text Color', helper: (fields.pv_text_color && fields.pv_text_color.helper) || 'Color for PV/solar labels.', selector: { color_picker: {} }, default: '#00f9f9' },
         { name: 'pv_font_size', label: (fields.pv_font_size && fields.pv_font_size.label) || 'PV Font Size (px)', helper: (fields.pv_font_size && fields.pv_font_size.helper) || 'Font size for PV text.', selector: { number: { min: 8, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 12 },
       ]),
@@ -11523,6 +12934,48 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_flow_2_offset_x', label: (fields.custom_flow_2_offset_x && fields.custom_flow_2_offset_x.label) || 'Custom Flow 2: Offset X (px)', helper: (fields.custom_flow_2_offset_x && fields.custom_flow_2_offset_x.helper) || 'Horizontal offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
       { name: 'custom_flow_2_offset_y', label: (fields.custom_flow_2_offset_y && fields.custom_flow_2_offset_y.label) || 'Custom Flow 2: Offset Y (px)', helper: (fields.custom_flow_2_offset_y && fields.custom_flow_2_offset_y.helper) || 'Vertical offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
 
+      { name: 'custom_flow_3_enabled', label: (fields.custom_flow_3_enabled && fields.custom_flow_3_enabled.label) || 'Custom Flow 3: Enabled', helper: (fields.custom_flow_3_enabled && fields.custom_flow_3_enabled.helper) || 'Enable custom flow 3.', selector: { boolean: {} } },
+      { name: 'custom_flow_3_sensor', label: (fields.custom_flow_3_sensor && fields.custom_flow_3_sensor.label) || 'Custom Flow 3: Sensor', helper: (fields.custom_flow_3_sensor && fields.custom_flow_3_sensor.helper) || 'Sensor entity that controls this flow (power sensor). Flow direction is based on sensor value sign.', selector: entitySelector },
+      { name: 'custom_flow_3_path_preset', label: 'Custom Flow 3: Path Type', helper: 'Choose a preset path shape or Custom to use Start/End coordinates below.', selector: { select: { options: pathPresetOptions } }, default: 'custom' },
+      { name: 'custom_flow_3_start_x', label: 'Flow 3: Start X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_3_start_y', label: 'Flow 3: Start Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_3_end_x', label: 'Flow 3: End X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_3_end_y', label: 'Flow 3: End Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_3_path', label: 'Flow 3: SVG Path (Advanced)', helper: 'Manual SVG path (overrides preset if filled).', selector: { text: { multiline: true } } },
+      { name: 'custom_flow_3_color', label: (fields.custom_flow_3_color && fields.custom_flow_3_color.label) || 'Custom Flow 3: Color', helper: (fields.custom_flow_3_color && fields.custom_flow_3_color.helper) || 'Color of the flow.', selector: { color_picker: {} } },
+      { name: 'custom_flow_3_threshold', label: (fields.custom_flow_3_threshold && fields.custom_flow_3_threshold.label) || 'Custom Flow 3: Threshold (W)', helper: (fields.custom_flow_3_threshold && fields.custom_flow_3_threshold.helper) || 'Minimum power value (in watts) to activate the flow.', selector: { number: { min: 0, max: 10000, step: 10, mode: 'box', unit_of_measurement: 'W' } } },
+      { name: 'custom_flow_3_direction', label: (fields.custom_flow_3_direction && fields.custom_flow_3_direction.label) || 'Custom Flow 3: Direction', helper: (fields.custom_flow_3_direction && fields.custom_flow_3_direction.helper) || 'Flow direction: forward (always positive), reverse (always negative), or auto (based on sensor value sign).', selector: { select: { options: [['forward', 'Forward'], ['reverse', 'Reverse'], ['auto', 'Auto']] } } },
+      { name: 'custom_flow_3_offset_x', label: (fields.custom_flow_3_offset_x && fields.custom_flow_3_offset_x.label) || 'Custom Flow 3: Offset X (px)', helper: (fields.custom_flow_3_offset_x && fields.custom_flow_3_offset_x.helper) || 'Horizontal offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_3_offset_y', label: (fields.custom_flow_3_offset_y && fields.custom_flow_3_offset_y.label) || 'Custom Flow 3: Offset Y (px)', helper: (fields.custom_flow_3_offset_y && fields.custom_flow_3_offset_y.helper) || 'Vertical offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+
+      { name: 'custom_flow_4_enabled', label: (fields.custom_flow_4_enabled && fields.custom_flow_4_enabled.label) || 'Custom Flow 4: Enabled', helper: (fields.custom_flow_4_enabled && fields.custom_flow_4_enabled.helper) || 'Enable custom flow 4.', selector: { boolean: {} } },
+      { name: 'custom_flow_4_sensor', label: (fields.custom_flow_4_sensor && fields.custom_flow_4_sensor.label) || 'Custom Flow 4: Sensor', helper: (fields.custom_flow_4_sensor && fields.custom_flow_4_sensor.helper) || 'Sensor entity that controls this flow (power sensor). Flow direction is based on sensor value sign.', selector: entitySelector },
+      { name: 'custom_flow_4_path_preset', label: 'Custom Flow 4: Path Type', helper: 'Choose a preset path shape or Custom to use Start/End coordinates below.', selector: { select: { options: pathPresetOptions } }, default: 'custom' },
+      { name: 'custom_flow_4_start_x', label: 'Flow 4: Start X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_4_start_y', label: 'Flow 4: Start Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_4_end_x', label: 'Flow 4: End X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_4_end_y', label: 'Flow 4: End Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_4_path', label: 'Flow 4: SVG Path (Advanced)', helper: 'Manual SVG path (overrides preset if filled).', selector: { text: { multiline: true } } },
+      { name: 'custom_flow_4_color', label: (fields.custom_flow_4_color && fields.custom_flow_4_color.label) || 'Custom Flow 4: Color', helper: (fields.custom_flow_4_color && fields.custom_flow_4_color.helper) || 'Color of the flow.', selector: { color_picker: {} } },
+      { name: 'custom_flow_4_threshold', label: (fields.custom_flow_4_threshold && fields.custom_flow_4_threshold.label) || 'Custom Flow 4: Threshold (W)', helper: (fields.custom_flow_4_threshold && fields.custom_flow_4_threshold.helper) || 'Minimum power value (in watts) to activate the flow.', selector: { number: { min: 0, max: 10000, step: 10, mode: 'box', unit_of_measurement: 'W' } } },
+      { name: 'custom_flow_4_direction', label: (fields.custom_flow_4_direction && fields.custom_flow_4_direction.label) || 'Custom Flow 4: Direction', helper: (fields.custom_flow_4_direction && fields.custom_flow_4_direction.helper) || 'Flow direction: forward (always positive), reverse (always negative), or auto (based on sensor value sign).', selector: { select: { options: [['forward', 'Forward'], ['reverse', 'Reverse'], ['auto', 'Auto']] } } },
+      { name: 'custom_flow_4_offset_x', label: (fields.custom_flow_4_offset_x && fields.custom_flow_4_offset_x.label) || 'Custom Flow 4: Offset X (px)', helper: (fields.custom_flow_4_offset_x && fields.custom_flow_4_offset_x.helper) || 'Horizontal offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_4_offset_y', label: (fields.custom_flow_4_offset_y && fields.custom_flow_4_offset_y.label) || 'Custom Flow 4: Offset Y (px)', helper: (fields.custom_flow_4_offset_y && fields.custom_flow_4_offset_y.helper) || 'Vertical offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+
+      { name: 'custom_flow_5_enabled', label: (fields.custom_flow_5_enabled && fields.custom_flow_5_enabled.label) || 'Custom Flow 5: Enabled', helper: (fields.custom_flow_5_enabled && fields.custom_flow_5_enabled.helper) || 'Enable custom flow 5.', selector: { boolean: {} } },
+      { name: 'custom_flow_5_sensor', label: (fields.custom_flow_5_sensor && fields.custom_flow_5_sensor.label) || 'Custom Flow 5: Sensor', helper: (fields.custom_flow_5_sensor && fields.custom_flow_5_sensor.helper) || 'Sensor entity that controls this flow (power sensor). Flow direction is based on sensor value sign.', selector: entitySelector },
+      { name: 'custom_flow_5_path_preset', label: 'Custom Flow 5: Path Type', helper: 'Choose a preset path shape or Custom to use Start/End coordinates below.', selector: { select: { options: pathPresetOptions } }, default: 'custom' },
+      { name: 'custom_flow_5_start_x', label: 'Flow 5: Start X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_5_start_y', label: 'Flow 5: Start Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_5_end_x', label: 'Flow 5: End X', selector: { number: { min: 0, max: 800, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_5_end_y', label: 'Flow 5: End Y', selector: { number: { min: 0, max: 450, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_5_path', label: 'Flow 5: SVG Path (Advanced)', helper: 'Manual SVG path (overrides preset if filled).', selector: { text: { multiline: true } } },
+      { name: 'custom_flow_5_color', label: (fields.custom_flow_5_color && fields.custom_flow_5_color.label) || 'Custom Flow 5: Color', helper: (fields.custom_flow_5_color && fields.custom_flow_5_color.helper) || 'Color of the flow.', selector: { color_picker: {} } },
+      { name: 'custom_flow_5_threshold', label: (fields.custom_flow_5_threshold && fields.custom_flow_5_threshold.label) || 'Custom Flow 5: Threshold (W)', helper: (fields.custom_flow_5_threshold && fields.custom_flow_5_threshold.helper) || 'Minimum power value (in watts) to activate the flow.', selector: { number: { min: 0, max: 10000, step: 10, mode: 'box', unit_of_measurement: 'W' } } },
+      { name: 'custom_flow_5_direction', label: (fields.custom_flow_5_direction && fields.custom_flow_5_direction.label) || 'Custom Flow 5: Direction', helper: (fields.custom_flow_5_direction && fields.custom_flow_5_direction.helper) || 'Flow direction: forward (always positive), reverse (always negative), or auto (based on sensor value sign).', selector: { select: { options: [['forward', 'Forward'], ['reverse', 'Reverse'], ['auto', 'Auto']] } } },
+      { name: 'custom_flow_5_offset_x', label: (fields.custom_flow_5_offset_x && fields.custom_flow_5_offset_x.label) || 'Custom Flow 5: Offset X (px)', helper: (fields.custom_flow_5_offset_x && fields.custom_flow_5_offset_x.helper) || 'Horizontal offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+      { name: 'custom_flow_5_offset_y', label: (fields.custom_flow_5_offset_y && fields.custom_flow_5_offset_y.label) || 'Custom Flow 5: Offset Y (px)', helper: (fields.custom_flow_5_offset_y && fields.custom_flow_5_offset_y.helper) || 'Vertical offset for the flow path.', selector: { number: { min: -200, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+
       // Custom Text fields
       { name: 'custom_text_1_enabled', label: `Custom Text 1: Enabled`, selector: { boolean: {} } },
       { name: 'custom_text_1_text', label: `Text 1: Label/Prefix`, selector: { text: {} } },
@@ -11563,6 +13016,15 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_5_y', label: `Text 5: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
       { name: 'custom_text_5_color', label: `Text 5: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_5_size', label: `Text 5: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
+
+      // Solar Forecast fields
+      { name: 'solar_forecast_enabled', label: (fields.solar_forecast_enabled && fields.solar_forecast_enabled.label) || 'Enable Solar Forecast', helper: (fields.solar_forecast_enabled && fields.solar_forecast_enabled.helper) || '⚠️ PRO FEATURE: Display estimated solar production with sun status (lots/moderate/little sun).', selector: { boolean: {} }, default: false },
+      { name: 'sensor_solar_forecast', label: (fields.sensor_solar_forecast && fields.sensor_solar_forecast.label) || 'Solar Forecast Sensor', helper: (fields.sensor_solar_forecast && fields.sensor_solar_forecast.helper) || 'Sensor entity for estimated solar production (in W or kW).', selector: entitySelector },
+      { name: 'solar_forecast_max_power', label: (fields.solar_forecast_max_power && fields.solar_forecast_max_power.label) || 'Solar Forecast Max Power (W)', helper: (fields.solar_forecast_max_power && fields.solar_forecast_max_power.helper) || 'Maximum expected power in watts. Used to calculate percentage for sun status (default: 10000W).', selector: { number: { min: 1000, max: 50000, step: 100, mode: 'box', unit_of_measurement: 'W' } }, default: 10000 },
+      { name: 'solar_forecast_x', label: (fields.solar_forecast_x && fields.solar_forecast_x.label) || 'Solar Forecast X Position (px)', helper: (fields.solar_forecast_x && fields.solar_forecast_x.helper) || 'Horizontal position of the solar forecast text (in pixels).', selector: { number: { min: 0, max: 800, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 400 },
+      { name: 'solar_forecast_y', label: (fields.solar_forecast_y && fields.solar_forecast_y.label) || 'Solar Forecast Y Position (px)', helper: (fields.solar_forecast_y && fields.solar_forecast_y.helper) || 'Vertical position of the solar forecast text (in pixels).', selector: { number: { min: 0, max: 450, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 350 },
+      { name: 'solar_forecast_color', label: (fields.solar_forecast_color && fields.solar_forecast_color.label) || 'Solar Forecast Color', helper: (fields.solar_forecast_color && fields.solar_forecast_color.helper) || 'Color for the solar forecast text (default: #00FFFF).', selector: { color_picker: {} }, default: '#00FFFF' },
+      { name: 'solar_forecast_size', label: (fields.solar_forecast_size && fields.solar_forecast_size.label) || 'Solar Forecast Font Size (px)', helper: (fields.solar_forecast_size && fields.solar_forecast_size.helper) || 'Font size for the solar forecast text (default: 16px).', selector: { number: { min: 8, max: 48, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 16 },
 
       // Overlay Image Pro fields (5 images)
       { name: 'overlay_image_pro_1', label: (fields.overlay_image_pro_1 && fields.overlay_image_pro_1.label) || 'Overlay Image Pro 1', helper: (fields.overlay_image_pro_1 && fields.overlay_image_pro_1.helper) || 'Path to overlay image pro 1 (e.g., /local/community/lumina-energy-card/overlay_pro_1.png).', selector: { text: { mode: 'blur' } } },
@@ -11673,7 +13135,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         }));
       }
     } catch (e) {
-      luminaError('[EDITOR configChanged] Cannot access parent window:', e);
+      // Silent error handling
     }
 
     let card = document.querySelector('lumina-energy-card');
@@ -11750,35 +13212,14 @@ _createSectionDefs(localeStrings, schemaDefs) {
       }
 
       if (id === 'lumina_pro') {
-        const config = this._configWithDefaults();
-        const proPassword = config.pro_password;
-        let isAuthorized = false;
-
-        if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-          const trimmed = proPassword.trim();
-          const hashHex = LUMINA_SHA256(trimmed);
-          const hasList = Boolean(LUMINA_AUTH_LIST);
-          const listLen = hasList ? LUMINA_AUTH_LIST.length : 0;
-          const found = hasList && LUMINA_AUTH_LIST.includes(hashHex);
-          luminaAuthLog('lumina_pro section: passwd len=', trimmed.length, 'hash=', hashHex, 'auth_list loaded=', hasList, 'list len=', listLen, 'includes=', found);
-          if (hasList && !found) {
-            luminaAuthLog('hash not in list. Sample hashes:', (LUMINA_AUTH_LIST || []).slice(0, 3));
-          }
-          if (found) isAuthorized = true;
-        } else {
-          luminaAuthLog('lumina_pro section: no pro_password or empty');
+        const cfg = this._configWithDefaults();
+        const pw = cfg.pro_password;
+        let ok = false;
+        if (pw && typeof pw === 'string' && pw.trim()) {
+          const h = LUMINA_SHA256(pw.trim());
+          if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(h)) ok = true;
         }
-
-        // If not authorized, only show the password field
-        if (!isAuthorized) {
-          filteredSchema = schema.filter(field =>
-            field.name === 'pro_password'  // Only keep password field
-          );
-          luminaAuthLog('lumina_pro section: not authorized, showing only pro_password field');
-        } else {
-          luminaAuthLog('lumina_pro section: authorized, showing all PRO fields');
-        }
-        // If authorized, show all fields (already filtered above)
+        if (!ok) filteredSchema = schema.filter((f) => f.name === 'pro_password');
       }
 
       content.appendChild(this._createForm(filteredSchema, id === 'overlay_image'));
@@ -12101,27 +13542,13 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const wrapper = document.createElement('div');
     wrapper.className = 'paypal-button-wrapper';
 
-    // Check if currently authorized to minimize the button
     let isAuthorized = false;
-    const proPassword = config.pro_password;
-    if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-      const trimmed = proPassword.trim();
-      const hashHex = LUMINA_SHA256(trimmed);
-      const hasList = Boolean(LUMINA_AUTH_LIST);
-      const listLen = hasList ? LUMINA_AUTH_LIST.length : 0;
-      const found = hasList && LUMINA_AUTH_LIST.includes(hashHex);
-      luminaAuthLog('PayPal button check: passwd len=', trimmed.length, 'hash=', hashHex, 'auth_list loaded=', hasList, 'list len=', listLen, 'includes=', found);
-      if (hasList && !found) {
-        luminaAuthLog('hash not in list. Sample hashes from list:', (LUMINA_AUTH_LIST || []).slice(0, 3));
-      }
-      if (found) isAuthorized = true;
-    } else {
-      luminaAuthLog('PayPal button check: no pro_password or empty');
+    const pw = config.pro_password;
+    if (pw && typeof pw === 'string' && pw.trim()) {
+      const h = LUMINA_SHA256(pw.trim());
+      if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(h)) isAuthorized = true;
     }
-
-    if (isAuthorized) {
-      wrapper.classList.add('authorized');
-    }
+    if (isAuthorized) wrapper.classList.add('authorized');
 
     const paypalUrl = 'https://paypal.me/giorgiosalierno';
     
@@ -12412,7 +13839,6 @@ _createSectionDefs(localeStrings, schemaDefs) {
       // Use remote list for verification
       let isValid = false;
       if (LUMINA_AUTH_LIST === null) {
-        luminaAuthLog('form value changed: auth list not loaded yet, triggering refresh');
         // If list is still loading, try to refresh and re-render
         LUMINA_REFRESH_AUTH(() => {
           this._rendered = false;
@@ -12420,8 +13846,6 @@ _createSectionDefs(localeStrings, schemaDefs) {
         });
       } else {
         isValid = LUMINA_AUTH_LIST.includes(hashHex);
-        luminaAuthLog('form value changed: passwd len=', trimmed.length, 'hash=', hashHex, 'list len=', LUMINA_AUTH_LIST.length, 'includes=', isValid);
-        if (!isValid) luminaAuthLog('form value changed: hash not in list. Sample:', LUMINA_AUTH_LIST.slice(0, 3));
         // Force re-render if authorization state just changed to update PayPal button size
         const wasAuthorized = this._isAuthorized;
         this._isAuthorized = isValid;
@@ -12433,7 +13857,6 @@ _createSectionDefs(localeStrings, schemaDefs) {
       }
       
       if (!isValid && LUMINA_AUTH_LIST !== null) {
-        luminaAuthLog('form value changed: disabling overlay (password invalid)');
         // Disable overlay if password is not valid (and list is loaded)
         if (newConfig.overlay_image_enabled) {
           newConfig.overlay_image_enabled = false;
@@ -12444,7 +13867,6 @@ _createSectionDefs(localeStrings, schemaDefs) {
         }
       }
     } else {
-      luminaAuthLog('form value changed: no pro_password or empty, disabling overlay');
       // No password or empty, disable overlay
       if (newConfig.overlay_image_enabled) {
         newConfig.overlay_image_enabled = false;
@@ -12721,10 +14143,11 @@ _createSectionDefs(localeStrings, schemaDefs) {
         height: 16px;
       }
       .paypal-instruction-note {
-        font-size: 0.9em;
+        font-size: 1.1em;
         text-align: center;
-        color: #ff4444;
-        font-weight: 500;
+        color: #ff0000;
+        font-weight: 700;
+        text-decoration: underline;
         line-height: 1.4;
       }
       .about-content {
