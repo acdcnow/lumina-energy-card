@@ -782,28 +782,59 @@ const LUMINA_SHA256 = (s) => {
 
 // Remote authorization settings (obfuscated)
 const LUMINA_REMOTE_URL = atob('aHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9HaW9yZ2lvODY2LzExMmIwZTNkZDQ5Yzg1YjE0OTMzMWQ0MGVkOGM3MjM1L3Jhdy9sdW1pbmFfZGI=');
-let LUMINA_AUTH_LIST = null;
+let LUMINA_AUTH_LIST = null;      // Legacy hashes (V1) - backward compatibility
+let LUMINA_AUTH_LIST_V2 = null;   // UID-bound hashes (V2) - new system with v2: prefix
 let LUMINA_FETCHING = false;
 
+// UID univoco per installazione (per licenze V2 - UID-bound)
+const LUMINA_UID_KEY = 'lumina_energy_card_uid';
+const getLuminaUID = () => {
+  try {
+    let uid = localStorage.getItem(LUMINA_UID_KEY);
+    if (!uid) {
+      // Genera UID: formato LEC-TIMESTAMP-RANDOM (leggibile, ~20 caratteri)
+      uid = 'LEC-' + Date.now().toString(36).toUpperCase() + '-' + 
+            Math.random().toString(36).substr(2, 6).toUpperCase();
+      localStorage.setItem(LUMINA_UID_KEY, uid);
+    }
+    return uid;
+  } catch (e) {
+    // Fallback se localStorage non disponibile
+    return 'LEC-TEMP-' + Math.random().toString(36).substr(2, 8).toUpperCase();
+  }
+};
+
+// License generation endpoint (Google Apps Script)
+const LUMINA_LICENSE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxUCdCgW02Yp88eePLHr-1g4zzkUn99XLr-ZYBTn9u2HB-tiTTlE9JGzdhRPO5-jq2Z/exec';
+
 const LUMINA_REFRESH_AUTH = async (callback) => {
-  if (LUMINA_AUTH_LIST !== null) return LUMINA_AUTH_LIST;
+  if (LUMINA_AUTH_LIST !== null && LUMINA_AUTH_LIST_V2 !== null) return LUMINA_AUTH_LIST;
   if (LUMINA_FETCHING) return null;
   LUMINA_FETCHING = true;
   try {
     const r = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
     const text = await r.text();
-    // Optimized: combine map+filter into single loop for better performance
+    // Parse both legacy (V1) and UID-bound (V2) hashes from same Gist
     const lines = text.split(/\r?\n/);
-    LUMINA_AUTH_LIST = [];
+    LUMINA_AUTH_LIST = [];    // Legacy hashes (64 chars, no prefix)
+    LUMINA_AUTH_LIST_V2 = []; // V2 hashes (prefixed with "v2:")
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
-      if (trimmed.length === 64) {
+      if (trimmed.startsWith('v2:')) {
+        // V2 hash: remove prefix and validate length
+        const hash = trimmed.substring(3);
+        if (hash.length === 64) {
+          LUMINA_AUTH_LIST_V2.push(hash);
+        }
+      } else if (trimmed.length === 64) {
+        // Legacy hash: 64 chars without prefix
         LUMINA_AUTH_LIST.push(trimmed);
       }
     }
     if (callback) callback();
   } catch (e) {
-    LUMINA_AUTH_LIST = [];
+    LUMINA_AUTH_LIST = LUMINA_AUTH_LIST || [];
+    LUMINA_AUTH_LIST_V2 = LUMINA_AUTH_LIST_V2 || [];
   } finally {
     LUMINA_FETCHING = false;
   }
@@ -4682,18 +4713,31 @@ class LuminaEnergyCard extends HTMLElement {
     }
     
     // Verify feature authorization using shared SHA-256 implementation
-    // Define early to ensure it's available throughout the render method
+    // Supports both legacy (V1) and UID-bound (V2) authentication
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        const hashHex = LUMINA_SHA256(trimmed);
-        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
-        if (LUMINA_AUTH_LIST === null) {
+        
+        // 1. Check legacy authentication (V1 - backward compatibility)
+        const legacyHash = LUMINA_SHA256(trimmed);
+        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
+          return true; // Legacy password valid
+        }
+        
+        // 2. Check UID-bound authentication (V2 - new system)
+        const uid = getLuminaUID();
+        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
+        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+          return true; // UID-bound password valid
+        }
+        
+        // Trigger refresh if lists not loaded
+        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this._scheduleRender(); });
         }
-        return ok;
+        return false;
       } catch (e) { return false; }
     };
 
@@ -5608,18 +5652,30 @@ class LuminaEnergyCard extends HTMLElement {
     lang = (lang || 'en').toLowerCase();
     
     // Verify feature authorization using shared SHA-256 implementation
-    // Define here because _buildTemplate is a separate method and doesn't have access to render() scope
+    // Supports both legacy (V1) and UID-bound (V2) authentication
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        const hashHex = LUMINA_SHA256(trimmed);
-        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
-        if (LUMINA_AUTH_LIST === null) {
+        
+        // 1. Check legacy authentication (V1 - backward compatibility)
+        const legacyHash = LUMINA_SHA256(trimmed);
+        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
+          return true;
+        }
+        
+        // 2. Check UID-bound authentication (V2 - new system)
+        const uid = getLuminaUID();
+        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
+        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+          return true;
+        }
+        
+        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return ok;
+        return false;
       } catch (e) { return false; }
     };
     
@@ -9993,12 +10049,26 @@ class LuminaEnergyCard extends HTMLElement {
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
-        const hashHex = LUMINA_SHA256(inputValue.trim());
-        const ok = LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(hashHex);
-        if (inputValue.trim() && LUMINA_AUTH_LIST === null) {
+        const trimmed = inputValue.trim();
+        if (!trimmed) return false;
+        
+        // 1. Check legacy authentication (V1)
+        const legacyHash = LUMINA_SHA256(trimmed);
+        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
+          return true;
+        }
+        
+        // 2. Check UID-bound authentication (V2)
+        const uid = getLuminaUID();
+        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
+        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+          return true;
+        }
+        
+        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return ok;
+        return false;
       } catch (e) { return false; }
     };
     const authInput = config.pro_password;
@@ -10227,6 +10297,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Language', helper: 'Choose the editor language.' },
           installation_type: { title: 'Installation Type', helper: 'Select your installation type to configure the card accordingly.' },
+          license_info: { title: 'License Info', helper: 'Manage your PRO license. View your installation ID, check license status, and request a new license.' },
           general: { title: 'General Settings', helper: 'Card metadata, background, and update cadence.' },
           array1: { title: 'Array 1', helper: 'Choose the PV, battery, grid, load, and EV entities used by the card. Either the PV total sensor or your PV string arrays need to be specified as a minimum.' },
           array2: { title: 'Array 2', helper: 'If PV Total Sensor (Inverter 2) is set or the PV String values are provided, Array 2 will become active and enable the second inverter. You must also enable Daily Production Sensor (Array 2) and Home Load (Inverter 2).' },
@@ -10451,6 +10522,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pro_password: { label: 'PRO Password', helper: '⚠️ PRO FEATURE: This is a premium function.' },
           paypal_button: 'Unlock PRO Features (1€)',
           paypal_note: 'IMPORTANT: Send as DONATION only. Do NOT use Goods & Services. Include your EMAIL in the PayPal notes to receive the password.',
+          // License Info section fields
+          your_installation_id: 'Your Installation ID',
+          copy_id: 'Copy',
+          id_copied: 'Copied!',
+          license_status: 'License Status',
+          license_active: 'Active',
+          license_inactive: 'Inactive',
+          request_pro_license: 'Request PRO License',
+          your_email: 'Your Email',
+          paypal_transaction_id: 'PayPal Transaction ID',
+          send_request: 'Send Request',
+          request_sent: 'Request sent! You will receive your license via email.',
+          request_error: 'Error sending request. Please try again.',
+          license_instructions: 'To get a PRO license: 1) Copy your Installation ID above, 2) Send 1€ to PayPal (3dprint8616@gmail.com), 3) Fill in your email and PayPal transaction ID below, 4) Click Send Request.',
           overlay_image_enabled: { label: 'Enable Overlay Image', helper: 'Enable or disable the custom overlay image (requires PRO authorization).' },
           heat_pump_flow_color: { label: 'Heat Pump Flow Color', helper: 'Color applied to the heat pump flow animation.' },
           heat_pump_text_color: { label: 'Heat Pump Text Color', helper: 'Color applied to the heat pump power text.' },
@@ -10629,6 +10714,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Lingua', helper: 'Seleziona la lingua dell editor.' },
           installation_type: { title: 'Tipo di Impianto', helper: 'Seleziona il tipo di impianto per configurare la scheda di conseguenza.' },
+          license_info: { title: 'Info Licenza', helper: 'Gestisci la tua licenza PRO. Visualizza il tuo ID installazione, controlla lo stato della licenza e richiedi una nuova licenza.' },
           general: { title: 'Impostazioni generali', helper: 'Titolo scheda, sfondo e frequenza di aggiornamento.' },
           array1: { title: 'Array 1', helper: 'Configura le entita dell Array PV 1.' },
           array2: { title: 'Array 2', helper: 'Se il Sensore PV Totale (Inverter 2) è impostato o i valori delle Stringhe PV sono forniti, Array 2 diventerà attivo e abiliterà il secondo inverter. Devi anche abilitare il Sensore Produzione Giornaliera (Array 2) e il Carico Casa (Inverter 2).' },
@@ -10828,6 +10914,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           pro_password: { label: 'Password PRO', helper: '⚠️ FUNZIONE PRO: Questa è una funzione premium.' },
           paypal_button: 'Sblocca Funzioni PRO (1€)',
           paypal_note: 'IMPORTANTE: Invia SOLO come DONAZIONE. NON usare pagamento beni e servizi. Inserisci la tua EMAIL nelle note PayPal per ricevere la password.',
+          // License Info section fields
+          your_installation_id: 'Il tuo ID Installazione',
+          copy_id: 'Copia',
+          id_copied: 'Copiato!',
+          license_status: 'Stato Licenza',
+          license_active: 'Attiva',
+          license_inactive: 'Non attiva',
+          request_pro_license: 'Richiedi Licenza PRO',
+          your_email: 'La tua Email',
+          paypal_transaction_id: 'ID Transazione PayPal',
+          send_request: 'Invia Richiesta',
+          request_sent: 'Richiesta inviata! Riceverai la licenza via email.',
+          request_error: 'Errore nell\'invio. Riprova.',
+          license_instructions: 'Per ottenere una licenza PRO: 1) Copia il tuo ID Installazione sopra, 2) Invia 1€ a PayPal (3dprint8616@gmail.com), 3) Inserisci la tua email e l\'ID transazione PayPal qui sotto, 4) Clicca Invia Richiesta.',
           overlay_image_enabled: { label: 'Abilita immagine overlay', helper: 'Abilita o disabilita l immagine overlay personalizzata (richiede autorizzazione PRO).' },
           heat_pump_flow_color: { label: 'Colore flusso pompa di calore', helper: 'Colore applicato all animazione del flusso della pompa di calore.' },
           heat_pump_text_color: { label: 'Colore testo pompa di calore', helper: 'Colore applicato al testo della potenza della pompa di calore.' },
@@ -11029,6 +11129,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Sprache', helper: 'Editor-Sprache waehlen.' },
           installation_type: { title: 'Installationstyp', helper: 'Wählen Sie Ihren Installationstyp, um die Karte entsprechend zu konfigurieren.' },
+          license_info: { title: 'Lizenz-Info', helper: 'Verwalten Sie Ihre PRO-Lizenz. Zeigen Sie Ihre Installations-ID an, prüfen Sie den Lizenzstatus und fordern Sie eine neue Lizenz an.' },
           general: { title: 'Allgemeine Einstellungen', helper: 'Kartentitel, Hintergrund und Aktualisierungsintervall.' },
           array1: { title: 'Array 1', helper: 'PV Array 1 Entitaeten konfigurieren.' },
           array2: { title: 'Array 2', helper: 'Wenn der PV-Gesamtsensor (WR 2) gesetzt ist oder die PV-String-Werte bereitgestellt werden, wird Array 2 aktiviert und der zweite Wechselrichter aktiviert. Sie müssen auch den Tagesproduktionssensor (Array 2) und die Hauslast (WR 2) aktivieren.' },
@@ -11246,6 +11347,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Farbe Auto 1', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 1.' },
           car2_color: { label: 'Farbe Auto 2', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 2.' },
           pro_password: { label: 'PRO-Passwort', helper: '⚠️ PRO-FUNKTION: Dies ist eine Premium-Funktion.' },
+          // License Info section fields
+          your_installation_id: 'Ihre Installations-ID',
+          copy_id: 'Kopieren',
+          id_copied: 'Kopiert!',
+          license_status: 'Lizenzstatus',
+          license_active: 'Aktiv',
+          license_inactive: 'Inaktiv',
+          request_pro_license: 'PRO-Lizenz anfordern',
+          your_email: 'Ihre E-Mail',
+          paypal_transaction_id: 'PayPal Transaktions-ID',
+          send_request: 'Anfrage senden',
+          request_sent: 'Anfrage gesendet! Sie erhalten Ihre Lizenz per E-Mail.',
+          request_error: 'Fehler beim Senden. Bitte erneut versuchen.',
+          license_instructions: 'Um eine PRO-Lizenz zu erhalten: 1) Kopieren Sie Ihre Installations-ID, 2) Senden Sie 1 Euro an PayPal, 3) Geben Sie Ihre E-Mail und Transaktions-ID ein, 4) Klicken Sie Anfrage senden.',
           paypal_button: 'PRO-Funktionen freischalten (1€)',
           paypal_note: 'WICHTIG: Nur als SPENDE senden. Nicht „Waren & Dienstleistungen“ nutzen. Geben Sie Ihre E-MAIL in den PayPal-Notizen an, um das Passwort zu erhalten.',
           overlay_image_enabled: { label: 'Overlay-Bild aktivieren', helper: 'Aktivieren oder deaktivieren Sie das benutzerdefinierte Overlay-Bild (erfordert PRO-Autorisierung).' },
@@ -11444,6 +11559,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Langue', helper: 'Choisissez la langue de l éditeur.' },
           installation_type: { title: 'Type d\'installation', helper: 'Sélectionnez votre type d\'installation pour configurer la carte en conséquence.' },
+          license_info: { title: 'Info Licence', helper: 'Gérez votre licence PRO. Affichez votre ID d\'installation, vérifiez le statut de la licence et demandez une nouvelle licence.' },
           general: { title: 'Paramètres généraux', helper: 'Métadonnées de la carte, arrière-plan et fréquence de mise à jour.' },
           array1: { title: 'Array 1', helper: 'Configurer les entités de l Array PV 1.' },
           array2: { title: 'Array 2', helper: 'Si le capteur PV total (Inverseur 2) est défini ou si les valeurs des chaînes PV sont fournies, Array 2 deviendra actif et activera le second onduleur. Vous devez également activer le capteur de production quotidienne (Array 2) et la charge domestique (Inverseur 2).' },
@@ -11664,6 +11780,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Couleur Véhicule 1', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 1.' },
           car2_color: { label: 'Couleur Véhicule 2', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 2.' },
           pro_password: { label: 'Mot de passe PRO', helper: '⚠️ FONCTION PRO : C est une fonction premium.' },
+          // License Info section fields
+          your_installation_id: 'Votre ID d\'installation',
+          copy_id: 'Copier',
+          id_copied: 'Copié!',
+          license_status: 'Statut de la licence',
+          license_active: 'Active',
+          license_inactive: 'Inactive',
+          request_pro_license: 'Demander une licence PRO',
+          your_email: 'Votre e-mail',
+          paypal_transaction_id: 'ID de transaction PayPal',
+          send_request: 'Envoyer la demande',
+          request_sent: 'Demande envoyée! Vous recevrez votre licence par e-mail.',
+          request_error: 'Erreur lors de l\'envoi. Veuillez réessayer.',
+          license_instructions: 'Pour obtenir une licence PRO: 1) Copiez votre ID d\'installation, 2) Envoyez 1 euro à PayPal, 3) Entrez votre e-mail et ID de transaction ci-dessous, 4) Cliquez sur Envoyer.',
           paypal_button: 'Débloquer les fonctions PRO (1€)',
           paypal_note: 'IMPORTANT : Envoyez uniquement en DON. Ne pas utiliser « Biens et services ». Incluez votre E-MAIL dans les notes PayPal pour recevoir le mot de passe.',
           overlay_image_enabled: { label: 'Activer l image de superposition', helper: 'Activer ou désactiver l image de superposition personnalisée (nécessite une autorisation PRO).' },
@@ -11867,6 +11997,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Taal', helper: 'Kies de taal van de editor.' },
           installation_type: { title: 'Installatietype', helper: 'Selecteer uw installatietype om de kaart dienovereenkomstig te configureren.' },
+          license_info: { title: 'Licentie Info', helper: 'Beheer uw PRO-licentie. Bekijk uw installatie-ID, controleer de licentiestatus en vraag een nieuwe licentie aan.' },
           general: { title: 'Algemene instellingen', helper: 'Metadata van de kaart, achtergrond en update frequentie.' },
           array1: { title: 'Array 1', helper: 'Configureer PV Array 1 entiteiten.' },
           array2: { title: 'Array 2', helper: 'Als de Totale PV sensor (Inverter 2) is ingesteld of de PV String waarden zijn opgegeven, wordt Array 2 actief en wordt de tweede inverter ingeschakeld. U moet ook de Dagelijkse Productie Sensor (Array 2) en Huisbelasting (Inverter 2) inschakelen.' },
@@ -12087,6 +12218,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Voertuig 1 kleur', helper: 'Kleur toegepast op Voertuig 1 vermogen waarde.' },
           car2_color: { label: 'Voertuig 2 kleur', helper: 'Kleur toegepast op de vermogenswaarde van voertuig 2.' },
           pro_password: { label: 'PRO-wachtwoord', helper: '⚠️ PRO-FUNCTIE: Dit is een premium-functie.' },
+          // License Info section fields
+          your_installation_id: 'Uw Installatie-ID',
+          copy_id: 'Kopiëren',
+          id_copied: 'Gekopieerd!',
+          license_status: 'Licentiestatus',
+          license_active: 'Actief',
+          license_inactive: 'Inactief',
+          request_pro_license: 'PRO-licentie aanvragen',
+          your_email: 'Uw e-mail',
+          paypal_transaction_id: 'PayPal Transactie-ID',
+          send_request: 'Verzoek verzenden',
+          request_sent: 'Verzoek verzonden! U ontvangt uw licentie per e-mail.',
+          request_error: 'Fout bij verzenden. Probeer opnieuw.',
+          license_instructions: 'Om een PRO-licentie te krijgen: 1) Kopieer uw Installatie-ID, 2) Stuur 1 euro naar PayPal, 3) Vul uw e-mail en PayPal Transactie-ID hieronder in, 4) Klik op Verzoek verzenden.',
           paypal_button: 'PRO-functies ontgrendelen (1€)',
           paypal_note: 'BELANGRIJK: Alleen als DONATIE sturen. Gebruik geen "Goederen en diensten". Vermeld je E-MAIL in de PayPal-notities om het wachtwoord te ontvangen.',
           overlay_image_enabled: { label: 'Overlay-afbeelding inschakelen', helper: 'Schakel de aangepaste overlay-afbeelding in of uit (vereist PRO-autorisatie).' },
@@ -12865,7 +13010,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'dev_pv_box_text_color', label: (fields.dev_pv_box_text_color && fields.dev_pv_box_text_color.label) || 'PV Box Text Color', helper: (fields.dev_pv_box_text_color && fields.dev_pv_box_text_color.helper) || 'Color for all text in PV box. Leave empty to use PV total color.', selector: { color_picker: {} } }
       ]),
       lumina_pro: define([
-      { name: 'pro_password', label: (fields.pro_password && fields.pro_password.label) ? fields.pro_password.label : 'PRO Password', helper: (fields.pro_password && fields.pro_password.helper) ? fields.pro_password.helper : '⚠️ PRO FEATURE: Enter PRO password to unlock premium features. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email in the message.', selector: { text: { type: 'password' } } },
+      // PRO Password moved to "License Info" section
       { name: 'text_visibility_sensor', label: fields.text_visibility_sensor.label, helper: fields.text_visibility_sensor.helper, selector: motionSensorSelector },
 
       // Overlay Image fields
@@ -13066,7 +13211,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       { id: 'gridBox', title: (sections.gridBox && sections.gridBox.title) || 'Grid Box', helper: (sections.gridBox && sections.gridBox.helper) || 'Top-right box. Import/Export + daily. Position and size.', schema: schemaDefs.gridBox, defaultOpen: false },
       { id: 'pvBox', title: (sections.pvBox && sections.pvBox.title) || 'PV Box', helper: (sections.pvBox && sections.pvBox.helper) || 'Top-left box. PV Total (sum) + Daily production. Position and size.', schema: schemaDefs.pvBox, defaultOpen: false },
       { id: 'about', title: sections.about.title, helper: sections.about.helper, schema: null, defaultOpen: false, renderContent: () => this._createAboutContent() },
-      { id: 'lumina_pro', title: sections.lumina_pro.title, helper: sections.lumina_pro.helper, schema: schemaDefs.lumina_pro, defaultOpen: false }
+      { id: 'lumina_pro', title: sections.lumina_pro.title, helper: sections.lumina_pro.helper, renderContent: () => this._createLuminaProSection(schemaDefs.lumina_pro), defaultOpen: false }
     ];
   }
 
@@ -13369,6 +13514,228 @@ _createSectionDefs(localeStrings, schemaDefs) {
         this._updateSectionVisibility(type);
       });
     });
+  }
+
+  _createLuminaProSection(schema) {
+    const container = document.createElement('div');
+    container.className = 'lumina-pro-content';
+    container.style.cssText = 'padding: 8px 0;';
+    
+    const config = this._configWithDefaults();
+    const lang = (config.language || 'en').toLowerCase();
+    const fields = this._getLocaleStrings().fields || {};
+    
+    // Get localized strings
+    const labels = {
+      your_installation_id: fields.your_installation_id || 'Your Installation ID',
+      copy_id: fields.copy_id || 'Copy',
+      id_copied: fields.id_copied || 'Copied!',
+      license_status: fields.license_status || 'License Status',
+      license_active: fields.license_active || 'PRO Active',
+      license_inactive: fields.license_inactive || 'Not Active',
+      pro_password: (fields.pro_password && fields.pro_password.label) || 'PRO Password',
+      request_pro_license: fields.request_pro_license || 'Request PRO License',
+      your_email: fields.your_email || 'Your Email',
+      paypal_transaction_id: fields.paypal_transaction_id || 'PayPal Transaction ID',
+      send_request: fields.send_request || 'Send Request',
+      request_sent: fields.request_sent || 'Request sent! You will receive your license via email.',
+      request_error: fields.request_error || 'Error sending request. Please try again.',
+      license_instructions: fields.license_instructions || 'Send 1€ as DONATION to PayPal (3dprint8616@gmail.com). Include your email in the PayPal notes. Then fill in your email and transaction ID below.'
+    };
+    
+    // Get UID
+    const uid = getLuminaUID();
+    
+    // Check license status
+    const proPassword = config.pro_password;
+    let isLicenseActive = false;
+    if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
+      // Check legacy
+      const legacyHash = LUMINA_SHA256(proPassword.trim());
+      if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
+        isLicenseActive = true;
+      }
+      // Check V2
+      if (!isLicenseActive) {
+        const uidBoundHash = LUMINA_SHA256(proPassword.trim() + uid);
+        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+          isLicenseActive = true;
+        }
+      }
+    }
+    
+    // --- Status Banner ---
+    const statusBanner = document.createElement('div');
+    statusBanner.style.cssText = `display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; margin-bottom: 16px; border-radius: 8px; background: ${isLicenseActive ? 'rgba(0,204,0,0.15)' : 'rgba(0,249,249,0.1)'}; border: 1px solid ${isLicenseActive ? 'rgba(0,204,0,0.3)' : 'rgba(0,249,249,0.3)'};`;
+    
+    const statusLeft = document.createElement('div');
+    statusLeft.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+    const statusIcon = document.createElement('span');
+    statusIcon.textContent = isLicenseActive ? '✓' : '⚡';
+    statusIcon.style.cssText = `font-size: 20px; color: ${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
+    const statusText = document.createElement('span');
+    statusText.textContent = isLicenseActive ? labels.license_active : 'Unlock PRO Features';
+    statusText.style.cssText = `font-size: 14px; font-weight: bold; color: ${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
+    statusLeft.appendChild(statusIcon);
+    statusLeft.appendChild(statusText);
+    statusBanner.appendChild(statusLeft);
+    
+    container.appendChild(statusBanner);
+    
+    // --- PRO Password Field with Activate Button ---
+    const passwordRow = document.createElement('div');
+    passwordRow.style.cssText = 'margin-bottom: 20px;';
+    const passwordLabel = document.createElement('label');
+    passwordLabel.textContent = labels.pro_password;
+    passwordLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 6px;';
+    
+    const passwordWrapper = document.createElement('div');
+    passwordWrapper.style.cssText = 'display: flex; gap: 8px;';
+    
+    const passwordInput = document.createElement('input');
+    passwordInput.type = 'text';
+    passwordInput.value = config.pro_password || '';
+    passwordInput.placeholder = 'Enter your PRO password';
+    passwordInput.style.cssText = 'flex: 1; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 14px; box-sizing: border-box;';
+    
+    const activateBtn = document.createElement('button');
+    activateBtn.textContent = isLicenseActive ? '✓ Active' : 'Activate';
+    activateBtn.style.cssText = `padding: 12px 24px; background: ${isLicenseActive ? '#00cc00' : '#00f9f9'}; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;`;
+    activateBtn.addEventListener('click', () => {
+      const newConfig = { ...this._config, pro_password: passwordInput.value };
+      this._config = newConfig;
+      this._debouncedConfigChanged(newConfig, true);
+      this._rendered = false;
+      this.render();
+    });
+    
+    passwordWrapper.appendChild(passwordInput);
+    passwordWrapper.appendChild(activateBtn);
+    passwordRow.appendChild(passwordLabel);
+    passwordRow.appendChild(passwordWrapper);
+    container.appendChild(passwordRow);
+    
+    // --- Get License Section (only if not active) ---
+    if (!isLicenseActive) {
+      const getLicenseBox = document.createElement('div');
+      getLicenseBox.style.cssText = 'background: rgba(0,0,0,0.2); border-radius: 8px; padding: 16px; margin-bottom: 16px;';
+      
+      // PayPal instruction
+      const paypalInfo = document.createElement('div');
+      paypalInfo.innerHTML = `
+        <div style="font-size: 13px; color: #00f9f9; font-weight: bold; margin-bottom: 8px;">💰 Get PRO License (1€)</div>
+        <div style="font-size: 12px; color: #ccc; line-height: 1.6; margin-bottom: 12px;">
+          Send <b>1€ as DONATION</b> to PayPal: <span style="color: #00f9f9;">3dprint8616@gmail.com</span><br>
+          Then fill in your email and PayPal transaction ID below.
+        </div>
+      `;
+      getLicenseBox.appendChild(paypalInfo);
+      container.appendChild(getLicenseBox);
+    }
+    
+    // --- Request Form (only if not active) ---
+    if (!isLicenseActive) {
+      // Email field
+      const emailRow = document.createElement('div');
+      emailRow.style.cssText = 'margin-bottom: 12px;';
+      const emailLabel = document.createElement('label');
+      emailLabel.textContent = labels.your_email;
+      emailLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 4px;';
+      const emailInput = document.createElement('input');
+      emailInput.type = 'email';
+      emailInput.id = 'license-email';
+      emailInput.placeholder = 'your@email.com';
+      emailInput.style.cssText = 'width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; box-sizing: border-box;';
+      emailRow.appendChild(emailLabel);
+      emailRow.appendChild(emailInput);
+      container.appendChild(emailRow);
+      
+      // Transaction ID field
+      const txnRow = document.createElement('div');
+      txnRow.style.cssText = 'margin-bottom: 16px;';
+      const txnLabel = document.createElement('label');
+      txnLabel.textContent = labels.paypal_transaction_id;
+      txnLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 4px;';
+      const txnInput = document.createElement('input');
+      txnInput.type = 'text';
+      txnInput.id = 'license-txn';
+      txnInput.placeholder = 'e.g., 1AB23456CD789012E';
+      txnInput.style.cssText = 'width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; box-sizing: border-box;';
+      txnRow.appendChild(txnLabel);
+      txnRow.appendChild(txnInput);
+      container.appendChild(txnRow);
+      
+      // Status message
+      const statusMsg = document.createElement('div');
+      statusMsg.id = 'license-status-msg';
+      statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: none;';
+      container.appendChild(statusMsg);
+      
+      // Send button
+      const sendBtn = document.createElement('button');
+      sendBtn.textContent = labels.send_request;
+      sendBtn.style.cssText = 'width: 100%; padding: 14px; background: #00f9f9; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;';
+      sendBtn.addEventListener('click', async () => {
+        const email = emailInput.value.trim();
+        const txn = txnInput.value.trim();
+        
+        if (!email || !txn) {
+          statusMsg.textContent = 'Please fill in all fields.';
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+          return;
+        }
+        
+        sendBtn.disabled = true;
+        sendBtn.textContent = '...';
+        
+        try {
+          // Use no-cors mode to avoid CORS issues with Google Apps Script
+          await fetch(LUMINA_LICENSE_ENDPOINT, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+              action: 'request',
+              email: email,
+              uid: uid,
+              transaction_id: txn
+            })
+          });
+          
+          // With no-cors we can't read response, but request was sent
+          statusMsg.textContent = labels.request_sent;
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(0,204,0,0.2); color: #00cc00;';
+          emailInput.value = '';
+          txnInput.value = '';
+        } catch (e) {
+          statusMsg.textContent = labels.request_error;
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = labels.send_request;
+        }
+      });
+      container.appendChild(sendBtn);
+    }
+    
+    // --- PRO Features (only visible when license is active) ---
+    if (isLicenseActive && schema) {
+      const proFeaturesDiv = document.createElement('div');
+      proFeaturesDiv.style.cssText = 'margin-top: 30px; padding-top: 20px; border-top: 2px solid #00f9f9;';
+      
+      const proTitle = document.createElement('div');
+      proTitle.textContent = '✓ PRO Features Unlocked';
+      proTitle.style.cssText = 'font-size: 16px; font-weight: bold; color: #00f9f9; margin-bottom: 16px;';
+      proFeaturesDiv.appendChild(proTitle);
+      
+      // Add the schema form for PRO options
+      const form = this._createForm(schema);
+      proFeaturesDiv.appendChild(form);
+      
+      container.appendChild(proFeaturesDiv);
+    }
+    
+    return container;
   }
 
   _updateSectionVisibility(type) {
