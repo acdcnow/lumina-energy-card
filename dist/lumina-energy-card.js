@@ -389,9 +389,15 @@ const resolveEntityId = (primary, legacy) => {
  * Optimized: extracted to avoid duplication
  */
 const resolveLabel = (value, fallback) => {
+  // If user explicitly set an empty string, treat it as "no label"
+  if (value === '') {
+    return '';
+  }
   if (typeof value === 'string') {
     const trimmed = value.trim();
+    // If key exists but is only whitespace, treat as "no label"
     if (trimmed) return trimmed;
+    return '';
   }
   return fallback;
 };
@@ -514,7 +520,7 @@ const getPopupPositions = (config) => {
 };
 
 // SOC bar: 6 segments, positioned from path M 330,370 360,360 350,270 320,280 Z (bbox 325,277 30x85)
-const DEFAULT_SOC_BAR = { x: 325, y: 277, width: 30, height: 85, rotate: 1, skewX: 2, skewY: -19, opacity: 0.55, glow: 13, colorOn: '#00FFFF', colorOff: '#5aa7c3' };
+const DEFAULT_SOC_BAR = { x: 327, y: 277, width: 30, height: 85, rotate: -3, skewX: -2, skewY: -14, opacity: 0.25, glow: 19, colorOn: '#00FFFF', colorOff: '#5aa7c3' };
 const getSocBarConfig = (config) => {
   const n = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
   return {
@@ -530,6 +536,76 @@ const getSocBarConfig = (config) => {
     colorOn: config.soc_bar_color_on && String(config.soc_bar_color_on).trim() ? String(config.soc_bar_color_on).trim() : DEFAULT_SOC_BAR.colorOn,
     colorOff: config.soc_bar_color_off && String(config.soc_bar_color_off).trim() ? String(config.soc_bar_color_off).trim() : DEFAULT_SOC_BAR.colorOff
   };
+};
+
+// Battery overlay image (battery.png) + SOC bar toggle (battery section)
+const DEFAULT_BATTERY_OVERLAY = {
+  enabled: false,
+  imageHolographic: '/local/community/lumina-energy-card/battery.png',
+  imageReal: '/local/community/lumina-energy-card/battery_real.png',
+  holographic: { x: 227, y: 232, width: 140, height: 217 },
+  real: { x: 228, y: 234, width: 137, height: 213 },
+  opacity: 1.0
+};
+const getBatteryOverlayConfig = (config, rawConfig = null) => {
+  const safeConfig = config || {};
+  const safeRaw = rawConfig || null;
+  const has = (k) => (safeRaw && Object.prototype.hasOwnProperty.call(safeRaw, k));
+
+  const enabled = Boolean(safeConfig.battery_overlay_enabled);
+  const style = (safeConfig && safeConfig.image_style === 'real') ? 'real' : 'holographic';
+  const def = style === 'real' ? DEFAULT_BATTERY_OVERLAY.real : DEFAULT_BATTERY_OVERLAY.holographic;
+
+  // Image:
+  // - If user explicitly sets battery_overlay_image, use it (override)
+  // - Else auto-select based on image style (holographic vs real)
+  const imageOverride = has('battery_overlay_image') && typeof safeConfig.battery_overlay_image === 'string' && safeConfig.battery_overlay_image.trim()
+    ? safeConfig.battery_overlay_image.trim()
+    : null;
+  const imageAuto = style === 'real' ? DEFAULT_BATTERY_OVERLAY.imageReal : DEFAULT_BATTERY_OVERLAY.imageHolographic;
+  const image = imageOverride || imageAuto;
+
+  // Coordinates/sizing:
+  // Use user-specified values only when the key exists in raw config.
+  const x = (has('battery_overlay_x') && Number.isFinite(Number(safeConfig.battery_overlay_x))) ? Number(safeConfig.battery_overlay_x) : def.x;
+  const y = (has('battery_overlay_y') && Number.isFinite(Number(safeConfig.battery_overlay_y))) ? Number(safeConfig.battery_overlay_y) : def.y;
+  const width = Math.max(1, (has('battery_overlay_width') && Number.isFinite(Number(safeConfig.battery_overlay_width))) ? Number(safeConfig.battery_overlay_width) : def.width);
+  const height = Math.max(1, (has('battery_overlay_height') && Number.isFinite(Number(safeConfig.battery_overlay_height))) ? Number(safeConfig.battery_overlay_height) : def.height);
+
+  const opacityRaw = (has('battery_overlay_opacity') && Number.isFinite(Number(safeConfig.battery_overlay_opacity)))
+    ? Number(safeConfig.battery_overlay_opacity)
+    : DEFAULT_BATTERY_OVERLAY.opacity;
+  const opacity = Math.max(0, Math.min(1, opacityRaw));
+  return { enabled, image, x, y, width, height, opacity, style };
+};
+
+// Scale SOC bar with the battery overlay (auto-align + auto-resize)
+const scaleSocBarToBatteryOverlay = (socBarConfig, batteryOverlayConfig) => {
+  const sb = socBarConfig || {};
+  const bo = batteryOverlayConfig || null;
+  if (!bo) return { ...sb };
+
+  const style = bo.style === 'real' ? 'real' : 'holographic';
+  const def = style === 'real' ? DEFAULT_BATTERY_OVERLAY.real : DEFAULT_BATTERY_OVERLAY.holographic;
+  const defW = def.width || 1;
+  const defH = def.height || 1;
+  const sx = defW > 0 ? (Number(bo.width) / defW) : 1;
+  const sy = defH > 0 ? (Number(bo.height) / defH) : 1;
+
+  const safeSx = Number.isFinite(sx) && sx > 0 ? sx : 1;
+  const safeSy = Number.isFinite(sy) && sy > 0 ? sy : 1;
+
+  const baseX = Number.isFinite(Number(sb.x)) ? Number(sb.x) : DEFAULT_SOC_BAR.x;
+  const baseY = Number.isFinite(Number(sb.y)) ? Number(sb.y) : DEFAULT_SOC_BAR.y;
+  const baseW = Number.isFinite(Number(sb.width)) ? Number(sb.width) : DEFAULT_SOC_BAR.width;
+  const baseH = Number.isFinite(Number(sb.height)) ? Number(sb.height) : DEFAULT_SOC_BAR.height;
+
+  const x = Number(bo.x) + (baseX - def.x) * safeSx;
+  const y = Number(bo.y) + (baseY - def.y) * safeSy;
+  const width = Math.max(10, baseW * safeSx);
+  const height = Math.max(20, baseH * safeSy);
+
+  return { ...sb, x, y, width, height };
 };
 
 const DEFAULT_GRID_BOX = { x: 607, y: 15, width: 180, height: 67 };
@@ -782,63 +858,54 @@ const LUMINA_SHA256 = (s) => {
 
 // Remote authorization settings (obfuscated)
 const LUMINA_REMOTE_URL = atob('aHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9HaW9yZ2lvODY2LzExMmIwZTNkZDQ5Yzg1YjE0OTMzMWQ0MGVkOGM3MjM1L3Jhdy9sdW1pbmFfZGI=');
-let LUMINA_AUTH_LIST = null;      // Legacy hashes (V1) - backward compatibility
-let LUMINA_AUTH_LIST_V2 = null;   // UID-bound hashes (V2) - new system with v2: prefix
+let LUMINA_AUTH_LIST_V2 = null; // UID-bound hashes (lines prefixed with "v2:")
 let LUMINA_FETCHING = false;
 
-// UID univoco per installazione (per licenze V2 - UID-bound)
-const LUMINA_UID_KEY = 'lumina_energy_card_uid';
+// UID per installazione (client-side). Formato: LEC-....
+const LUMINA_UID_KEY = atob('bHVtaW5hX2VuZXJneV9jYXJkX3VpZA==');
 const getLuminaUID = () => {
   try {
-    let uid = localStorage.getItem(LUMINA_UID_KEY);
-    if (!uid) {
-      // Genera UID: formato LEC-TIMESTAMP-RANDOM (leggibile, ~20 caratteri)
-      uid = 'LEC-' + Date.now().toString(36).toUpperCase() + '-' + 
-            Math.random().toString(36).substr(2, 6).toUpperCase();
-      localStorage.setItem(LUMINA_UID_KEY, uid);
-    }
+    const existing = localStorage.getItem(LUMINA_UID_KEY);
+    if (existing && typeof existing === 'string' && existing.startsWith('LEC-')) return existing;
+    const rnd = (Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)).toUpperCase();
+    const uid = `LEC-${Date.now().toString(16).toUpperCase()}-${rnd.slice(0, 16)}`;
+    localStorage.setItem(LUMINA_UID_KEY, uid);
     return uid;
   } catch (e) {
-    // Fallback se localStorage non disponibile
-    return 'LEC-TEMP-' + Math.random().toString(36).substr(2, 8).toUpperCase();
+    const rnd = Math.random().toString(16).slice(2, 10).toUpperCase();
+    return `LEC-${Date.now().toString(16).toUpperCase()}-${rnd}`;
   }
 };
 
-// License generation endpoint (Google Apps Script)
-const LUMINA_LICENSE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxUCdCgW02Yp88eePLHr-1g4zzkUn99XLr-ZYBTn9u2HB-tiTTlE9JGzdhRPO5-jq2Z/exec';
+// License backend endpoint (Google Apps Script)
+// NOTE: aggiorna qui se fai un nuovo deploy GAS
+const LUMINA_LICENSE_ENDPOINT = atob('aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J6S202X2lwZ19QVHNiOEd5cV9DQklHQ0VpX0FXT3FaOHBpcUxvdThCN00xejJKWXVtN1Z6di1vcFotY0FxWm43NU10QS9leGVj');
+const LUMINA_ACT_REQ = atob('cmVxdWVzdA==');     // "request"
+const LUMINA_ACT_MIG = atob('bWlncmF0aW9u');     // "migration"
 
 const LUMINA_REFRESH_AUTH = async (callback) => {
-  if (LUMINA_AUTH_LIST !== null && LUMINA_AUTH_LIST_V2 !== null) return LUMINA_AUTH_LIST;
+  if (LUMINA_AUTH_LIST_V2 !== null) return LUMINA_AUTH_LIST_V2;
   if (LUMINA_FETCHING) return null;
   LUMINA_FETCHING = true;
   try {
     const r = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
     const text = await r.text();
-    // Parse both legacy (V1) and UID-bound (V2) hashes from same Gist
     const lines = text.split(/\r?\n/);
-    LUMINA_AUTH_LIST = [];    // Legacy hashes (64 chars, no prefix)
-    LUMINA_AUTH_LIST_V2 = []; // V2 hashes (prefixed with "v2:")
+    LUMINA_AUTH_LIST_V2 = [];
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
       if (trimmed.startsWith('v2:')) {
-        // V2 hash: remove prefix and validate length
         const hash = trimmed.substring(3);
-        if (hash.length === 64) {
-          LUMINA_AUTH_LIST_V2.push(hash);
-        }
-      } else if (trimmed.length === 64) {
-        // Legacy hash: 64 chars without prefix
-        LUMINA_AUTH_LIST.push(trimmed);
+        if (hash.length === 64) LUMINA_AUTH_LIST_V2.push(hash);
       }
     }
     if (callback) callback();
   } catch (e) {
-    LUMINA_AUTH_LIST = LUMINA_AUTH_LIST || [];
-    LUMINA_AUTH_LIST_V2 = LUMINA_AUTH_LIST_V2 || [];
+    LUMINA_AUTH_LIST_V2 = [];
   } finally {
     LUMINA_FETCHING = false;
   }
-  return LUMINA_AUTH_LIST;
+  return LUMINA_AUTH_LIST_V2;
 };
 
 // Start fetching immediately
@@ -850,7 +917,8 @@ const PV_LINE_SPACING = 14;
 const FLOW_STYLE_DEFAULT = 'dashes';
 const FLOW_STYLE_PATTERNS = {
   dashes: { dasharray: '18 12', cycle: 32 },
-  dots: { dasharray: '1 16', cycle: 22 },
+  // Slightly larger dots for better visibility
+  dots: { dasharray: '2 14', cycle: 22 },
   arrows: { dasharray: null, cycle: 1 },
   // fluid_flow uses a dash pattern for a moving "highlight" overlay.
   // Use a real "window + gap" so the pulse is visible.
@@ -868,10 +936,11 @@ const FLOW_MIN_GLOW_SCALE = 0.2;
 const DEFAULT_GRID_ACTIVITY_THRESHOLD = 100;
 const DEFAULT_BATTERY_FILL_HIGH_COLOR = '#00ffff';
 
-const buildArrowGroupSvg = (key, flowState) => {
+const buildArrowGroupSvg = (key, flowState, count) => {
   const color = flowState && (flowState.glowColor || flowState.stroke) ? (flowState.glowColor || flowState.stroke) : '#00FFFF';
   const activeOpacity = flowState && flowState.active ? 1 : 0;
-  const segments = Array.from({ length: FLOW_ARROW_COUNT }, (_, index) =>
+  const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Math.min(12, Number(count))) : FLOW_ARROW_COUNT;
+  const segments = Array.from({ length: safeCount }, (_, index) =>
     `<polygon data-arrow-shape="${key}" data-arrow-index="${index}" points="-12,-5 0,0 -12,5" fill="${color}" />`
   ).join('');
   return `<g class="flow-arrow" data-arrow-key="${key}" style="opacity:${activeOpacity};">${segments}</g>`;
@@ -892,6 +961,9 @@ class LuminaEnergyCard extends HTMLElement {
     this._debugFluidFlow = false;
     this._fluidFlowDebugStopLog = new Map();
     this._fluidFlowDebugColors = new Map();
+    this._debugAnimation = false;
+    this._debugLogLastTs = new Map();
+    this._debugAnimationBannerLogged = false;
     this._gsap = null;
     
     // Listen for config-changed events from the editor
@@ -908,6 +980,7 @@ class LuminaEnergyCard extends HTMLElement {
     window.addEventListener('config-changed', handleConfigChanged);
     this._gsapLoading = null;
     this._flowPathLengths = new Map();
+    this._flowPathLengthSig = new Map(); // flowKey -> current path 'd' (for cache invalidation)
     this._animationSpeedFactor = 1;
     this._animationStyle = FLOW_STYLE_DEFAULT;
     this._fluidFlowStrokeWidthPx = 5;
@@ -921,6 +994,9 @@ class LuminaEnergyCard extends HTMLElement {
     this._handleEchoAliveClickBound = this._handleEchoAliveClick.bind(this);
     this._echoAliveClickTimeout = null;
     this._textsVisible = 0; // Text visibility state: 0=all visible (default), 1=grid/pv boxes and lines hidden, 2=all hidden
+    this._textsVisibleStorageKey = null;
+    this._textsVisibleLoadedFromStorage = false;
+    this._textsVisibleUserTouched = false;
     this._motionLastDetectedAt = null; // timestamp when motion last seen (for 60s keep-alive)
     this._motionHideTimer = null;       // timeout id to re-run visibility after 60s
     this._handleTextToggleClickBound = this._handleTextToggleClick.bind(this);
@@ -962,6 +1038,70 @@ class LuminaEnergyCard extends HTMLElement {
     // 5. Cache for expensive calculations
     this._textTransformCache = new Map();
     this._colorCache = new Map();
+
+    // 6. Caches and settings for performance tuning
+    this._flowPathSamples = new Map(); // flowKey -> { d, length, count, points, angles }
+    this._trackedEntityIds = []; // derived from config; used for dirty-checking on hass updates
+    this._perfSettings = null;   // resolved performance settings cache
+
+    // 7. RAF ticker fallback (used when GSAP isn't available, e.g. animation_style: dashes)
+    this._flowRafId = null;
+    this._flowRafLastTs = null;
+    this._flowRafAccMs = 0;
+  }
+
+  _isDebugFlowLogsEnabled() {
+    try {
+      // Allow flow logs when either debug_flow_logs OR debug_animation is enabled.
+      // Many users do not see console.debug/verbose logs; debug_animation uses warn + a HUD.
+      return Boolean(this._debugAnimation || (this.config && this.config.debug_flow_logs));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  _logFlow(...args) {
+    if (!this._isDebugFlowLogsEnabled()) return;
+    try {
+      if (typeof console !== 'undefined' && console && typeof console.log === 'function') {
+        console.log('[LuminaEnergyCard][flow]', ...args);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _tryAdoptHassFromHomeAssistant() {
+    // Visual editor preview sometimes instantiates the card before `hass` is assigned,
+    // leading to flows/directions computed from 0 values. Try to adopt hass from the
+    // main HA element to keep preview consistent with the real card.
+    try {
+      if (!this._isEditorActive()) return;
+      if (this._hass && this._hass.states && Object.keys(this._hass.states).length > 0) return;
+      const ha = typeof document !== 'undefined' ? document.querySelector('home-assistant') : null;
+      const hass = ha && ha.hass ? ha.hass : null;
+      if (hass && hass.states) {
+        this._hass = hass;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _debugLogThrottled(key, throttleMs, payload) {
+    try {
+      if (!this._debugAnimation) return;
+      const now = Date.now();
+      const last = this._debugLogLastTs ? (this._debugLogLastTs.get(key) || 0) : 0;
+      const ms = Number.isFinite(Number(throttleMs)) ? Number(throttleMs) : 1000;
+      if (now - last < ms) return;
+      if (this._debugLogLastTs) this._debugLogLastTs.set(key, now);
+      // Use warn so it's visible even with "Verbose" hidden in browser console
+      // eslint-disable-next-line no-console
+      console.warn(`[Lumina][debug] ${key}`, payload);
+    } catch (e) {
+      // ignore
+    }
   }
   
   /**
@@ -1028,6 +1168,72 @@ class LuminaEnergyCard extends HTMLElement {
     this._lastDataHash = null;
   }
 
+  _computeTextsVisibleStorageKey() {
+    try {
+      const raw = this._rawConfig || {};
+      // Keep payload small but stable enough to distinguish multiple cards
+      const payload = {
+        type: raw.type || 'custom:lumina-energy-card',
+        card_title: raw.card_title || '',
+        installation_type: raw.installation_type || '',
+        background_image: raw.background_image || '',
+        sensor_home_load: raw.sensor_home_load || '',
+        sensor_pv_total: raw.sensor_pv_total || '',
+        sensor_grid_power: raw.sensor_grid_power || ''
+      };
+      const hash = typeof LUMINA_SHA256 === 'function'
+        ? LUMINA_SHA256(JSON.stringify(payload))
+        : String(JSON.stringify(payload).length);
+      return `lumina_energy_card:textsVisible:${String(hash).slice(0, 16)}`;
+    } catch (e) {
+      return 'lumina_energy_card:textsVisible:default';
+    }
+  }
+
+  _loadTextsVisibleFromStorage() {
+    if (this._textsVisibleUserTouched) {
+      return;
+    }
+    if (this._textsVisibleLoadedFromStorage) {
+      return;
+    }
+    try {
+      const key = this._computeTextsVisibleStorageKey();
+      this._textsVisibleStorageKey = key;
+      if (typeof window === 'undefined' || !window.localStorage) {
+        this._textsVisibleLoadedFromStorage = true;
+        return;
+      }
+      const raw = window.localStorage.getItem(key);
+      if (raw === null || raw === undefined) {
+        this._textsVisibleLoadedFromStorage = true;
+        return;
+      }
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0 && n <= 2) {
+        this._textsVisible = n;
+      }
+      this._textsVisibleLoadedFromStorage = true;
+    } catch (e) {
+      this._textsVisibleLoadedFromStorage = true;
+    }
+  }
+
+  _saveTextsVisibleToStorage() {
+    try {
+      const key = this._textsVisibleStorageKey || this._computeTextsVisibleStorageKey();
+      this._textsVisibleStorageKey = key;
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+      }
+      const v = Number(this._textsVisible);
+      if (!Number.isFinite(v)) return;
+      window.localStorage.setItem(key, String(v));
+    } catch (e) {
+      // ignore
+    }
+  }
+
   setConfig(config) {
     if (!config) {
       throw new Error('Invalid configuration');
@@ -1035,6 +1241,16 @@ class LuminaEnergyCard extends HTMLElement {
     
     const defaults = this._defaults || {};
     this.config = { ...defaults, ...config };
+    // Keep the raw user config (without defaults) for style-dependent defaults.
+    // This allows us to detect whether a value was explicitly provided by the user.
+    this._rawConfig = { ...config };
+    this._tryAdoptHassFromHomeAssistant();
+    // Restore text toggle state (persists across refresh/editor open/close)
+    this._textsVisibleLoadedFromStorage = false;
+    this._loadTextsVisibleFromStorage();
+    // Recompute caches derived from config
+    this._trackedEntityIds = this._computeTrackedEntityIds(this.config);
+    this._perfSettings = null;
     this._forceRender = true;
     this._prevViewState = null;
     
@@ -1120,9 +1336,11 @@ class LuminaEnergyCard extends HTMLElement {
       key.startsWith('dev_soc_bar_') || key.startsWith('soc_bar_') || key.startsWith('dev_grid_box_') || key.startsWith('dev_pv_box_')
     );
     
+    // In the visual editor preview we still want the card to react to hass changes
+    // (otherwise flow directions like Grid↔Inverter can look wrong until you save/exit).
+    // We only avoid forcing a full rebuild here; `_ensureTemplate` will keep DOM stable.
     if (this._isEditorActive() && !hasDeveloperValues) {
       this._forceRender = false;
-      return;
     }
     
     // Do not set _forceRender when editor + dev values (avoids full rebuild / background flicker)
@@ -1172,7 +1390,6 @@ class LuminaEnergyCard extends HTMLElement {
       }
       
       if (stateChanged) {
-        this._forceRender = true;
         // Update toggle switches immediately when state changes
         requestAnimationFrame(() => {
           this._updateAllToggleSwitches();
@@ -1186,8 +1403,18 @@ class LuminaEnergyCard extends HTMLElement {
       }
     }
     
-    // Phase A Optimization: Debounced render scheduling
-    this._scheduleRender();
+    // Dirty-checking: schedule card update only when tracked entities changed.
+    if (!prevHass || !prevHass.states || !hass || !hass.states) {
+      this._scheduleRender();
+      return;
+    }
+    if (!this._rootInitialized) {
+      this._scheduleRender();
+      return;
+    }
+    if (this._trackedEntitiesChanged(prevHass, hass)) {
+      this._scheduleRender();
+    }
   }
   
   /**
@@ -1242,6 +1469,153 @@ class LuminaEnergyCard extends HTMLElement {
       this._renderTimeoutId = null;
       this.render();
     }, debounceDelay);
+  }
+
+  _getPerfSettings() {
+    // Cache by resolved mode to avoid repeated matchMedia() and object allocs
+    const raw = (this.config && this.config.performance_mode != null) ? String(this.config.performance_mode).toLowerCase().trim() : 'auto';
+    let resolved = raw;
+    if (resolved === 'auto') {
+      try {
+        const prefersReduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+          ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          : false;
+        resolved = prefersReduced ? 'low' : 'balanced';
+      } catch (e) {
+        resolved = 'balanced';
+      }
+    }
+    if (resolved !== 'high' && resolved !== 'balanced' && resolved !== 'low') {
+      resolved = 'balanced';
+    }
+    if (this._perfSettings && this._perfSettings.resolved === resolved) {
+      return this._perfSettings;
+    }
+    const fps = (resolved === 'high') ? 60 : (resolved === 'low' ? 20 : 30);
+    const intervalMs = fps > 0 ? Math.round(1000 / fps) : 0;
+    const sampleCount = (resolved === 'high') ? 240 : (resolved === 'low' ? 120 : 160);
+    this._perfSettings = {
+      resolved,
+      prefersReducedMotion: false,
+      animationFps: fps,
+      animationIntervalMs: intervalMs,
+      pathSampleCount: sampleCount
+    };
+    // Store reduced-motion info for callers that want to adapt behavior
+    try {
+      this._perfSettings.prefersReducedMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+    } catch (e) {
+      this._perfSettings.prefersReducedMotion = false;
+    }
+    return this._perfSettings;
+  }
+
+  _effectiveAnimationStyle(rawStyle) {
+    const style = this._normalizeAnimationStyle(rawStyle);
+    const perf = this._getPerfSettings();
+    const reduce = Boolean(perf && perf.prefersReducedMotion);
+    if (!reduce) return style;
+    // Accessibility: if the user/browser requests reduced motion, fall back from heavy styles.
+    if (style === 'arrows' || style === 'shimmer' || style === 'fluid_flow') {
+      return 'dots';
+    }
+    return style;
+  }
+
+  _computeTrackedEntityIds(config) {
+    const cfg = config || {};
+    const ids = new Set();
+    const add = (v) => {
+      if (!v) return;
+      if (typeof v !== 'string') return;
+      const t = v.trim();
+      if (t) ids.add(t);
+    };
+
+    // Core categories: solar, grid, battery, home, car (+ heat pump)
+    add(cfg.sensor_home_load);
+    add(cfg.sensor_home_load_secondary);
+    add(cfg.sensor_house_temperature);
+    add(cfg.sensor_heat_pump_consumption);
+
+    add(cfg.sensor_grid_power);
+    add(cfg.sensor_grid_import);
+    add(cfg.sensor_grid_export);
+    add(cfg.sensor_grid_import_daily);
+    add(cfg.sensor_grid_export_daily);
+
+    add(cfg.sensor_pv_total);
+    add(cfg.sensor_pv_total_secondary);
+    add(cfg.sensor_daily);
+    add(cfg.sensor_daily_array2);
+    for (let i = 1; i <= 6; i++) {
+      add(cfg[`sensor_pv${i}`]);
+      add(cfg[`sensor_pv_array2_${i}`]);
+    }
+
+    for (let i = 1; i <= 4; i++) {
+      add(cfg[`sensor_bat${i}_soc`]);
+      add(cfg[`sensor_bat${i}_power`]);
+    }
+    add(cfg.sensor_battery_flow);
+    add(cfg.sensor_battery_charge);
+    add(cfg.sensor_battery_discharge);
+
+    add(cfg.sensor_car_power);
+    add(cfg.sensor_car_soc);
+    add(cfg.sensor_car2_power);
+    add(cfg.sensor_car2_soc);
+    // Backward compatible keys (if used)
+    add(cfg.car_power);
+    add(cfg.car_soc);
+    add(cfg.car2_power);
+    add(cfg.car2_soc);
+
+    // Solar forecast (optional feature)
+    if (cfg.solar_forecast_enabled === true) {
+      add(cfg.sensor_solar_forecast);
+    }
+
+    // Custom texts with sensors (optional)
+    for (let i = 1; i <= 5; i++) {
+      if (cfg[`custom_text_${i}_enabled`] === true) {
+        add(cfg[`custom_text_${i}_sensor`]);
+      }
+    }
+
+    // Custom flows (optional)
+    for (let i = 1; i <= 5; i++) {
+      if (cfg[`custom_flow_${i}_enabled`] === true) {
+        add(cfg[`custom_flow_${i}_sensor`]);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
+  _trackedEntitiesChanged(prevHass, hass) {
+    const ids = this._trackedEntityIds || [];
+    if (!ids.length) {
+      // No tracked entities configured: update only once the DOM is initialized
+      return !this._rootInitialized;
+    }
+    if (!prevHass || !prevHass.states || !hass || !hass.states) {
+      return true;
+    }
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const prev = prevHass.states[id];
+      const next = hass.states[id];
+      const prevState = prev ? prev.state : null;
+      const nextState = next ? next.state : null;
+      if (prevState !== nextState) return true;
+      const prevUnit = prev && prev.attributes ? prev.attributes.unit_of_measurement : null;
+      const nextUnit = next && next.attributes ? next.attributes.unit_of_measurement : null;
+      if (prevUnit !== nextUnit) return true;
+    }
+    return false;
   }
 
   static async getConfigElement() {
@@ -1443,17 +1817,24 @@ class LuminaEnergyCard extends HTMLElement {
       dev_text_car2_soc_skewY: 0,
       dev_text_car2_soc_scaleX: 1,
       dev_text_car2_soc_scaleY: 1,
-      dev_soc_bar_x: 325,
+      dev_soc_bar_x: 327,
       dev_soc_bar_y: 277,
       dev_soc_bar_width: 30,
       dev_soc_bar_height: 85,
-      dev_soc_bar_rotate: 1,
-      dev_soc_bar_skew_x: 2,
-      dev_soc_bar_skew_y: -19,
-      soc_bar_opacity: 0.55,
-      soc_bar_glow: 13,
+      dev_soc_bar_rotate: -3,
+      dev_soc_bar_skew_x: -2,
+      dev_soc_bar_skew_y: -14,
+      soc_bar_opacity: 0.25,
+      soc_bar_glow: 19,
       soc_bar_color_on: '#00FFFF',
       soc_bar_color_off: '#5aa7c3',
+      battery_overlay_enabled: false,
+      battery_overlay_image: '/local/community/lumina-energy-card/battery.png',
+      battery_overlay_x: 227,
+      battery_overlay_y: 232,
+      battery_overlay_width: 140,
+      battery_overlay_height: 217,
+      battery_overlay_opacity: 1.0,
       ...Object.fromEntries([...['camera', 'lights', 'temperature', 'security', 'humidity'].flatMap(k => [1, 2, 3, 4, 5, 6].map(i => [`house_${k}_${i}`, '']))]),
       dev_grid_box_x: 607,
       dev_grid_box_y: 15,
@@ -1471,6 +1852,9 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_1_sensor: null,
       custom_text_1_x: 400,
       custom_text_1_y: 100,
+      custom_text_1_rotate: 0,
+      custom_text_1_skew_x: 0,
+      custom_text_1_skew_y: 0,
       custom_text_1_color: '#00f9f9',
       custom_text_1_size: 16,
       custom_text_2_enabled: false,
@@ -1478,6 +1862,9 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_2_sensor: null,
       custom_text_2_x: 400,
       custom_text_2_y: 150,
+      custom_text_2_rotate: 0,
+      custom_text_2_skew_x: 0,
+      custom_text_2_skew_y: 0,
       custom_text_2_color: '#00f1f2',
       custom_text_2_size: 16,
       custom_text_3_enabled: false,
@@ -1485,6 +1872,9 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_3_sensor: null,
       custom_text_3_x: 400,
       custom_text_3_y: 200,
+      custom_text_3_rotate: 0,
+      custom_text_3_skew_x: 0,
+      custom_text_3_skew_y: 0,
       custom_text_3_color: '#00f1f2',
       custom_text_3_size: 16,
       custom_text_4_enabled: false,
@@ -1492,6 +1882,9 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_4_sensor: null,
       custom_text_4_x: 400,
       custom_text_4_y: 250,
+      custom_text_4_rotate: 0,
+      custom_text_4_skew_x: 0,
+      custom_text_4_skew_y: 0,
       custom_text_4_color: '#00f1f2',
       custom_text_4_size: 16,
       custom_text_5_enabled: false,
@@ -1499,6 +1892,9 @@ class LuminaEnergyCard extends HTMLElement {
       custom_text_5_sensor: null,
       custom_text_5_x: 400,
       custom_text_5_y: 300,
+      custom_text_5_rotate: 0,
+      custom_text_5_skew_x: 0,
+      custom_text_5_skew_y: 0,
       custom_text_5_color: '#00f1f2',
       custom_text_5_size: 16,
       // Solar Forecast
@@ -1596,6 +1992,7 @@ class LuminaEnergyCard extends HTMLElement {
       car2_invert_flow: false,
       array1_invert_flow: false,
       array2_invert_flow: false,
+      heat_pump_invert_flow: false,
       invert_battery: false,
       battery_power_mode: 'flow',
       sensor_battery_flow: '',
@@ -1609,12 +2006,14 @@ class LuminaEnergyCard extends HTMLElement {
       show_pv_strings: false,
       display_unit: 'kW',
       update_interval: 3,
+      performance_mode: 'auto', // 'auto' | 'high' | 'balanced' | 'low'
       enable_echo_alive: false,
       enable_text_toggle_button: true,
       text_toggle_button_x: 30, // Moved 20px to the right from original position (10px)
       text_toggle_button_y: null, // null = bottom, otherwise top
       text_toggle_button_scale: 1.0,
       text_visibility_sensor: null,
+      pro_debug_grid: false,
       fluid_flow_outer_glow: false,
       flow_stroke_width: 1,
       fluid_flow_stroke_width: 3,
@@ -1686,6 +2085,22 @@ class LuminaEnergyCard extends HTMLElement {
       return;
     }
 
+    if (this._isDebugFlowLogsEnabled()) {
+      try {
+        const style = this._animationStyle || FLOW_STYLE_DEFAULT;
+        const activeKeys = Object.entries(flowDurations || {}).filter(([, s]) => Number(s) > 0).map(([k]) => k);
+        this._logFlow('applyFlowAnimationTargets', {
+          style,
+          gsap: Boolean(this._gsap),
+          rafTickerRunning: Boolean(this._flowRafId),
+          activeCount: activeKeys.length,
+          activeKeys
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+
     const execute = () => {
       if (!this._domRefs || !this._domRefs.flows) {
         return;
@@ -1717,7 +2132,7 @@ class LuminaEnergyCard extends HTMLElement {
 
     // Phase A Optimization: Lazy Load GSAP - only load if animations are enabled
     // Skip GSAP loading if animations are disabled (saves ~100KB download)
-    const animationStyle = this._normalizeAnimationStyle(this.config?.animation_style);
+    const animationStyle = this._effectiveAnimationStyle(this.config?.animation_style);
     const needsGsap = animationStyle !== 'none' && animationStyle !== 'dashes';
     
     if (needsGsap && !this._gsap && !this._gsapLoading) {
@@ -1928,6 +2343,32 @@ class LuminaEnergyCard extends HTMLElement {
     })();
     const effectiveDirection = baseDirection * elementDirectionMultiplier * directionSign;
     const isActive = seconds > 0;
+
+    if (this._isDebugFlowLogsEnabled()) {
+      try {
+        const key = String(flowKey);
+        // Always log for grid-related flows; those are most often reported as “direction wrong”.
+        const shouldLog = key === 'grid' || key === 'grid_house' || key === 'load' || animationStyle === 'dashes';
+        if (shouldLog) {
+          this._logFlow('sync', {
+            flowKey: key,
+            style: animationStyle,
+            seconds,
+            isActive,
+            flowStateDirection: flowState && typeof flowState.direction === 'number' ? flowState.direction : null,
+            baseDirection,
+            elementDirectionMultiplier,
+            directionSign,
+            effectiveDirection,
+            loopRate,
+            dashCycle: pattern && pattern.cycle ? pattern.cycle : null,
+            gsap: Boolean(this._gsap)
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
     const isConfigStyled = (() => {
       try {
         const raw = element.getAttribute && element.getAttribute('data-style');
@@ -2077,11 +2518,12 @@ class LuminaEnergyCard extends HTMLElement {
           if (isFluid) {
             target.style.strokeOpacity = '0.2'; // Static part is much dimmer for better contrast
           }
-          // For shimmer, set base color to white with low opacity (overlay handles the animated gradient with selected color)
+          // For shimmer, keep a faint base line in the same color (red/green for grid),
+          // so direction-dependent color is clearly visible even with the animated overlay.
           if (isShimmer) {
-            // Base path with white and low opacity
-            target.style.stroke = '#ffffff';
-            target.style.strokeOpacity = '0.15';
+            // Base path in flow color with low opacity
+            target.style.stroke = strokeColor;
+            target.style.strokeOpacity = '0.25';
             if (configuredFlowStrokeWidthPx !== null) {
               target.style.strokeWidth = `${configuredFlowStrokeWidthPx}px`;
             }
@@ -2182,6 +2624,83 @@ class LuminaEnergyCard extends HTMLElement {
     }
 
     if (!this._gsap) {
+      // IMPORTANT:
+      // animation_style: dashes/dots is designed to work WITHOUT GSAP.
+      // We drive it via the shared RAF ticker and store an entry in _flowTweens.
+      const canAnimateWithRaf = (animationStyle === 'dashes' || animationStyle === 'dots');
+      if (canAnimateWithRaf) {
+        const existing = entry;
+        const dashCycle = pattern && pattern.cycle ? pattern.cycle : 24;
+        if (!existing || existing.element !== element || existing.mode !== animationStyle) {
+          const newEntry = {
+            flowKey,
+            element,
+            glowState: { value: isActive ? 0.8 : 0.25 },
+            color: strokeColor,
+            tween: null,
+            arrowElement: arrowGroup,
+            arrowShapes: [],
+            directionState: { value: effectiveDirection },
+            directionTween: null,
+            motionState: { phase: 0, distance: 0 },
+            tickerCallback: null,
+            pathLength: resolvedPathLength,
+            direction: effectiveDirection,
+            mode: animationStyle,
+            overlayGroup: null,
+            overlayPaths: [],
+            maskId: null,
+            maskPaths: [],
+            shimmerGradient: null,
+            shimmerOverlay: null,
+            shimmerWasActive: false,
+            shimmerLastDirection: undefined,
+            shimmerFirstTick: false,
+            dashCycle,
+            speedMagnitude,
+            loopRate,
+            arrowSpeedPx: baseLoopRate * dashReferenceCycle,
+            active: isActive
+          };
+          this._flowTweens.set(flowKey, newEntry);
+          entry = newEntry;
+        } else {
+          entry.color = strokeColor;
+          entry.direction = effectiveDirection;
+          if (!entry.directionState) entry.directionState = { value: effectiveDirection };
+          entry.directionState.value = effectiveDirection;
+          if (!entry.motionState) entry.motionState = { phase: 0, distance: 0 };
+          entry.mode = animationStyle;
+          entry.dashCycle = dashCycle;
+          entry.speedMagnitude = speedMagnitude;
+          entry.loopRate = loopRate;
+          entry.active = isActive;
+        }
+
+        // Ensure RAF ticker runs when we have active dashed flows.
+        if (isActive && loopRate !== 0 && effectiveDirection !== 0) {
+          this._ensureFlowRafTicker();
+        }
+
+        this._setFlowGlow(element, strokeColor, isActive ? 1.5 : 0.5);
+        this._updateFlowMotion(entry);
+        hideArrows();
+
+        // Extra debug logs for the “dashes start only after popup” issue.
+        this._debugLogThrottled(`dashes.sync.${flowKey}`, 2000, {
+          style: animationStyle,
+          flowKey,
+          isActive,
+          loopRate,
+          dashCycle,
+          effectiveDirection,
+          rafTickerRunning: Boolean(this._flowRafId),
+          hasGsap: Boolean(this._gsap)
+        });
+        return;
+      }
+
+      // For styles that rely on GSAP, keep the old behavior (static fallback).
       if (entry) {
         this._killFlowEntry(entry);
         this._flowTweens.delete(flowKey);
@@ -2363,6 +2882,12 @@ class LuminaEnergyCard extends HTMLElement {
       if (newEntry.tickerCallback) {
         this._gsap.ticker.add(newEntry.tickerCallback);
       }
+      // Fallback: if GSAP isn't available (e.g. animation_style: dashes), drive motion via RAF ticker.
+      if (!newEntry.tickerCallback && newEntry.mode !== 'fluid_flow') {
+        if (isActive && loopRate !== 0) {
+          this._ensureFlowRafTicker();
+        }
+      }
 
       this._setFlowGlow(element, strokeColor, glowState.value);
       if (false && newEntry.overlayGroup) {
@@ -2382,24 +2907,30 @@ class LuminaEnergyCard extends HTMLElement {
 
       this._updateFlowMotion(newEntry);
 
-      const glowTween = this._gsap.to(glowState, {
-        value: 1,
-        repeat: -1,
-        yoyo: true,
-        ease: 'sine.inOut',
-        duration: 1,
-        onUpdate: () => {
-          this._setFlowGlow(newEntry.element, newEntry.color, glowState.value);
-          if (useArrows && newEntry.arrowElement) {
-            this._setFlowGlow(newEntry.arrowElement, newEntry.color, glowState.value);
+      // GSAP is optional (we intentionally avoid loading it for animation_style: dashes).
+      // Do not crash if it's missing: dashed/dotted motion is handled via RAF fallback.
+      if (this._gsap && typeof this._gsap.to === 'function') {
+        const glowTween = this._gsap.to(glowState, {
+          value: 1,
+          repeat: -1,
+          yoyo: true,
+          ease: 'sine.inOut',
+          duration: 1,
+          onUpdate: () => {
+            this._setFlowGlow(newEntry.element, newEntry.color, glowState.value);
+            if (useArrows && newEntry.arrowElement) {
+              this._setFlowGlow(newEntry.arrowElement, newEntry.color, glowState.value);
+            }
+            if (newEntry.mode === 'fluid_flow' && newEntry.overlayGroup) {
+              // Increase glow intensity for animated part
+              this._setFlowGlow(newEntry.overlayGroup, newEntry.color, glowState.value * 1.3);
+            }
           }
-          if (newEntry.mode === 'fluid_flow' && newEntry.overlayGroup) {
-            // Increase glow intensity for animated part
-            this._setFlowGlow(newEntry.overlayGroup, newEntry.color, glowState.value * 1.3);
-          }
-        }
-      });
-      newEntry.tween = glowTween;
+        });
+        newEntry.tween = glowTween;
+      } else {
+        newEntry.tween = null;
+      }
 
       this._flowTweens.set(flowKey, newEntry);
       entry = newEntry;
@@ -2537,6 +3068,12 @@ class LuminaEnergyCard extends HTMLElement {
         entry.tickerCallback = this._createFlowTicker(entry);
         if (entry.tickerCallback) {
           this._gsap.ticker.add(entry.tickerCallback);
+        }
+      }
+      // Fallback: if GSAP isn't available (e.g. animation_style: dashes), drive motion via RAF ticker.
+      if (!entry.tickerCallback && entry.mode !== 'fluid_flow') {
+        if (isActive && loopRate !== 0) {
+          this._ensureFlowRafTicker();
         }
       }
       if (entry.directionTween) {
@@ -2909,19 +3446,24 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _getFlowPathLength(flowKey) {
-    if (this._flowPathLengths && this._flowPathLengths.has(flowKey)) {
-      return this._flowPathLengths.get(flowKey);
-    }
     const paths = this._domRefs && this._domRefs.flows ? this._domRefs.flows : null;
     const element = paths ? paths[flowKey] : null;
     if (!element || typeof element.getTotalLength !== 'function') {
       return 0;
+    }
+    const d = (typeof element.getAttribute === 'function') ? (element.getAttribute('d') || '') : '';
+    const hasCached = this._flowPathLengths && this._flowPathLengths.has(flowKey);
+    const sigOk = this._flowPathLengthSig && this._flowPathLengthSig.get(flowKey) === d;
+    if (hasCached && sigOk) {
+      return this._flowPathLengths.get(flowKey);
     }
     const length = element.getTotalLength();
     if (!this._flowPathLengths) {
       this._flowPathLengths = new Map();
     }
     this._flowPathLengths.set(flowKey, length);
+    if (!this._flowPathLengthSig) this._flowPathLengthSig = new Map();
+    this._flowPathLengthSig.set(flowKey, d);
     return length;
   }
 
@@ -2934,15 +3476,66 @@ class LuminaEnergyCard extends HTMLElement {
       return;
     }
     const normalized = ((progress % 1) + 1) % 1;
-    const distance = normalized * length;
-    const point = entry.element.getPointAtLength(distance);
-    const ahead = entry.element.getPointAtLength(Math.min(distance + 2, length));
-    const angle = Math.atan2(ahead.y - point.y, ahead.x - point.x) * (180 / Math.PI);
+    const perf = this._getPerfSettings();
+    const sampleCount = perf && perf.pathSampleCount ? perf.pathSampleCount : 160;
+    const cacheKey = String(entry.flowKey || '');
+    const d = (typeof entry.element.getAttribute === 'function') ? (entry.element.getAttribute('d') || '') : '';
+    let samples = this._flowPathSamples ? this._flowPathSamples.get(cacheKey) : null;
+    if (!samples || samples.d !== d || samples.count !== sampleCount || samples.length !== length) {
+      try {
+        const count = Math.max(32, Math.min(600, sampleCount));
+        const points = new Float32Array(count * 2);
+        const angles = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          const t = count === 1 ? 0 : (i / (count - 1));
+          const dist = t * length;
+          const p = entry.element.getPointAtLength(dist);
+          const a = entry.element.getPointAtLength(Math.min(dist + 2, length));
+          points[i * 2] = p.x;
+          points[i * 2 + 1] = p.y;
+          angles[i] = Math.atan2(a.y - p.y, a.x - p.x) * (180 / Math.PI);
+        }
+        samples = { d, length, count, points, angles };
+        if (!this._flowPathSamples) this._flowPathSamples = new Map();
+        this._flowPathSamples.set(cacheKey, samples);
+      } catch (e) {
+        samples = null;
+      }
+    }
+
+    let x, y, angle;
+    if (samples && samples.count > 1) {
+      const idxFloat = normalized * (samples.count - 1);
+      const idx0 = Math.floor(idxFloat);
+      const idx1 = Math.min(idx0 + 1, samples.count - 1);
+      const tt = idxFloat - idx0;
+      const p0x = samples.points[idx0 * 2];
+      const p0y = samples.points[idx0 * 2 + 1];
+      const p1x = samples.points[idx1 * 2];
+      const p1y = samples.points[idx1 * 2 + 1];
+      x = p0x + (p1x - p0x) * tt;
+      y = p0y + (p1y - p0y) * tt;
+
+      const a0 = samples.angles[idx0];
+      let a1 = samples.angles[idx1];
+      // unwrap shortest path for interpolation
+      let delta = a1 - a0;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      angle = a0 + delta * tt;
+    } else {
+      const distance = normalized * length;
+      const point = entry.element.getPointAtLength(distance);
+      const ahead = entry.element.getPointAtLength(Math.min(distance + 2, length));
+      x = point.x;
+      y = point.y;
+      angle = Math.atan2(ahead.y - point.y, ahead.x - point.x) * (180 / Math.PI);
+    }
     const directionValue = entry.directionState && Number.isFinite(entry.directionState.value)
       ? entry.directionState.value
       : (entry.direction || 1);
     const flip = directionValue < 0 ? 180 : 0;
-    shape.setAttribute('transform', `translate(${point.x}, ${point.y}) rotate(${angle + flip})`);
+    shape.setAttribute('transform', `translate(${x}, ${y}) rotate(${angle + flip})`);
   }
 
   _updateFlowMotion(entry) {
@@ -2952,6 +3545,19 @@ class LuminaEnergyCard extends HTMLElement {
     const motionState = entry.motionState;
     if (!motionState) {
       return;
+    }
+    // Throttle heavy modes for low-power devices
+    if (entry.mode === 'arrows') {
+      const perf = this._getPerfSettings();
+      const interval = perf && perf.animationIntervalMs ? perf.animationIntervalMs : 0;
+      if (interval > 0) {
+        const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        const last = entry._lastArrowUpdateTs || 0;
+        if (last && (now - last) < interval) {
+          return;
+        }
+        entry._lastArrowUpdateTs = now;
+      }
     }
     // Phase A Optimization: Add will-change for animated elements (helps browser optimize)
     if (entry.element && entry.element.style && entry.active) {
@@ -3022,7 +3628,12 @@ class LuminaEnergyCard extends HTMLElement {
             const escapeFn = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape : (v) => v;
             const maskPath = svgRoot.querySelector(`#${escapeFn(maskId)} path`);
             if (maskPath) {
-              const normalizedPhase = phase % 1;
+              const directionValue = entry.directionState && Number.isFinite(entry.directionState.value)
+                ? entry.directionState.value
+                : (entry.direction || 1);
+              const directionSign = directionValue >= 0 ? 1 : -1;
+              const phase01 = ((phase % 1) + 1) % 1;
+              const normalizedPhase = directionSign >= 0 ? phase01 : (1 - phase01);
               // Animate dash offset to make it follow the path sequentially
               // We use negative offset to move the dash forward
               // Add slight variation to dasharray for wave/ripple effect
@@ -3039,7 +3650,12 @@ class LuminaEnergyCard extends HTMLElement {
         
         // Add pulsing glow effect based on phase for more dynamic shimmer
         if (entry.active && shimmerOverlay.paths && shimmerOverlay.paths.length) {
-          const normalizedPhase = phase % 1;
+          const directionValue = entry.directionState && Number.isFinite(entry.directionState.value)
+            ? entry.directionState.value
+            : (entry.direction || 1);
+          const directionSign = directionValue >= 0 ? 1 : -1;
+          const phase01 = ((phase % 1) + 1) % 1;
+          const normalizedPhase = directionSign >= 0 ? phase01 : (1 - phase01);
           // Create a pulsing effect: glow intensity varies from 2.5 to 4.0 based on position
           // This creates a breathing/pulsing effect as the shimmer moves
           const pulseIntensity = 2.5 + Math.sin(normalizedPhase * Math.PI * 2) * 0.75; // Varies between 2.5 and 3.25
@@ -3105,7 +3721,10 @@ class LuminaEnergyCard extends HTMLElement {
       if (directionValue === 0) {
         return;
       }
-      const delta = deltaTime * loopRate * directionValue;
+      // For shimmer, keep phase increasing and apply direction in _updateFlowMotion to avoid negative-wrap glitches.
+      const delta = entry.mode === 'shimmer'
+        ? (deltaTime * loopRate * Math.abs(directionValue))
+        : (deltaTime * loopRate * directionValue);
       if (!Number.isFinite(delta) || delta === 0) {
         return;
       }
@@ -3179,7 +3798,124 @@ class LuminaEnergyCard extends HTMLElement {
     };
   }
 
+  _stopFlowRafTicker() {
+    if (this._flowRafId) {
+      try {
+        cancelAnimationFrame(this._flowRafId);
+      } catch (e) {
+        // ignore
+      }
+    }
+    this._flowRafId = null;
+    this._flowRafLastTs = null;
+    this._flowRafAccMs = 0;
+    this._debugLogThrottled('dashes.raf.stop', 0, { editor: this._isEditorActive(), style: this._animationStyle });
+  }
+
+  _ensureFlowRafTicker() {
+    if (this._flowRafId) {
+      return;
+    }
+    this._flowRafLastTs = null;
+    this._flowRafAccMs = 0;
+    this._debugLogThrottled('dashes.raf.start', 0, { editor: this._isEditorActive(), style: this._animationStyle });
+
+    const tick = (ts) => {
+      // Stop if detached or torn down
+      if (!this.isConnected || !this._flowTweens) {
+        this._debugLogThrottled('dashes.raf.stop', 0, { editor: this._isEditorActive(), style: this._animationStyle, reason: 'detached_or_no_flowTweens' });
+        this._stopFlowRafTicker();
+        return;
+      }
+
+      if (this._flowRafLastTs === null || this._flowRafLastTs === undefined) {
+        this._flowRafLastTs = ts;
+        this._flowRafId = requestAnimationFrame(tick);
+        return;
+      }
+
+      const deltaMs = Number(ts) - Number(this._flowRafLastTs);
+      this._flowRafLastTs = ts;
+      if (!Number.isFinite(deltaMs) || deltaMs <= 0) {
+        this._flowRafId = requestAnimationFrame(tick);
+        return;
+      }
+
+      const perf = this._getPerfSettings();
+      const interval = perf && perf.animationIntervalMs ? perf.animationIntervalMs : 0;
+      let usedDeltaMs = deltaMs;
+      if (interval > 0) {
+        this._flowRafAccMs = (Number(this._flowRafAccMs) || 0) + deltaMs;
+        if (this._flowRafAccMs < interval) {
+          this._flowRafId = requestAnimationFrame(tick);
+          return;
+        }
+        usedDeltaMs = this._flowRafAccMs;
+        this._flowRafAccMs = 0;
+      }
+
+      let didUpdateAny = false;
+      let updatedCount = 0;
+      try {
+        for (const entry of this._flowTweens.values()) {
+          if (!entry || !entry.active) continue;
+          // fluid_flow has its own animator
+          if (entry.mode === 'fluid_flow') continue;
+
+          const loopRate = entry.loopRate || 0;
+          if (!loopRate) continue;
+          const directionValue = entry.directionState && Number.isFinite(entry.directionState.value)
+            ? entry.directionState.value
+            : (entry.direction || 0);
+          if (!directionValue) continue;
+
+          if (!entry.motionState) entry.motionState = { phase: 0, distance: 0 };
+          // For shimmer, keep phase increasing and apply direction in _updateFlowMotion.
+          const delta = entry.mode === 'shimmer'
+            ? (usedDeltaMs * loopRate * Math.abs(directionValue))
+            : (usedDeltaMs * loopRate * directionValue);
+          entry.motionState.phase = (Number(entry.motionState.phase) || 0) + delta;
+
+          if (!Number.isFinite(entry.motionState.phase)) {
+            entry.motionState.phase = 0;
+          } else if (entry.motionState.phase > 1000 || entry.motionState.phase < -1000) {
+            entry.motionState.phase = entry.motionState.phase % 1;
+          }
+
+          this._updateFlowMotion(entry);
+          didUpdateAny = true;
+          updatedCount++;
+        }
+      } catch (e) {
+        // If something goes wrong, stop to avoid a tight loop
+        this._logFlow('rafTickerStop', { reason: 'exception', error: String(e && (e.message || e)) });
+        this._stopFlowRafTicker();
+        return;
+      }
+
+      if (!didUpdateAny) {
+        // No active non-fluid flows -> stop the loop
+        this._logFlow('rafTickerStop', { reason: 'no_active_non_fluid_flows' });
+        this._stopFlowRafTicker();
+        return;
+      }
+      // Occasionally log that the ticker is running (keeps logs readable)
+      if (this._isDebugFlowLogsEnabled()) {
+        const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        if (!this._lastFlowRafLogTs || (now - this._lastFlowRafLogTs) > 2000) {
+          this._lastFlowRafLogTs = now;
+          this._logFlow('rafTickerTick', { updatedCount, intervalMs: interval });
+        }
+      }
+
+      this._flowRafId = requestAnimationFrame(tick);
+    };
+
+    this._flowRafId = requestAnimationFrame(tick);
+  }
+
   _teardownFlowAnimations() {
+    this._stopFlowRafTicker();
     if (!this._flowTweens) {
       return;
     }
@@ -3545,6 +4281,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
 
     const key = String(flowKey);
+    const baseD = (typeof element.getAttribute === 'function' ? (element.getAttribute('d') || '') : '');
     const escapeFn = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape : (v) => v;
     let group = null;
     try {
@@ -3553,9 +4290,50 @@ class LuminaEnergyCard extends HTMLElement {
       group = container.querySelector(`[data-shimmer-overlay="${key}"]`);
     }
 
+    // IMPORTANT:
+    // Some flows (notably grid/grid_house) dynamically reverse the SVG path "d"
+    // to encode direction. If the path changes and the shimmer overlay isn't rebuilt,
+    // shimmer appears to "flip" after Save/OK or after direction changes.
+    if (group) {
+      try {
+        const lastD = group.getAttribute('data-shimmer-base-d') || '';
+        if (lastD !== baseD) {
+          // Recreate overlay + mask for the new path geometry.
+          if (typeof group.remove === 'function') {
+            group.remove();
+          } else if (group.parentNode) {
+            group.parentNode.removeChild(group);
+          }
+          group = null;
+        } else {
+          // Keep overlay color in sync if user changes flow colors dynamically.
+          const lastColor = group.getAttribute('data-shimmer-color') || '';
+          if (lastColor !== String(strokeColor || '')) {
+            group.setAttribute('data-shimmer-color', String(strokeColor || ''));
+            try {
+              const paths = Array.from(group.querySelectorAll('path'));
+              paths.forEach((p) => {
+                if (!p || !p.getAttribute) return;
+                // Keep highlight white; recolor all other layers
+                const layer = p.getAttribute('data-shimmer-layer');
+                if (layer === 'highlight') return;
+                p.setAttribute('stroke', String(strokeColor || '#00ffff'));
+              });
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     if (!group) {
       group = document.createElementNS(ns, 'g');
       group.setAttribute('data-shimmer-overlay', key);
+      group.setAttribute('data-shimmer-base-d', baseD);
+      group.setAttribute('data-shimmer-color', String(strokeColor || ''));
       group.style.pointerEvents = 'none';
       group.style.opacity = '0';
 
@@ -3575,7 +4353,7 @@ class LuminaEnergyCard extends HTMLElement {
         mask.setAttribute('id', maskId);
         
         const maskPath = document.createElementNS(ns, 'path');
-        maskPath.setAttribute('d', element.getAttribute('d'));
+        maskPath.setAttribute('d', baseD);
         maskPath.setAttribute('fill', 'none');
         maskPath.setAttribute('stroke', 'white');
         maskPath.setAttribute('stroke-width', '25'); // Increased for more visible trail effect
@@ -3960,6 +4738,7 @@ class LuminaEnergyCard extends HTMLElement {
       state = {
         rafId: null,
         lastTs: null,
+        throttleAccMs: 0,
         phase: Math.random(),
         maskPaths: [],
         cycle,
@@ -4005,10 +4784,23 @@ class LuminaEnergyCard extends HTMLElement {
         return;
       }
 
+      // Throttle animation updates based on performance mode
+      const perf = this._getPerfSettings();
+      const interval = perf && perf.animationIntervalMs ? perf.animationIntervalMs : 0;
+      if (interval > 0) {
+        s.throttleAccMs = (Number(s.throttleAccMs) || 0) + deltaMs;
+        if (s.throttleAccMs < interval) {
+          s.rafId = requestAnimationFrame(tick);
+          return;
+        }
+      }
+      const usedDeltaMs = (interval > 0 && s.throttleAccMs) ? s.throttleAccMs : deltaMs;
+      s.throttleAccMs = 0;
+
       // Use effective loopRate and direction from state
       const effectiveLoopRate = s.loopRate || 0.001;
       const effectiveDirection = s.direction || 1;
-      s.phase = (Number(s.phase) || 0) + (deltaMs * effectiveLoopRate * (effectiveDirection >= 0 ? 1 : -1));
+      s.phase = (Number(s.phase) || 0) + (usedDeltaMs * effectiveLoopRate * (effectiveDirection >= 0 ? 1 : -1));
       if (!Number.isFinite(s.phase)) {
         s.phase = 0;
       }
@@ -4669,6 +5461,7 @@ class LuminaEnergyCard extends HTMLElement {
     }
     
     const config = this.config;
+    const rawConfig = this._rawConfig || {};
     const hasDeveloperValues = this.config && Object.keys(this.config).some(key => 
       key.startsWith('dev_text_') || 
       key.startsWith('dev_popup_') || 
@@ -4713,31 +5506,20 @@ class LuminaEnergyCard extends HTMLElement {
     }
     
     // Verify feature authorization using shared SHA-256 implementation
-    // Supports both legacy (V1) and UID-bound (V2) authentication
+    // Define early to ensure it's available throughout the render method
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        
-        // 1. Check legacy authentication (V1 - backward compatibility)
-        const legacyHash = LUMINA_SHA256(trimmed);
-        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
-          return true; // Legacy password valid
-        }
-        
-        // 2. Check UID-bound authentication (V2 - new system)
+        // V2 only: bind password to UID
         const uid = getLuminaUID();
-        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
-        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
-          return true; // UID-bound password valid
-        }
-        
-        // Trigger refresh if lists not loaded
-        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
+        const hashHex = LUMINA_SHA256(trimmed + uid);
+        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
+        if (LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this._scheduleRender(); });
         }
-        return false;
+        return ok;
       } catch (e) { return false; }
     };
 
@@ -4788,7 +5570,7 @@ class LuminaEnergyCard extends HTMLElement {
     const car2SocSensorId = showCar2Toggle ? resolveEntityId(config.sensor_car2_soc, config.car2_soc) : '';
     const car2EntitiesConfigured = Boolean(car2PowerSensorId || car2SocSensorId);
     const showCar2 = showCar2Toggle && car2EntitiesConfigured;
-    const showDebugGrid = DEBUG_GRID_ENABLED;
+    let showDebugGrid = false;
     
     // Only calculate car values if cars are enabled (saves getStateSafe calls)
     const car1Label = showCar1 ? resolveLabel(config.car1_label, 'CAR 1') : '';
@@ -4803,6 +5585,7 @@ class LuminaEnergyCard extends HTMLElement {
     const car2InvertFlow = Boolean(config.car2_invert_flow);
     const array1InvertFlow = Boolean(config.array1_invert_flow);
     const array2InvertFlow = Boolean(config.array2_invert_flow);
+    const heatPumpInvertFlow = Boolean(config.heat_pump_invert_flow);
     const carLayoutKey = showCar2 ? 'dual' : 'single';
     const carLayout = CAR_LAYOUTS[carLayoutKey];
     // Phase A Optimization: Use cache for car text transforms
@@ -4881,6 +5664,8 @@ class LuminaEnergyCard extends HTMLElement {
       throw new Error('verifyFeatureAuth is not defined or not a function at first check');
     }
     const isProEnabled = verifyFeatureAuth(authInput);
+    showDebugGrid = isProEnabled && Boolean(config.pro_debug_grid);
+    this._debugGridEnabled = showDebugGrid;
 
     // Optimized: using shared clampValue function instead of local definition
     const header_font_size = clampValue(config.header_font_size, 12, 32, 16);
@@ -4905,12 +5690,20 @@ class LuminaEnergyCard extends HTMLElement {
     const car_font_size = unified_font_size;
     const animation_speed_factor = clampValue(config.animation_speed_factor, -3, 3, 1);
     this._animationSpeedFactor = animation_speed_factor;
-    const animation_style = this._normalizeAnimationStyle(config.animation_style);
+    const animation_style = this._effectiveAnimationStyle(config.animation_style);
     this._animationStyle = animation_style;
 
     // Debugging: logs fluid_flow mask + animator lifecycle into the browser console.
     // Enable with YAML: debug_fluid_flow: true
     this._debugFluidFlow = Boolean(config.debug_fluid_flow);
+    // Debugging: logs for dashes start + shimmer direction issues
+    // Enable with YAML: debug_animation: true
+    this._debugAnimation = Boolean(config.debug_animation);
+    if (this._debugAnimation && !this._debugAnimationBannerLogged) {
+      this._debugAnimationBannerLogged = true;
+      // eslint-disable-next-line no-console
+      console.warn('[Lumina][debug] debug_animation enabled (you should see more logs now)');
+    }
 
     // Flow stroke width overrides (no SVG editing required).
     // - flow_stroke_width: applies to non-fluid flow styles (dashes/dots/etc)
@@ -5036,7 +5829,17 @@ class LuminaEnergyCard extends HTMLElement {
     const batteryDischargeColor = resolveColor(config.battery_discharge_color, '#00f9f9');
     const liquid_fill = DEFAULT_BATTERY_FILL_HIGH_COLOR;
     const gridImportColor = resolveColor(config.grid_import_color, C_RED);
-    const gridExportColor = resolveColor(config.grid_export_color, C_CYAN);
+    // Default export color = green (house/inverter -> grid).
+    // Soft migration: older configs often stored export as cyan (#00f9f9/#00ffff).
+    // If we detect those legacy defaults, treat them as green unless user picked a different color.
+    const gridExportColor = (() => {
+      const raw = (typeof config.grid_export_color === 'string') ? config.grid_export_color.trim() : '';
+      const rawLower = raw.toLowerCase();
+      if (rawLower === '#00f9f9' || rawLower === '#00ffff' || rawLower === 'rgb(0,255,255)' || rawLower === 'rgb(0, 255, 255)') {
+        return '#00ff00';
+      }
+      return resolveColor(raw, '#00ff00');
+    })();
     const carFlowColor = resolveColor(config.car_flow_color, C_CYAN);
     const heatPumpFlowColor = resolveColor(config.heat_pump_flow_color, '#FFA500');
     const heatPumpTextColor = resolveColor(config.heat_pump_text_color, '#00f9f9');
@@ -5086,8 +5889,20 @@ class LuminaEnergyCard extends HTMLElement {
       return base_grid_color;
     })();
     const gridAnimationDirection = -gridDirectionSign;
+    this._debugLogThrottled('grid.direction', 2000, {
+      editor: this._isEditorActive(),
+      style: animation_style,
+      invert_grid: Boolean(config.invert_grid),
+      gridNet,
+      gridDirection,
+      gridDirectionSign,
+      gridAnimationDirection,
+      gridActive,
+      gridActivityThreshold
+    });
     const installationType = config.installation_type || '1';
     const hidePvAndBattery = installationType === '3';
+    const hideBatteryUi = hidePvAndBattery || !Boolean(config.battery_overlay_enabled);
     const show_double_flow = (pv_primary_w > 10 && pv_secondary_w > 10);
     const pvLinesRaw = [];
     // If installation type is 3 (no PV), don't show PV text
@@ -5183,13 +5998,13 @@ class LuminaEnergyCard extends HTMLElement {
         let dir = car2Bidirectional ? (car2PowerValue >= 0 ? 1 : -1) : 1;
         return car2InvertFlow ? -dir : dir;
       })() },
-      heatPump: { stroke: heatPumpFlowColor, glowColor: heatPumpFlowColor, active: hasHeatPumpSensor && heat_pump_w > 10, direction: 1 }
+      heatPump: { stroke: heatPumpFlowColor, glowColor: heatPumpFlowColor, active: hasHeatPumpSensor && heat_pump_w > 10, direction: (heatPumpInvertFlow ? -1 : 1) }
     };
     
     flows.pv1.direction = array1InvertFlow ? -1 : 1;
     flows.pv2.direction = array2InvertFlow ? -1 : 1;
     // Car directions are already set based on bidirectional mode above
-    flows.heatPump.direction = 1;
+    flows.heatPump.direction = heatPumpInvertFlow ? -1 : 1;
 
     // Add custom flows (only if Pro is enabled)
     if (isProEnabled) {
@@ -5376,11 +6191,30 @@ class LuminaEnergyCard extends HTMLElement {
           }
         }
 
+        const x = Number(config[`custom_text_${i}_x`]) || 400;
+        const y = Number(config[`custom_text_${i}_y`]) || 100 + (i - 1) * 50;
+        const rotate = Number(config[`custom_text_${i}_rotate`]) || 0;
+        const skewX = Number(config[`custom_text_${i}_skew_x`]) || 0;
+        const skewY = Number(config[`custom_text_${i}_skew_y`]) || 0;
+        let transform = '';
+        if (rotate || skewX || skewY) {
+          transform = `translate(${x} ${y})`;
+          if (rotate) transform += ` rotate(${rotate})`;
+          if (skewX) transform += ` skewX(${skewX})`;
+          if (skewY) transform += ` skewY(${skewY})`;
+          transform += ` translate(${-x} ${-y})`;
+        }
+
         customTexts.push({
           id: i,
           text: displayText,
-          x: Number(config[`custom_text_${i}_x`]) || 400,
-          y: Number(config[`custom_text_${i}_y`]) || 100 + (i - 1) * 50,
+          x,
+          y,
+          rotate,
+          skewX,
+          skewY,
+          transform,
+          draggable: true,
           color: resolveColor(config[`custom_text_${i}_color`], '#00f9f9'),
           size: Number(config[`custom_text_${i}_size`]) || 16
         });
@@ -5441,6 +6275,9 @@ class LuminaEnergyCard extends HTMLElement {
               text: displayText,
               x: Number(config.solar_forecast_x) || 400,
               y: Number(config.solar_forecast_y) || 350,
+              rotate: 0,
+              transform: '',
+              draggable: false,
               color: resolveColor(config.solar_forecast_color, '#00FFFF'),
               size: Number(config.solar_forecast_size) || 16
             });
@@ -5487,6 +6324,9 @@ class LuminaEnergyCard extends HTMLElement {
     const overlayHeight = overlayImages[0].height;
     const overlayOpacity = overlayImages[0].opacity;
 
+    // Battery overlay (battery.png) + SOC bar enable (battery section)
+    const batteryOverlay = getBatteryOverlayConfig(config, rawConfig);
+
     const viewState = {
       backgroundImage: bg_img,
       overlayImages: overlayImages,
@@ -5498,8 +6338,10 @@ class LuminaEnergyCard extends HTMLElement {
       overlayImageWidth: overlayWidth,
       overlayImageHeight: overlayHeight,
       overlayImageOpacity: overlayOpacity,
+      batteryOverlay: batteryOverlay,
       animationStyle: animation_style,
       hidePvAndBattery: hidePvAndBattery,
+      hideBatteryUi: hideBatteryUi,
       title: { text: title_text, fontSize: header_font_size },
       batteryCard: {
         visible: false,
@@ -5518,10 +6360,12 @@ class LuminaEnergyCard extends HTMLElement {
       socBar: (() => {
         const soc = Number(avg_soc);
         const safeSoc = Number.isFinite(soc) && soc >= 0 && soc <= 100 ? soc : 0;
-        return { visible: !hidePvAndBattery, soc: safeSoc, ...getSocBarConfig(config) };
+        const base = getSocBarConfig(config);
+        const scaled = (batteryOverlay && batteryOverlay.enabled) ? scaleSocBarToBatteryOverlay(base, batteryOverlay) : base;
+        return { visible: (!hidePvAndBattery && batteryOverlay.enabled), soc: safeSoc, ...scaled };
       })(),
-      batterySoc: { text: hidePvAndBattery ? '' : `${Math.floor(avg_soc)}%`, fontSize: battery_font_size, fill: batteryTextColor, visible: !hidePvAndBattery },
-      batteryPower: { text: hidePvAndBattery ? '' : this.formatPower(Math.abs(total_bat_w), use_kw), fontSize: battery_font_size, fill: batteryTextColor, visible: !hidePvAndBattery },
+      batterySoc: { text: hideBatteryUi ? '' : `${Math.floor(avg_soc)}%`, fontSize: battery_font_size, fill: batteryTextColor, visible: !hideBatteryUi },
+      batteryPower: { text: hideBatteryUi ? '' : this.formatPower(Math.abs(total_bat_w), use_kw), fontSize: battery_font_size, fill: batteryTextColor, visible: !hideBatteryUi },
       battery: { fill: liquid_fill, isCharging: (invertBattery ? total_bat_w < 0 : total_bat_w > 0) },
       load: (() => {
         const loadFontSize = load_font_size; // Use unified font size
@@ -5605,7 +6449,11 @@ class LuminaEnergyCard extends HTMLElement {
       flowPaths,
       customTexts,
       solarForecast: this._solarForecastData || null,
-      showDebugGrid
+      showDebugGrid,
+      debugAnimation: Boolean(this._debugAnimation),
+      debugAnimationText: this._debugAnimation
+        ? `debug_animation=ON | editor=${this._isEditorActive() ? '1' : '0'} | style=${animation_style} | gridNet=${Math.round(Number(gridNet) || 0)} | gridDir=${gridDirection} | gridAnimDir=${gridAnimationDirection} | dashesRaf=${this._flowRafId ? '1' : '0'}`
+        : ''
     };
 
     this._ensureTemplate(viewState);
@@ -5652,36 +6500,30 @@ class LuminaEnergyCard extends HTMLElement {
     lang = (lang || 'en').toLowerCase();
     
     // Verify feature authorization using shared SHA-256 implementation
-    // Supports both legacy (V1) and UID-bound (V2) authentication
+    // Define here because _buildTemplate is a separate method and doesn't have access to render() scope
     const verifyFeatureAuth = (inputValue) => {
       if (!inputValue || typeof inputValue !== 'string') return false;
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        
-        // 1. Check legacy authentication (V1 - backward compatibility)
-        const legacyHash = LUMINA_SHA256(trimmed);
-        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
-          return true;
-        }
-        
-        // 2. Check UID-bound authentication (V2 - new system)
         const uid = getLuminaUID();
-        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
-        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
-          return true;
-        }
-        
-        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
+        const hashHex = LUMINA_SHA256(trimmed + uid);
+        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
+        if (LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return false;
+        return ok;
       } catch (e) { return false; }
     };
     
     // Get dynamic positions from config
     const TEXT_POSITIONS = getTextPositions(config);
     const POPUP_POSITIONS = getPopupPositions(config);
+
+    // Reduce arrow count on low-power profiles; and avoid creating arrow DOM when not used
+    const perf = this._getPerfSettings();
+    const arrowCount = (perf && perf.resolved === 'low') ? 3 : FLOW_ARROW_COUNT;
+    const includeArrows = (this._effectiveAnimationStyle(config.animation_style) === 'arrows');
     
     // Build text transforms from dynamic positions
     const TEXT_TRANSFORMS = {
@@ -5703,6 +6545,9 @@ class LuminaEnergyCard extends HTMLElement {
     const getFlowTransform = (flowKey) => {
       let style = '';
       if (viewState.hidePvAndBattery && (flowKey === 'pv1' || flowKey === 'pv2' || flowKey === 'bat')) {
+        style = 'display:none;';
+      }
+      if (viewState.hideBatteryUi && flowKey === 'bat') {
         style = 'display:none;';
       }
       
@@ -5927,6 +6772,8 @@ class LuminaEnergyCard extends HTMLElement {
         @keyframes soc-bar-pulse { 0% { opacity: 0.9; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0.9; transform: scale(1); } }
         .soc-bar-pulse { animation: soc-bar-pulse 1.5s infinite ease-in-out; }
         .alive-box { animation: pulse-cyan 3s infinite ease-in-out; stroke: #00FFFF; stroke-width: 2px; fill: #001428; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 8px rgba(0, 255, 255, 0.3)); }
+        /* Grid/PV info boxes: no glow / no animation */
+        .lumina-info-box { animation: none; stroke: rgba(0, 249, 249, 0.9); stroke-width: 2px; fill: rgba(0, 20, 40, 0.85); filter: none; }
         .alive-text { fill: #00FFFF; }
         .text-hidden { display: none !important; }
         .lumina-round-bg { stroke: #00FFFF; stroke-width: 2px; fill: #001428; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5)); }
@@ -6103,6 +6950,7 @@ class LuminaEnergyCard extends HTMLElement {
           <g data-role="debug-grid" class="debug-grid" style="display:none;">
             ${DEBUG_GRID_CONTENT}
           </g>
+          <text data-role="debug-animation-overlay" x="10" y="444" fill="#00FFFF" font-size="10" font-family="monospace" style="pointer-events:none; display:${viewState.debugAnimation ? 'inline' : 'none'};">${viewState.debugAnimationText || ''}</text>
 
           ${viewState.title && viewState.title.text ? `
           <rect x="290" y="10" width="220" height="32" rx="6" ry="6" fill="rgba(0, 20, 40, 0.85)" stroke="#00FFFF" stroke-width="1.5"/>
@@ -6110,7 +6958,7 @@ class LuminaEnergyCard extends HTMLElement {
           ` : ''}
 
           <g data-role="grid-box" class="${shouldShowBoxes ? '' : 'text-hidden'}" transform="translate(${GRID_BOX.x ?? 580}, ${GRID_BOX.y ?? 15})" style="display:${GRID_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
-            <rect x="0" y="0" width="${GRID_BOX.width ?? 200}" height="${GRID_BOX.height ?? 85}" rx="10" ry="10" class="alive-box" />
+            <rect x="0" y="0" width="${GRID_BOX.width ?? 200}" height="${GRID_BOX.height ?? 85}" rx="10" ry="10" class="lumina-info-box" />
             ${(GRID_BOX.lines || []).map((line, i) => {
               const fy = (GRID_BOX.startY ?? 14) + i * (GRID_BOX.lineHeight ?? 18);
               const fs = GRID_BOX.fontSize ?? 12;
@@ -6119,7 +6967,7 @@ class LuminaEnergyCard extends HTMLElement {
             }).join('')}
           </g>
           <g data-role="pv-box" class="${shouldShowBoxes ? '' : 'text-hidden'}" transform="translate(${PV_BOX.x ?? 20}, ${PV_BOX.y ?? 15})" style="display:${PV_BOX.visible ? 'inline' : 'none'}; pointer-events: none;">
-            <rect x="0" y="0" width="${PV_BOX.width ?? 200}" height="${PV_BOX.height ?? 85}" rx="10" ry="10" class="alive-box" />
+            <rect x="0" y="0" width="${PV_BOX.width ?? 200}" height="${PV_BOX.height ?? 85}" rx="10" ry="10" class="lumina-info-box" />
             ${(PV_BOX.lines || []).map((line, i) => {
               const fy = (PV_BOX.startY ?? 14) + i * (PV_BOX.lineHeight ?? 18);
               const fs = PV_BOX.fontSize ?? 12;
@@ -6130,48 +6978,48 @@ class LuminaEnergyCard extends HTMLElement {
 
           <g ${getFlowTransform('pv1')}>
           <path class="track-path" d="${viewState.flowPaths.pv1}" />
-          <path class="flow-path" data-flow-key="pv1" ${viewState.flows.pv1.direction === -1 ? 'data-flow-dir="reverse"' : ''} d="${viewState.flowPaths.pv1}" stroke="${viewState.flows.pv1.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('pv1', viewState.flows.pv1)}
+          <path class="flow-path" data-flow-key="pv1" d="${viewState.flowPaths.pv1}" stroke="${viewState.flows.pv1.stroke}" pathLength="100" style="opacity:0;" />
+          ${includeArrows ? buildArrowGroupSvg('pv1', viewState.flows.pv1, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('pv2')}>
           <path class="track-path" d="${viewState.flowPaths.pv2}" />
-          <path class="flow-path" data-flow-key="pv2" ${viewState.flows.pv2.direction === -1 ? 'data-flow-dir="reverse"' : ''} d="${viewState.flowPaths.pv2}" stroke="${viewState.flows.pv2.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('pv2', viewState.flows.pv2)}
+          <path class="flow-path" data-flow-key="pv2" d="${viewState.flowPaths.pv2}" stroke="${viewState.flows.pv2.stroke}" pathLength="100" style="opacity:0;" />
+          ${includeArrows ? buildArrowGroupSvg('pv2', viewState.flows.pv2, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('bat')}>
           <path class="track-path" d="${viewState.flowPaths.bat}" />
           <path class="flow-path" data-flow-key="bat" d="${viewState.flowPaths.bat}" stroke="${viewState.flows.bat.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('bat', viewState.flows.bat)}
+          ${includeArrows ? buildArrowGroupSvg('bat', viewState.flows.bat, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('load')}>
           <path class="track-path" d="${viewState.flowPaths.load}" />
           <path class="flow-path" data-flow-key="load" d="${viewState.flowPaths.load}" stroke="${viewState.flows.load.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('load', viewState.flows.load)}
+          ${includeArrows ? buildArrowGroupSvg('load', viewState.flows.load, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('grid')}>
           <path class="track-path" d="${viewState.flowPaths.grid}" />
           <path class="flow-path" data-flow-key="grid" d="${viewState.flowPaths.grid}" stroke="${viewState.flows.grid.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('grid', viewState.flows.grid)}
+          ${includeArrows ? buildArrowGroupSvg('grid', viewState.flows.grid, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('grid_house')}>
           <path class="track-path" d="${viewState.flowPaths.grid_house}" />
           <path class="flow-path" data-flow-key="grid_house" d="${viewState.flowPaths.grid_house}" stroke="${viewState.flows.grid_house.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('grid_house', viewState.flows.grid_house)}
+          ${includeArrows ? buildArrowGroupSvg('grid_house', viewState.flows.grid_house, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('car1')}>
           <path class="track-path" d="${viewState.flowPaths.car1}" />
           <path class="flow-path" data-flow-key="car1" d="${viewState.flowPaths.car1}" stroke="${viewState.flows.car1.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('car1', viewState.flows.car1)}
+          ${includeArrows ? buildArrowGroupSvg('car1', viewState.flows.car1, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('car2')}>
           <path class="track-path" d="${viewState.flowPaths.car2}" />
           <path class="flow-path" data-flow-key="car2" d="${viewState.flowPaths.car2}" stroke="${viewState.flows.car2.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('car2', viewState.flows.car2)}
+          ${includeArrows ? buildArrowGroupSvg('car2', viewState.flows.car2, arrowCount) : ''}
           </g>
           <g ${getFlowTransform('heatPump')}>
           <path class="track-path" d="${viewState.flowPaths.heatPump}" />
           <path class="flow-path" data-flow-key="heatPump" d="${viewState.flowPaths.heatPump}" stroke="${viewState.flows.heatPump.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg('heatPump', viewState.flows.heatPump)}
+          ${includeArrows ? buildArrowGroupSvg('heatPump', viewState.flows.heatPump, arrowCount) : ''}
           </g>
           ${(() => {
             let customFlowsHtml = '';
@@ -6189,14 +7037,14 @@ class LuminaEnergyCard extends HTMLElement {
           <g ${getFlowTransform(flowKey)} data-custom-flow-group="${i}" style="display:${(isEnabled && isActive) ? 'inline' : 'none'};">
           <path class="track-path" d="${viewState.flowPaths[flowKey]}" />
           <path class="flow-path" data-flow-key="${flowKey}" d="${viewState.flowPaths[flowKey]}" stroke="${flowState.stroke}" pathLength="100" style="opacity:0;" />
-          ${buildArrowGroupSvg(flowKey, flowState)}
+          ${includeArrows ? buildArrowGroupSvg(flowKey, flowState, arrowCount) : ''}
           </g>`;
             }
             return customFlowsHtml;
           })()}
 
           ${viewState.customTexts.map(ct => `
-          <text data-role="custom-text-${ct.id}" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${ct.x}" y="${ct.y}" fill="${ct.color}" font-size="${ct.size}" style="font-family: Arial, sans-serif; text-anchor: middle; pointer-events: none;">${ct.text}</text>
+          <text data-role="custom-text-${ct.id}" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${ct.x}" y="${ct.y}" ${ct.transform ? `transform="${ct.transform}"` : ''} fill="${ct.color}" font-size="${ct.size}" style="font-family: Arial, sans-serif; text-anchor: middle; pointer-events: ${(viewState.showDebugGrid && ct.draggable) ? 'all' : 'none'};">${ct.text}</text>
           `).join('')}
 
           ${(() => {
@@ -6247,6 +7095,16 @@ class LuminaEnergyCard extends HTMLElement {
           })()}
 
           ${pvLineElements}
+
+          <image data-role="battery-overlay-image"
+            href="${(viewState.batteryOverlay && viewState.batteryOverlay.image) ? viewState.batteryOverlay.image : ''}"
+            xlink:href="${(viewState.batteryOverlay && viewState.batteryOverlay.image) ? viewState.batteryOverlay.image : ''}"
+            x="${(viewState.batteryOverlay && Number.isFinite(Number(viewState.batteryOverlay.x))) ? viewState.batteryOverlay.x : 227}"
+            y="${(viewState.batteryOverlay && Number.isFinite(Number(viewState.batteryOverlay.y))) ? viewState.batteryOverlay.y : 232}"
+            width="${(viewState.batteryOverlay && Number.isFinite(Number(viewState.batteryOverlay.width))) ? viewState.batteryOverlay.width : 140}"
+            height="${(viewState.batteryOverlay && Number.isFinite(Number(viewState.batteryOverlay.height))) ? viewState.batteryOverlay.height : 217}"
+            style="opacity:${(viewState.batteryOverlay && Number.isFinite(Number(viewState.batteryOverlay.opacity))) ? viewState.batteryOverlay.opacity : 1.0}; display:${(viewState.batteryOverlay && viewState.batteryOverlay.enabled && viewState.batteryOverlay.image && !viewState.hidePvAndBattery) ? 'inline' : 'none'}; pointer-events:none;"
+            preserveAspectRatio="none" />
 
           <text data-role="battery-soc" class="${shouldShowTexts ? '' : 'text-hidden'}" x="${TEXT_POSITIONS.battery.x}" y="${TEXT_POSITIONS.battery.y}" transform="${TEXT_TRANSFORMS.battery}" fill="${viewState.batterySoc.fill || PEARL_WHITE}" font-family="${FONT_EXO2}" font-size="${viewState.batterySoc.fontSize}" font-weight="bold" letter-spacing="2px" text-transform="uppercase" style="text-shadow: 0 0 4px rgba(245,243,238,0.5); text-anchor:middle; dominant-baseline:central; display:${viewState.batterySoc.visible !== false ? 'inline' : 'none'}">${viewState.batterySoc.text}</text>
 
@@ -6359,30 +7217,10 @@ class LuminaEnergyCard extends HTMLElement {
             </g>
           </g>
 
-          <polygon data-role="battery-clickable-area" points="325,400 350,375 350,275 275,250 250,250 250,350 325,400" fill="transparent" style="cursor:pointer;" />
+          <polygon data-role="battery-clickable-area" points="325,400 350,375 350,275 275,250 250,250 250,350 325,400" fill="transparent" style="cursor:pointer; display:${viewState.hideBatteryUi ? 'none' : 'inline'};" />
 
           <path data-role="linea-box-1" class="${shouldShowTexts ? '' : 'text-hidden'}" d="${config.linea_box_1_path || 'M 664,130 730,95 V 82'}" stroke="#00f9f9" stroke-width="1" fill="none" style="display:${GRID_BOX.visible ? 'inline' : 'none'}; pointer-events: none;" />
           <path data-role="linea-box-2" class="${shouldShowTexts ? '' : 'text-hidden'}" d="${config.linea_box_2_path || 'M 17,200 8.9,190 9.2,123 89,75'}" stroke="#00f9f9" stroke-width="1" fill="none" style="display:${PV_BOX.visible ? 'inline' : 'none'}; pointer-events: none;" />
-
-          <g data-role="soc-bar" transform="translate(${SOC_BAR.x ?? 325}, ${SOC_BAR.y ?? 277}) translate(${(SOC_BAR.width ?? 30) / 2}, ${(SOC_BAR.height ?? 85) / 2}) rotate(${SOC_BAR.rotate ?? 1}) skewX(${SOC_BAR.skewX ?? 2}) skewY(${SOC_BAR.skewY ?? -19}) translate(${-((SOC_BAR.width ?? 30) / 2)}, ${-((SOC_BAR.height ?? 85) / 2)})" style="display:${(SOC_BAR.visible !== false && !viewState.hidePvAndBattery) ? 'inline' : 'none'}; pointer-events: none;">
-            <rect class="soc-bar-back" x="0" y="0" width="${SOC_BAR.width ?? 30}" height="${SOC_BAR.height ?? 85}" rx="4" ry="4" fill="rgba(0,25,45,0.75)" stroke="rgba(255,255,255,0.2)" stroke-width="1" style="pointer-events: none;" />
-            ${[0,1,2,3,4,5].map(i => {
-              const thresh = (6 - i) * (100 / 6);
-              const lit = (SOC_BAR.soc ?? 0) >= thresh;
-              const isFirstSegment = (i === 5);
-              const colorOn = SOC_BAR.colorOn ?? '#00FFFF';
-              const colorOff = SOC_BAR.colorOff ?? '#5aa7c3';
-              const fill = lit ? (isFirstSegment ? '#E53935' : `url(#soc-bar-on-grad)`) : colorOff;
-              const segH = ((SOC_BAR.height ?? 85) - 7) / 6;
-              const y = 1 + i * (segH + 1);
-              const glow = SOC_BAR.glow ?? 13;
-              const glowColor = isFirstSegment && lit ? '#E53935' : colorOn;
-              const filter = lit && glow > 0 ? `drop-shadow(0 0 ${glow}px ${glowColor}) drop-shadow(0 0 ${Math.round(glow/2)}px rgba(255,255,255,0.4))` : 'none';
-              const isCharging = viewState.battery && viewState.battery.isCharging ? viewState.battery.isCharging : false;
-              const pulseClass = (isCharging && lit) ? 'soc-bar-pulse' : '';
-              return `<rect data-role="soc-bar-seg-${i}" x="2" y="${y}" width="${(SOC_BAR.width ?? 30) - 4}" height="${segH}" rx="3" ry="3" fill="${fill}" fill-opacity="${SOC_BAR.opacity ?? 0.55}" stroke="transparent" stroke-width="0" class="${pulseClass}" style="filter:${filter};" />`;
-            }).join('')}
-          </g>
 
           <polygon data-role="house-clickable-area" points="300,200 300,150 350,100 450,75 500,150 500,200 395,250" fill="transparent" style="cursor:pointer;" />
 
@@ -6533,6 +7371,32 @@ class LuminaEnergyCard extends HTMLElement {
           ).join('')}
           <polygon data-role="pv-clickable-area" points="75,205 200,195 275,245 145,275 75,205" fill="transparent" style="cursor:${pvClickableCursor}; display:${pvClickableDisplay}; pointer-events: all;" />
 
+          <!-- SOC bar (top-most layer) -->
+          <g data-role="soc-bar" transform="translate(${SOC_BAR.x ?? 325}, ${SOC_BAR.y ?? 277}) translate(${(SOC_BAR.width ?? 30) / 2}, ${(SOC_BAR.height ?? 85) / 2}) rotate(${SOC_BAR.rotate ?? 1}) skewX(${SOC_BAR.skewX ?? 2}) skewY(${SOC_BAR.skewY ?? -19}) translate(${-((SOC_BAR.width ?? 30) / 2)}, ${-((SOC_BAR.height ?? 85) / 2)})" style="display:${(SOC_BAR.visible !== false && !viewState.hidePvAndBattery) ? 'inline' : 'none'}; pointer-events: none;">
+            <rect class="soc-bar-back" x="0" y="0" width="${SOC_BAR.width ?? 30}" height="${SOC_BAR.height ?? 85}" rx="4" ry="4" fill="rgba(0,25,45,0.75)" stroke="rgba(255,255,255,0.2)" stroke-width="1" style="pointer-events: none;" />
+            ${(() => {
+              const socN = Number(SOC_BAR.soc ?? 0);
+              const safeSoc = Number.isFinite(socN) ? Math.max(0, Math.min(100, socN)) : 0;
+              const step = 100 / 6;
+              const segmentsLit = safeSoc <= 0 ? 0 : Math.min(6, Math.ceil(safeSoc / step));
+              return [0,1,2,3,4,5].map(i => {
+                const lit = i >= (6 - segmentsLit);
+                const isFirstSegment = (i === 5);
+                const colorOn = SOC_BAR.colorOn ?? '#00FFFF';
+                const colorOff = SOC_BAR.colorOff ?? '#5aa7c3';
+                const fill = lit ? (isFirstSegment ? '#E53935' : `url(#soc-bar-on-grad)`) : colorOff;
+                const segH = ((SOC_BAR.height ?? 85) - 7) / 6;
+                const y = 1 + i * (segH + 1);
+                const glow = SOC_BAR.glow ?? 13;
+                const glowColor = isFirstSegment && lit ? '#E53935' : colorOn;
+                const filter = lit && glow > 0 ? `drop-shadow(0 0 ${glow}px ${glowColor}) drop-shadow(0 0 ${Math.round(glow/2)}px rgba(255,255,255,0.4))` : 'none';
+                const isCharging = viewState.battery && viewState.battery.isCharging ? viewState.battery.isCharging : false;
+                const pulseClass = (isCharging && lit) ? 'soc-bar-pulse' : '';
+                return `<rect data-role="soc-bar-seg-${i}" x="2" y="${y}" width="${(SOC_BAR.width ?? 30) - 4}" height="${segH}" rx="3" ry="3" fill="${fill}" fill-opacity="${SOC_BAR.opacity ?? 0.55}" stroke="transparent" stroke-width="0" class="${pulseClass}" style="filter:${filter};" />`;
+              }).join('');
+            })()}
+          </g>
+
         </svg>
         <div class="debug-coordinates" data-role="debug-coordinates">X: ---, Y: ---</div>
         ${luminaButtonsRow}
@@ -6552,8 +7416,10 @@ class LuminaEnergyCard extends HTMLElement {
       svgRoot: root.querySelector('svg'),
       background: root.querySelector('[data-role="background-image"]'),
       overlayImages: Array.from({ length: 5 }, (_, i) => root.querySelector(`[data-role="overlay-image-${i + 1}"]`)),
+      batteryOverlayImage: root.querySelector('[data-role="battery-overlay-image"]'),
       debugGrid: root.querySelector('[data-role="debug-grid"]'),
       debugCoords: root.querySelector('[data-role="debug-coordinates"]'),
+      debugAnimationOverlay: root.querySelector('[data-role="debug-animation-overlay"]'),
       title: root.querySelector('[data-role="title-text"]'),
       gridBoxGroup: root.querySelector('[data-role="grid-box"]'),
       // Optimized: use for loop instead of map for better performance
@@ -6686,7 +7552,11 @@ class LuminaEnergyCard extends HTMLElement {
         for (const [key, path] of Object.entries(flows)) {
           if (path && typeof path.getTotalLength === 'function') {
             try {
-              this._flowPathLengths.set(key, path.getTotalLength());
+              const len = path.getTotalLength();
+              this._flowPathLengths.set(key, len);
+              if (this._flowPathLengthSig && typeof path.getAttribute === 'function') {
+                this._flowPathLengthSig.set(key, path.getAttribute('d') || '');
+              }
             } catch (err) {
               // skip path
             }
@@ -8226,6 +9096,35 @@ class LuminaEnergyCard extends HTMLElement {
       });
     }
 
+    // Battery overlay image (battery.png)
+    if (refs.batteryOverlayImage && viewState.batteryOverlay) {
+      const bo = viewState.batteryOverlay;
+      const prevBo = prev && prev.batteryOverlay ? prev.batteryOverlay : null;
+      const boChanged = !prevBo ||
+        prevBo.enabled !== bo.enabled ||
+        prevBo.image !== bo.image ||
+        prevBo.x !== bo.x ||
+        prevBo.y !== bo.y ||
+        prevBo.width !== bo.width ||
+        prevBo.height !== bo.height ||
+        prevBo.opacity !== bo.opacity ||
+        Boolean(prev.hidePvAndBattery) !== Boolean(viewState.hidePvAndBattery);
+      if (boChanged) {
+        if (bo.enabled && bo.image && !viewState.hidePvAndBattery) {
+          refs.batteryOverlayImage.setAttribute('href', bo.image);
+          refs.batteryOverlayImage.setAttribute('xlink:href', bo.image);
+          refs.batteryOverlayImage.setAttribute('x', bo.x);
+          refs.batteryOverlayImage.setAttribute('y', bo.y);
+          refs.batteryOverlayImage.setAttribute('width', bo.width);
+          refs.batteryOverlayImage.setAttribute('height', bo.height);
+          refs.batteryOverlayImage.style.opacity = bo.opacity;
+          refs.batteryOverlayImage.style.display = 'inline';
+        } else {
+          refs.batteryOverlayImage.style.display = 'none';
+        }
+      }
+    }
+
     // Legacy overlay image update for backward compatibility
     if (refs.overlayImage && (prev.overlayImage !== viewState.overlayImage || prev.overlayImageX !== viewState.overlayImageX || prev.overlayImageY !== viewState.overlayImageY || prev.overlayImageWidth !== viewState.overlayImageWidth || prev.overlayImageHeight !== viewState.overlayImageHeight || prev.overlayImageOpacity !== viewState.overlayImageOpacity)) {
       if (viewState.overlayImage) {
@@ -8265,6 +9164,18 @@ class LuminaEnergyCard extends HTMLElement {
       }
     }
 
+    // Debug overlay (for users without console)
+    if (refs.debugAnimationOverlay) {
+      const desired = viewState.debugAnimation ? 'inline' : 'none';
+      if (refs.debugAnimationOverlay.style.display !== desired) {
+        refs.debugAnimationOverlay.style.display = desired;
+      }
+      const text = viewState.debugAnimationText || '';
+      if (refs.debugAnimationOverlay.textContent !== text) {
+        refs.debugAnimationOverlay.textContent = text;
+      }
+    }
+
     if (refs.title) {
       if (!prev.title || prev.title.text !== viewState.title.text) {
         refs.title.textContent = viewState.title.text;
@@ -8291,13 +9202,16 @@ class LuminaEnergyCard extends HTMLElement {
       const colorOff = sb.colorOff ?? '#5aa7c3';
       const glow = sb.glow ?? 5;
       const opacity = sb.opacity ?? 0.35;
+      const socN = Number(sb.soc ?? 0);
+      const safeSoc = Number.isFinite(socN) ? Math.max(0, Math.min(100, socN)) : 0;
+      const step = 100 / 6;
+      const segmentsLit = safeSoc <= 0 ? 0 : Math.min(6, Math.ceil(safeSoc / step));
       const isCharging = viewState.battery && viewState.battery.isCharging;
       // Phase A Optimization: Batch DOM updates for SOC bar segments (reduces reflows)
       const socBarUpdates = [];
       refs.socBarSegments.forEach((el, i) => {
         if (!el) return;
-        const thresh = (6 - i) * (100 / 6);
-        const lit = (sb.soc ?? 0) >= thresh;
+        const lit = i >= (6 - segmentsLit);
         const isFirstSegment = (i === 5);
         const fill = lit ? (isFirstSegment ? '#E53935' : 'url(#soc-bar-on-grad)') : colorOff;
         const y = 1 + i * (segH + 1);
@@ -8669,11 +9583,23 @@ class LuminaEnergyCard extends HTMLElement {
           if (!prevText || prevText.y !== ct.y) {
             textEl.setAttribute('y', ct.y);
           }
+          const desiredTransform = ct && ct.transform ? ct.transform : '';
+          if (!prevText || prevText.transform !== desiredTransform || prevText.x !== ct.x || prevText.y !== ct.y) {
+            if (desiredTransform) {
+              textEl.setAttribute('transform', desiredTransform);
+            } else {
+              textEl.removeAttribute('transform');
+            }
+          }
           if (!prevText || prevText.color !== ct.color) {
             textEl.setAttribute('fill', ct.color);
           }
           if (!prevText || prevText.size !== ct.size) {
             textEl.setAttribute('font-size', ct.size);
+          }
+          const desiredPointerEvents = (viewState.showDebugGrid && ct && ct.draggable) ? 'all' : 'none';
+          if (textEl.style.pointerEvents !== desiredPointerEvents) {
+            textEl.style.pointerEvents = desiredPointerEvents;
           }
         }
       });
@@ -8849,7 +9775,7 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _handleDebugPointerMove(event) {
-    if (!DEBUG_GRID_ENABLED || !this._domRefs || !this._domRefs.svgRoot) {
+    if (!this._debugGridEnabled || !this._domRefs || !this._domRefs.svgRoot) {
       return;
     }
     const rect = this._domRefs.svgRoot.getBoundingClientRect();
@@ -8864,14 +9790,14 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   _handleDebugPointerLeave() {
-    if (!DEBUG_GRID_ENABLED) {
+    if (!this._debugGridEnabled) {
       return;
     }
     this._setDebugCoordinateText(null, null);
   }
 
   _handleTextMouseDown(event) {
-    if (!DEBUG_GRID_ENABLED || event.button !== 0) {
+    if (!this._debugGridEnabled || event.button !== 0) {
       return;
     }
     let textElement = event.target;
@@ -8922,7 +9848,13 @@ class LuminaEnergyCard extends HTMLElement {
       'car1-soc': { xKey: 'dev_text_car1_soc_x', yKey: 'dev_text_car1_soc_y' },
       'car2-label': { xKey: 'dev_text_car2_label_x', yKey: 'dev_text_car2_label_y' },
       'car2-power': { xKey: 'dev_text_car2_power_x', yKey: 'dev_text_car2_power_y' },
-      'car2-soc': { xKey: 'dev_text_car2_soc_x', yKey: 'dev_text_car2_soc_y' }
+      'car2-soc': { xKey: 'dev_text_car2_soc_x', yKey: 'dev_text_car2_soc_y' },
+      'custom-text-1': { xKey: 'custom_text_1_x', yKey: 'custom_text_1_y' },
+      'custom-text-2': { xKey: 'custom_text_2_x', yKey: 'custom_text_2_y' },
+      'custom-text-3': { xKey: 'custom_text_3_x', yKey: 'custom_text_3_y' },
+      'custom-text-4': { xKey: 'custom_text_4_x', yKey: 'custom_text_4_y' },
+      'custom-text-5': { xKey: 'custom_text_5_x', yKey: 'custom_text_5_y' },
+      'custom-text-solar_forecast': { xKey: 'solar_forecast_x', yKey: 'solar_forecast_y' }
     };
     
     let configKey = null;
@@ -9236,12 +10168,12 @@ class LuminaEnergyCard extends HTMLElement {
       
       // Use capture phase to catch clicks before they bubble
       document.addEventListener('click', this._popupOutsideClickHandler, true);
-    if (DEBUG_GRID_ENABLED && this._domRefs.svgRoot) {
+    if (this._debugGridEnabled && this._domRefs.svgRoot) {
       this._domRefs.svgRoot.addEventListener('pointermove', this._handleDebugPointerMove);
       this._domRefs.svgRoot.addEventListener('pointerleave', this._handleDebugPointerLeave);
       
       // Aggiungi listener ai testi per il drag
-      const textElements = this._domRefs.svgRoot.querySelectorAll('[data-role*="pv-line"], [data-role*="battery"], [data-role*="load"], [data-role*="house-temp"], [data-role*="heat-pump"], [data-role*="grid"], [data-role*="car"]');
+      const textElements = this._domRefs.svgRoot.querySelectorAll('[data-role*="pv-line"], [data-role*="battery"], [data-role*="load"], [data-role*="house-temp"], [data-role*="heat-pump"], [data-role*="grid"], [data-role*="car"], [data-role^="custom-text-"]');
       textElements.forEach(textEl => {
         if (textEl.tagName === 'text') {
           textEl.style.cursor = 'grab';
@@ -9276,6 +10208,8 @@ class LuminaEnergyCard extends HTMLElement {
       }
       // Cycle through 3 states: 0 (all visible) → 1 (grid/pv boxes and lines hidden) → 2 (all text hidden) → 0
       this._textsVisible = (this._textsVisible + 1) % 3;
+      this._textsVisibleUserTouched = true;
+      this._saveTextsVisibleToStorage();
       this._updateTextVisibility();
     } catch (e) {
       // ignore
@@ -10051,24 +10985,13 @@ class LuminaEnergyCard extends HTMLElement {
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        
-        // 1. Check legacy authentication (V1)
-        const legacyHash = LUMINA_SHA256(trimmed);
-        if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
-          return true;
-        }
-        
-        // 2. Check UID-bound authentication (V2)
         const uid = getLuminaUID();
-        const uidBoundHash = LUMINA_SHA256(trimmed + uid);
-        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
-          return true;
-        }
-        
-        if (LUMINA_AUTH_LIST === null || LUMINA_AUTH_LIST_V2 === null) {
+        const hashHex = LUMINA_SHA256(trimmed + uid);
+        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
+        if (LUMINA_AUTH_LIST_V2 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
-        return false;
+        return ok;
       } catch (e) { return false; }
     };
     const authInput = config.pro_password;
@@ -10244,7 +11167,9 @@ class LuminaEnergyCard extends HTMLElement {
         lines: viewState.pv.lines.map((line) => ({ ...line }))
       },
       socBar: viewState.socBar ? { ...viewState.socBar } : undefined,
+      batteryOverlay: viewState.batteryOverlay ? { ...viewState.batteryOverlay } : undefined,
       hidePvAndBattery: Boolean(viewState.hidePvAndBattery),
+      hideBatteryUi: Boolean(viewState.hideBatteryUi),
       gridBox: viewState.gridBox ? { ...viewState.gridBox, lines: (viewState.gridBox.lines || []).map(l => ({ ...l })) } : undefined,
       pvBox: viewState.pvBox ? { ...viewState.pvBox, lines: (viewState.pvBox.lines || []).map(l => ({ ...l })) } : undefined,
       batterySoc: { ...viewState.batterySoc },
@@ -10297,7 +11222,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Language', helper: 'Choose the editor language.' },
           installation_type: { title: 'Installation Type', helper: 'Select your installation type to configure the card accordingly.' },
-          license_info: { title: 'License Info', helper: 'Manage your PRO license. View your installation ID, check license status, and request a new license.' },
           general: { title: 'General Settings', helper: 'Card metadata, background, and update cadence.' },
           array1: { title: 'Array 1', helper: 'Choose the PV, battery, grid, load, and EV entities used by the card. Either the PV total sensor or your PV string arrays need to be specified as a minimum.' },
           array2: { title: 'Array 2', helper: 'If PV Total Sensor (Inverter 2) is set or the PV String values are provided, Array 2 will become active and enable the second inverter. You must also enable Daily Production Sensor (Array 2) and Home Load (Inverter 2).' },
@@ -10316,20 +11240,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
           animation_styles: { title: 'Animation Styles', helper: 'Flow animation style (dashes, dots, arrows, shimmer). Default: shimmer.' },
           typography: { title: 'Typography', helper: 'Fine tune the font sizes used across the card.' },
           flow_path_custom: { title: 'Custom Flow Paths', helper: 'Customize flow paths by modifying SVG path strings. Leave empty to use default paths. You can combine custom paths with offsets from the Flow Path section.' },
-          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO FEATURES: Premium functions including overlay images, custom flows, and custom texts. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email in the message.' },
+          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO FEATURES: Premium functions including overlay images, custom flows, and custom texts. To unlock: send 5€ as DONATION to PayPal (3dprint8616@gmail.com), then request your license using the form (email, PayPal payment email, transaction ID). You can also donate via Sponsors/Fund me.' },
           layout: { title: 'Layout & Text Positions', helper: 'Sliders show exact X, Y (px) and angles (°). Use step 1 to get precise values—note them for your definitive YAML config. ViewBox 800×450. Save and check dashboard. YAML: dev_text_*_x, _y, _rotate, _skewX, _skewY, _scaleX, _scaleY.' },
           socBar: { title: 'SOC Bar', helper: '6-segment bar on battery. Position, opacity, glow, colors.' },
           gridBox: { title: 'Grid Box', helper: 'Top-right box. Import/Export + daily. Position and size.' },
           pvBox: { title: 'PV Box', helper: 'Top-left box. PV Total (sum) + Daily production. Position and size.' },
           batteryFill: { title: 'Battery Fill Position', helper: 'Sliders show exact coordinates (px) and angles (°). Note values for definitive YAML. YAML: dev_battery_fill_x, _y_base, _width, _max_height, _rotate, _skew_x, _skew_y.' },
-          overlay_image: { title: 'Overlay Image (PRO Feature)', helper: '⚠️ PRO FEATURE: Add up to 5 custom PNG images overlayed on the card (cars, pools, turbines, etc.). Each image has independent controls for position (X/Y), size (width/height), and opacity. Perfect for adding realistic visual elements to your energy dashboard. Examples included: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email.' },
+          overlay_image: { title: 'Overlay Image (PRO Feature)', helper: '⚠️ PRO FEATURE: Add up to 5 custom PNG images overlayed on the card (cars, pools, turbines, etc.). Each image has independent controls for position (X/Y), size (width/height), and opacity. Perfect for adding realistic visual elements to your energy dashboard. Examples included: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. To unlock: send 5€ to PayPal (3dprint8616@gmail.com) with your email.' },
           custom_flows: { title: 'Custom Flows', helper: 'Create up to 5 additional animated energy flows with custom sensors, SVG paths, colors, and activation thresholds. Each flow can have independent source/destination positions, line colors, glow effects, and power thresholds. Perfect for visualizing custom loads (pool pump, heat pump, EV charger, etc.) or additional energy sources. Flows animate automatically when sensor values exceed the threshold.' },
           custom_text: { title: 'Custom Text', helper: 'Add up to 5 custom text labels anywhere on the card. Each text can display: static labels, sensor values (with unit), or both combined. Configure position (X/Y), color, font size, and format. Perfect for showing additional data like temperatures, humidity, power consumption, or custom status messages on your energy dashboard.' },
           about: { title: 'About', helper: 'Credits, version, and helpful links.' }
         },
         fields: {
           card_title: { label: 'Card Title', helper: 'Title displayed at the top of the card. Leave blank to disable.' },
-          pro_password: { label: 'PRO Password', helper: 'Enter PRO password to unlock premium features like Overlay Image. To unlock: send 1€ to PayPal (3dprint8616@gmail.com) with your email in the message.' },
+          pro_password: { label: 'PRO Password', helper: 'Enter PRO password to unlock premium features like Overlay Image. To unlock: send 5€ to PayPal (3dprint8616@gmail.com) with your email in the message.' },
           overlay_image_enabled: { label: 'Enable Overlay Image 1', helper: 'Enable or disable the first overlay image. Toggle to show/hide the image on your card.' },
           overlay_image: { label: 'Overlay Image 1 Path', helper: 'Path to your PNG image. Default example: /local/community/lumina-energy-card/car.png. Upload custom images to /config/www/ and reference as /local/filename.png. Supports transparent PNG for realistic overlay effects.' },
           overlay_image_x: { label: 'Overlay Image 1 X Position (px)', helper: 'Horizontal position from left edge. Use negative values to move left, positive to move right. Adjust in real-time using the visual editor. Range: -800 to 1600. Default: 0.' },
@@ -10368,6 +11292,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           language: { label: 'Language', helper: 'Choose the editor language.' },
           display_unit: { label: 'Display Unit', helper: 'Unit used when formatting power values.' },
           update_interval: { label: 'Update Interval', helper: 'Refresh cadence for card updates (0 disables throttling).' },
+          performance_mode: { label: 'Performance Mode', helper: 'Auto = balanced by default. Low reduces CPU by throttling animations. High = smoothest but heavier.' },
           animation_speed_factor: { label: 'Animation Speed Factor', helper: 'Adjust animation speed multiplier (-3x to 3x). Set 0 to pause; negatives reverse direction.' },
           animation_style: { label: 'Animation Style', helper: 'Choose the flow animation motif (dashes, dots, arrows, or shimmer).' },
           flow_stroke_width: { label: 'Flow Stroke Width (px)', helper: 'Optional override for the animated flow stroke width (no SVG edits). Leave blank to keep SVG defaults.' },
@@ -10429,6 +11354,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_bat4_soc: { label: 'Battery 4 SOC' },
           sensor_bat4_power: { label: 'Battery 4 Power' },
           battery_power_mode: { label: 'Battery Power Mode', helper: 'Flow: single signed sensor (+ = charge → battery, - = discharge → inverter). Charge+Discharge: separate sensors; charge = flow to battery, discharge = flow to inverter.' },
+          battery_overlay_enabled: { label: 'Enable Battery Overlay + SOC Bar', helper: 'When OFF, battery entity fields are locked. When ON, shows the battery overlay image and enables the 6-segment SOC bar on top. Image auto-switches: battery.png (Holographic) / battery_real.png (Real).' },
+          battery_overlay_image: { label: 'Battery Overlay Image Path', helper: 'Optional override. Leave empty to auto-select based on Image style.' },
+          battery_overlay_x: { label: 'Battery Overlay X (px)', helper: 'Horizontal position of the battery overlay. Default depends on Image style.' },
+          battery_overlay_y: { label: 'Battery Overlay Y (px)', helper: 'Vertical position of the battery overlay. Default depends on Image style.' },
+          battery_overlay_width: { label: 'Battery Overlay Width (px)', helper: 'Width of the battery overlay. Default depends on Image style.' },
+          battery_overlay_height: { label: 'Battery Overlay Height (px)', helper: 'Height of the battery overlay. Default depends on Image style.' },
+          battery_overlay_opacity: { label: 'Battery Overlay Opacity', helper: 'Opacity of the battery overlay (0–1).' },
           sensor_battery_flow: { label: 'Battery Flow (signed)', helper: 'Optional. Single power sensor: positive = charging (flow to battery), negative = discharging (flow to inverter). Used when mode is Flow. If empty, Bat 1–4 Power are used.' },
           sensor_battery_charge: { label: 'Battery Charge', helper: 'Power sensor when charging. Flow goes toward battery. Used when mode is Charge+Discharge.' },
           sensor_battery_discharge: { label: 'Battery Discharge', helper: 'Power sensor when discharging. Flow goes toward inverter. Used when mode is Charge+Discharge.' },
@@ -10513,6 +11445,25 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_bidirectional: { label: 'Car 2 Bidirectional Capacity', helper: 'Enable if Car 2 has V2X capability (can charge and discharge like a home battery).' },
           car1_invert_flow: { label: 'Car 1 Invert Flow', helper: 'Invert the flow direction for Car 1. Useful if the sensor polarity is reversed.' },
           car2_invert_flow: { label: 'Car 2 Invert Flow', helper: 'Invert the flow direction for Car 2. Useful if the sensor polarity is reversed.' },
+          array1_invert_flow: { label: 'Invert Flow Array 1', helper: 'Invert the flow direction for Array 1 (PV1). Useful if the sensor polarity is reversed.' },
+          array2_invert_flow: { label: 'Invert Flow Array 2', helper: 'Invert the flow direction for Array 2 (PV2). Useful if the sensor polarity is reversed.' },
+          heat_pump_invert_flow: { label: 'Heat Pump Invert Flow', helper: 'Invert the heat pump flow direction. Useful if the sensor polarity is reversed.' },
+          pro_debug_grid: { label: 'Enable Positioning Grid (PRO)', helper: 'Show an on-screen grid + coordinates to position texts more precisely (PRO tool).' },
+          custom_text_1_rotate: { label: 'Text 1: Rotation (°)', helper: 'Rotation angle for Text 1 (-180..180).' },
+          custom_text_1_skew_x: { label: 'Text 1: Skew X (°)', helper: 'Skew angle for Text 1 on X axis (-60..60).' },
+          custom_text_1_skew_y: { label: 'Text 1: Skew Y (°)', helper: 'Skew angle for Text 1 on Y axis (-60..60).' },
+          custom_text_2_rotate: { label: 'Text 2: Rotation (°)', helper: 'Rotation angle for Text 2 (-180..180).' },
+          custom_text_2_skew_x: { label: 'Text 2: Skew X (°)', helper: 'Skew angle for Text 2 on X axis (-60..60).' },
+          custom_text_2_skew_y: { label: 'Text 2: Skew Y (°)', helper: 'Skew angle for Text 2 on Y axis (-60..60).' },
+          custom_text_3_rotate: { label: 'Text 3: Rotation (°)', helper: 'Rotation angle for Text 3 (-180..180).' },
+          custom_text_3_skew_x: { label: 'Text 3: Skew X (°)', helper: 'Skew angle for Text 3 on X axis (-60..60).' },
+          custom_text_3_skew_y: { label: 'Text 3: Skew Y (°)', helper: 'Skew angle for Text 3 on Y axis (-60..60).' },
+          custom_text_4_rotate: { label: 'Text 4: Rotation (°)', helper: 'Rotation angle for Text 4 (-180..180).' },
+          custom_text_4_skew_x: { label: 'Text 4: Skew X (°)', helper: 'Skew angle for Text 4 on X axis (-60..60).' },
+          custom_text_4_skew_y: { label: 'Text 4: Skew Y (°)', helper: 'Skew angle for Text 4 on Y axis (-60..60).' },
+          custom_text_5_rotate: { label: 'Text 5: Rotation (°)', helper: 'Rotation angle for Text 5 (-180..180).' },
+          custom_text_5_skew_x: { label: 'Text 5: Skew X (°)', helper: 'Skew angle for Text 5 on X axis (-60..60).' },
+          custom_text_5_skew_y: { label: 'Text 5: Skew Y (°)', helper: 'Skew angle for Text 5 on Y axis (-60..60).' },
           car_pct_color: { label: 'Car SOC Color', helper: 'Hex color for EV SOC text (e.g., #00FFFF).' },
           car2_pct_color: { label: 'Car 2 SOC Color', helper: 'Hex color for second EV SOC text (falls back to Car SOC Color).' },
           car1_name_color: { label: 'Car 1 Name Color', helper: 'Color applied to the Car 1 name label.' },
@@ -10520,22 +11471,41 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Car 1 Color', helper: 'Color applied to Car 1 power value.' },
           car2_color: { label: 'Car 2 Color', helper: 'Color applied to Car 2 power value.' },
           pro_password: { label: 'PRO Password', helper: '⚠️ PRO FEATURE: This is a premium function.' },
-          paypal_button: 'Unlock PRO Features (1€)',
-          paypal_note: 'IMPORTANT: Send as DONATION only. Do NOT use Goods & Services. Include your EMAIL in the PayPal notes to receive the password.',
-          // License Info section fields
-          your_installation_id: 'Your Installation ID',
-          copy_id: 'Copy',
-          id_copied: 'Copied!',
-          license_status: 'License Status',
-          license_active: 'Active',
-          license_inactive: 'Inactive',
+          paypal_button: 'Unlock PRO Features (5€)',
+          paypal_note: 'IMPORTANT: Send as DONATION only. Do NOT use Goods & Services. After payment, request your PRO license below (email, PayPal payment email, transaction ID).',
+          unlock_pro_features: 'Unlock PRO Features',
+          activate: 'Activate',
+          checking: 'Checking...',
           request_pro_license: 'Request PRO License',
           your_email: 'Your Email',
+          paypal_payment_email: 'PayPal payment email',
           paypal_transaction_id: 'PayPal Transaction ID',
           send_request: 'Send Request',
           request_sent: 'Request sent! You will receive your license via email.',
           request_error: 'Error sending request. Please try again.',
-          license_instructions: 'To get a PRO license: 1) Copy your Installation ID above, 2) Send 1€ to PayPal (3dprint8616@gmail.com), 3) Fill in your email and PayPal transaction ID below, 4) Click Send Request.',
+          existing_user_title: 'Already purchased before?',
+          existing_user_desc: 'If you already paid in the past, request a free upgrade by sending your old transaction ID.',
+          support_contact: 'For any problem, contact: luminaenergycard@gmail.com',
+          request_migration: 'Request Free Upgrade',
+          migration_sent: 'Migration request sent! You will receive your new password via email.',
+          pro_password_placeholder: 'Enter your PRO password',
+          your_email_placeholder: 'your@email.com',
+          paypal_payment_email_placeholder: 'paypal@email.com',
+          paypal_transaction_id_placeholder: 'e.g., 1AB23456CD789012E',
+          fill_all_fields: 'Please fill in all fields.',
+          password_ok: '✓ Password accepted. PRO is now active.',
+          password_bad: '❌ Invalid password. Please check and try again.',
+          pro_license_title: '💰 PRO License',
+          pro_license_line1: 'Send <b>5€ as DONATION</b> to PayPal: <b>3dprint8616@gmail.com</b>',
+          pro_license_line2: 'Then fill the form below (<b>email</b>, <b>PayPal payment email</b>, transaction ID).',
+          pro_license_line3: 'You can also donate from the <b>Sponsors</b> and <b>Fund me</b> sections below.',
+          pro_license_line4: 'Donations: <b>10€</b> = contributors names in the card; <b>50€</b> = priority for personal features. Always contact <b>luminaenergycard@gmail.com</b> or via Telegram group. Also check your <b>SPAM</b> folder.',
+          follow_title: 'Community',
+          telegram_button: 'Telegram Group',
+          tiktok_button: 'TikTok Channel',
+          fundraiser_title: 'Support',
+          support_email: 'luminaenergycard@gmail.com',
+          custom_paid_note: 'For substantial changes or customizations you can contact luminaenergycard@gmail.com. This is a paid service.',
           overlay_image_enabled: { label: 'Enable Overlay Image', helper: 'Enable or disable the custom overlay image (requires PRO authorization).' },
           heat_pump_flow_color: { label: 'Heat Pump Flow Color', helper: 'Color applied to the heat pump flow animation.' },
           heat_pump_text_color: { label: 'Heat Pump Text Color', helper: 'Color applied to the heat pump power text.' },
@@ -10698,6 +11668,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
             { value: 'dots', label: 'Dots' },
             { value: 'arrows', label: 'Arrows' },
             { value: 'shimmer', label: 'Shimmer' }
+          ],
+          performance_modes: [
+            { value: 'auto', label: 'Auto' },
+            { value: 'high', label: 'High' },
+            { value: 'balanced', label: 'Balanced' },
+            { value: 'low', label: 'Low' }
           ]
         }
       ,
@@ -10714,7 +11690,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Lingua', helper: 'Seleziona la lingua dell editor.' },
           installation_type: { title: 'Tipo di Impianto', helper: 'Seleziona il tipo di impianto per configurare la scheda di conseguenza.' },
-          license_info: { title: 'Info Licenza', helper: 'Gestisci la tua licenza PRO. Visualizza il tuo ID installazione, controlla lo stato della licenza e richiedi una nuova licenza.' },
           general: { title: 'Impostazioni generali', helper: 'Titolo scheda, sfondo e frequenza di aggiornamento.' },
           array1: { title: 'Array 1', helper: 'Configura le entita dell Array PV 1.' },
           array2: { title: 'Array 2', helper: 'Se il Sensore PV Totale (Inverter 2) è impostato o i valori delle Stringhe PV sono forniti, Array 2 diventerà attivo e abiliterà il secondo inverter. Devi anche abilitare il Sensore Produzione Giornaliera (Array 2) e il Carico Casa (Inverter 2).' },
@@ -10734,13 +11709,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           animation_styles: { title: 'Stili Animazioni', helper: 'Stile animazione flussi (tratteggi, punti, frecce, shimmer). Predefinito: shimmer.' },
           typography: { title: 'Tipografia', helper: 'Regola le dimensioni dei caratteri utilizzate nella scheda.' },
           flow_path_custom: { title: 'Percorsi Flussi Personalizzati', helper: 'Personalizza i percorsi dei flussi modificando le stringhe SVG. Lascia vuoto per usare i percorsi predefiniti. Puoi combinare percorsi personalizzati con gli offset della sezione Percorso Flussi.' },
-          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ FUNZIONI PRO: Funzioni premium incluse immagini overlay, flussi personalizzati e testi personalizzati. Per sbloccare: invia 1€ a PayPal (3dprint8616@gmail.com) con la tua email nel messaggio.' },
+          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ FUNZIONI PRO: Funzioni premium incluse immagini overlay, flussi personalizzati e testi personalizzati. Per sbloccare: invia 5€ come DONAZIONE a PayPal (3dprint8616@gmail.com) e poi richiedi la licenza tramite il form (email, email di pagamento PayPal, ID transazione). Puoi donare anche da Sponsor/Fund me.' },
           layout: { title: 'Layout & Posizioni Testi', helper: 'I cursori mostrano X, Y in pixel esatti e angoli (°). Step 1 per valori precisi—annotali per la YAML definitiva. ViewBox 800×450. Salva e controlla la dashboard. YAML: dev_text_*_x, _y, _rotate, _skewX, _skewY, _scaleX, _scaleY.' },
           socBar: { title: 'Barra SOC', helper: 'Barra a 6 segmenti sulla batteria. Posizione, opacità, alone, colori.' },
           gridBox: { title: 'Riquadro Rete', helper: 'Riquadro in alto a destra: Import/Export rete + totali giornalieri. Posizione e dimensioni.' },
           pvBox: { title: 'Riquadro PV', helper: 'Riquadro in alto a sinistra: PV Totale (somma array) + Produzione giornaliera. Posizione e dimensioni.' },
           batteryFill: { title: 'Posizione Fill Batteria', helper: 'I cursori mostrano coordinate (px) e angoli (°) esatti. Annota i valori per la YAML definitiva. YAML: dev_battery_fill_x, _y_base, _width, _max_height, _rotate, _skew_x, _skew_y.' },
-          overlay_image: { title: 'Immagine Overlay', helper: '⚠️ FUNZIONE PRO: Aggiungi fino a 5 immagini PNG personalizzate sovrapposte alla card (auto, piscine, turbine, ecc.). Ogni immagine ha controlli indipendenti per posizione (X/Y), dimensione (larghezza/altezza) e opacità. Perfetto per aggiungere elementi visivi realistici al tuo dashboard energetico. Esempi inclusi: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. Per sbloccare: invia 1€ a PayPal (3dprint8616@gmail.com) con la tua email.' },
+          overlay_image: { title: 'Immagine Overlay', helper: '⚠️ FUNZIONE PRO: Aggiungi fino a 5 immagini PNG personalizzate sovrapposte alla card (auto, piscine, turbine, ecc.). Ogni immagine ha controlli indipendenti per posizione (X/Y), dimensione (larghezza/altezza) e opacità. Perfetto per aggiungere elementi visivi realistici al tuo dashboard energetico. Esempi inclusi: car.png, car_real.png, Pool.png, pool_real.png, turbine.png. Per sbloccare: invia 5€ a PayPal (3dprint8616@gmail.com) con la tua email.' },
           custom_flows: { title: 'Flussi Personalizzati', helper: 'Crea fino a 5 flussi di energia animati aggiuntivi con sensori, percorsi SVG, colori e soglie di attivazione personalizzati. Ogni flusso può avere posizioni sorgente/destinazione indipendenti, colori linea, effetti glow e soglie di potenza. Perfetto per visualizzare carichi personalizzati (pompa piscina, pompa di calore, caricatore EV, ecc.) o sorgenti energetiche aggiuntive. I flussi si animano automaticamente quando i valori del sensore superano la soglia.' },
           custom_text: { title: 'Testo Personalizzato', helper: 'Aggiungi fino a 5 etichette di testo personalizzate ovunque sulla card. Ogni testo può mostrare: etichette statiche, valori sensore (con unità), o entrambi combinati. Configura posizione (X/Y), colore, dimensione carattere e formato. Perfetto per mostrare dati aggiuntivi come temperature, umidità, consumo energetico o messaggi di stato personalizzati sul tuo dashboard energetico.' },
           about: { title: 'Informazioni', helper: 'Crediti, versione e link utili.' }
@@ -10785,6 +11760,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           language: { label: 'Lingua', helper: 'Seleziona la lingua dell editor.' },
           display_unit: { label: 'Unita di visualizzazione', helper: 'Unita usata per i valori di potenza.' },
           update_interval: { label: 'Intervallo di aggiornamento', helper: 'Frequenza di aggiornamento della scheda (0 disattiva il limite).' },
+          performance_mode: { label: 'Modalità performance', helper: 'Auto = bilanciata. Low riduce la CPU limitando le animazioni. High = più fluida ma più pesante.' },
           animation_speed_factor: { label: 'Fattore velocita animazioni', helper: 'Regola il moltiplicatore (-3x a 3x). Usa 0 per mettere in pausa; valori negativi invertono il flusso.' },
           animation_style: { label: 'Stile animazione', helper: 'Scegli il motivo dei flussi (tratteggi, punti, frecce o shimmer).' },
           flow_stroke_width: { label: 'Larghezza tratto flusso (px)', helper: 'Override opzionale per la larghezza del tratto animato (nessuna modifica SVG). Lascia vuoto per mantenere i default SVG.' },
@@ -10819,6 +11795,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_bat4_soc: { label: 'Batteria 4 SOC' },
           sensor_bat4_power: { label: 'Batteria 4 potenza' },
           battery_power_mode: { label: 'Modalità potenza batteria', helper: 'Flow: sensore unico con segno (+ = carica → batteria, - = scarica → inverter). Carica+Scarica: sensori separati; carica = flusso verso batteria, scarica = flusso verso inverter.' },
+          battery_overlay_enabled: { label: 'Abilita overlay batteria + barra SOC', helper: 'Se OFF, i campi entità batteria sono bloccati. Se ON, mostra l’immagine batteria e abilita la barra SOC a 6 segmenti sopra. Immagine automatica: battery.png (Olografica) / battery_real.png (Reale).' },
+          battery_overlay_image: { label: 'Percorso immagine overlay batteria', helper: 'Override opzionale. Lascia vuoto per selezione automatica in base allo stile immagine.' },
+          battery_overlay_x: { label: 'Overlay batteria X (px)', helper: 'Posizione orizzontale dell’overlay batteria. Default dipende dallo stile immagine.' },
+          battery_overlay_y: { label: 'Overlay batteria Y (px)', helper: 'Posizione verticale dell’overlay batteria. Default dipende dallo stile immagine.' },
+          battery_overlay_width: { label: 'Overlay batteria larghezza (px)', helper: 'Larghezza dell’overlay batteria. Default dipende dallo stile immagine.' },
+          battery_overlay_height: { label: 'Overlay batteria altezza (px)', helper: 'Altezza dell’overlay batteria. Default dipende dallo stile immagine.' },
+          battery_overlay_opacity: { label: 'Overlay batteria opacità', helper: 'Opacità dell’overlay batteria (0–1).' },
           sensor_battery_flow: { label: 'Batteria Flow (con segno)', helper: 'Opzionale. Sensore potenza unico: positivo = carica (flusso verso batteria), negativo = scarica (flusso verso inverter). Usato in modalità Flow. Se vuoto, si usano Bat 1–4 Potenza.' },
           sensor_battery_charge: { label: 'Batteria carica', helper: 'Sensore potenza in carica. Flusso verso batteria. Usato in modalità Carica+Scarica.' },
           sensor_battery_discharge: { label: 'Batteria scarica', helper: 'Sensore potenza in scarica. Flusso verso inverter. Usato in modalità Carica+Scarica.' },
@@ -10905,6 +11888,23 @@ class LuminaEnergyCardEditor extends HTMLElement {
             car2_invert_flow: { label: 'Inverti Flusso Auto 2', helper: 'Inverte la direzione del flusso per l\'Auto 2. Utile se la polarità del sensore è invertita.' },
             array1_invert_flow: { label: 'Inverti Flusso Array 1', helper: 'Inverte la direzione del flusso per l\'Array 1 (PV1). Utile se la polarità del sensore è invertita.' },
             array2_invert_flow: { label: 'Inverti Flusso Array 2', helper: 'Inverte la direzione del flusso per l\'Array 2 (PV2). Utile se la polarità del sensore è invertita.' },
+            heat_pump_invert_flow: { label: 'Inverti Flusso Pompa di Calore', helper: 'Inverte la direzione del flusso della pompa di calore. Utile se la polarità del sensore è invertita.' },
+            pro_debug_grid: { label: 'Abilita griglia di posizionamento (PRO)', helper: 'Mostra una griglia a schermo + coordinate per posizionare i testi con più precisione (tool PRO).' },
+            custom_text_1_rotate: { label: 'Testo 1: Rotazione (°)', helper: 'Angolo di rotazione per Testo 1 (-180..180).' },
+            custom_text_1_skew_x: { label: 'Testo 1: Inclinazione X (°)', helper: 'Angolo di inclinazione (skew) sull’asse X (-60..60).' },
+            custom_text_1_skew_y: { label: 'Testo 1: Inclinazione Y (°)', helper: 'Angolo di inclinazione (skew) sull’asse Y (-60..60).' },
+            custom_text_2_rotate: { label: 'Testo 2: Rotazione (°)', helper: 'Angolo di rotazione per Testo 2 (-180..180).' },
+            custom_text_2_skew_x: { label: 'Testo 2: Inclinazione X (°)', helper: 'Angolo di inclinazione (skew) sull’asse X (-60..60).' },
+            custom_text_2_skew_y: { label: 'Testo 2: Inclinazione Y (°)', helper: 'Angolo di inclinazione (skew) sull’asse Y (-60..60).' },
+            custom_text_3_rotate: { label: 'Testo 3: Rotazione (°)', helper: 'Angolo di rotazione per Testo 3 (-180..180).' },
+            custom_text_3_skew_x: { label: 'Testo 3: Inclinazione X (°)', helper: 'Angolo di inclinazione (skew) sull’asse X (-60..60).' },
+            custom_text_3_skew_y: { label: 'Testo 3: Inclinazione Y (°)', helper: 'Angolo di inclinazione (skew) sull’asse Y (-60..60).' },
+            custom_text_4_rotate: { label: 'Testo 4: Rotazione (°)', helper: 'Angolo di rotazione per Testo 4 (-180..180).' },
+            custom_text_4_skew_x: { label: 'Testo 4: Inclinazione X (°)', helper: 'Angolo di inclinazione (skew) sull’asse X (-60..60).' },
+            custom_text_4_skew_y: { label: 'Testo 4: Inclinazione Y (°)', helper: 'Angolo di inclinazione (skew) sull’asse Y (-60..60).' },
+            custom_text_5_rotate: { label: 'Testo 5: Rotazione (°)', helper: 'Angolo di rotazione per Testo 5 (-180..180).' },
+            custom_text_5_skew_x: { label: 'Testo 5: Inclinazione X (°)', helper: 'Angolo di inclinazione (skew) sull’asse X (-60..60).' },
+            custom_text_5_skew_y: { label: 'Testo 5: Inclinazione Y (°)', helper: 'Angolo di inclinazione (skew) sull’asse Y (-60..60).' },
           car_pct_color: { label: 'Colore SOC auto', helper: 'Colore esadecimale per il testo SOC EV (es. #00FFFF).' },
           car2_pct_color: { label: 'Colore SOC Auto 2', helper: 'Colore esadecimale per il testo SOC della seconda EV (usa Car SOC se vuoto).' },
           car1_name_color: { label: 'Colore nome Auto 1', helper: 'Colore applicato all etichetta del nome Auto 1.' },
@@ -10912,22 +11912,41 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Colore Auto 1', helper: 'Colore applicato al valore potenza Auto 1.' },
           car2_color: { label: 'Colore Auto 2', helper: 'Colore applicato al valore potenza Auto 2.' },
           pro_password: { label: 'Password PRO', helper: '⚠️ FUNZIONE PRO: Questa è una funzione premium.' },
-          paypal_button: 'Sblocca Funzioni PRO (1€)',
-          paypal_note: 'IMPORTANTE: Invia SOLO come DONAZIONE. NON usare pagamento beni e servizi. Inserisci la tua EMAIL nelle note PayPal per ricevere la password.',
-          // License Info section fields
-          your_installation_id: 'Il tuo ID Installazione',
-          copy_id: 'Copia',
-          id_copied: 'Copiato!',
-          license_status: 'Stato Licenza',
-          license_active: 'Attiva',
-          license_inactive: 'Non attiva',
+          paypal_button: 'Sblocca Funzioni PRO (5€)',
+          paypal_note: 'IMPORTANTE: Invia SOLO come DONAZIONE. NON usare pagamento beni e servizi. Dopo il pagamento, richiedi la licenza PRO qui sotto (email, email di pagamento PayPal, ID transazione).',
+          unlock_pro_features: 'Sblocca Funzioni PRO',
+          activate: 'Attiva',
+          checking: 'Verifica...',
           request_pro_license: 'Richiedi Licenza PRO',
-          your_email: 'La tua Email',
+          your_email: 'La tua email',
+          paypal_payment_email: 'Email di pagamento PayPal',
           paypal_transaction_id: 'ID Transazione PayPal',
-          send_request: 'Invia Richiesta',
+          send_request: 'Invia richiesta',
           request_sent: 'Richiesta inviata! Riceverai la licenza via email.',
-          request_error: 'Errore nell\'invio. Riprova.',
-          license_instructions: 'Per ottenere una licenza PRO: 1) Copia il tuo ID Installazione sopra, 2) Invia 1€ a PayPal (3dprint8616@gmail.com), 3) Inserisci la tua email e l\'ID transazione PayPal qui sotto, 4) Clicca Invia Richiesta.',
+          request_error: 'Errore durante l’invio. Riprova.',
+          existing_user_title: 'Hai già acquistato in passato?',
+          existing_user_desc: 'Se hai già pagato in passato, richiedi l’upgrade gratuito inserendo il tuo vecchio ID transazione.',
+          support_contact: 'Per qualsiasi problema scrivi a: luminaenergycard@gmail.com',
+          request_migration: 'Richiedi upgrade gratuito',
+          migration_sent: 'Richiesta upgrade inviata! Riceverai la nuova password via email.',
+          pro_password_placeholder: 'Inserisci la tua password PRO',
+          your_email_placeholder: 'tuo@email.com',
+          paypal_payment_email_placeholder: 'paypal@email.com',
+          paypal_transaction_id_placeholder: 'es. 1AB23456CD789012E',
+          fill_all_fields: 'Compila tutti i campi.',
+          password_ok: '✓ Password accettata. PRO attivo.',
+          password_bad: '❌ Password non valida. Controlla e riprova.',
+          pro_license_title: '💰 Licenza PRO',
+          pro_license_line1: 'Invia <b>5€ come DONAZIONE</b> su PayPal: <b>3dprint8616@gmail.com</b>',
+          pro_license_line2: 'Poi compila il form sotto (email, email di pagamento PayPal, ID transazione).',
+          pro_license_line3: 'Le donazioni si possono fare anche nella sezione Sponsor e Fund me qui sotto.',
+          pro_license_line4: 'Donazioni: <b>10€</b> = nomi dei contributori nella card; <b>50€</b> = priorità per funzionalità personali. Contattare sempre <b>luminaenergycard@gmail.com</b> o tramite gruppo Telegram. Controlla anche lo <b>SPAM</b>.',
+          follow_title: 'Community',
+          telegram_button: 'Gruppo Telegram',
+          tiktok_button: 'Canale TikTok',
+          fundraiser_title: 'Supporto',
+          support_email: 'luminaenergycard@gmail.com',
+          custom_paid_note: 'Per modifiche sostanziali o personalizzazioni puoi contattare luminaenergycard@gmail.com. Il servizio è a pagamento.',
           overlay_image_enabled: { label: 'Abilita immagine overlay', helper: 'Abilita o disabilita l immagine overlay personalizzata (richiede autorizzazione PRO).' },
           heat_pump_flow_color: { label: 'Colore flusso pompa di calore', helper: 'Colore applicato all animazione del flusso della pompa di calore.' },
           heat_pump_text_color: { label: 'Colore testo pompa di calore', helper: 'Colore applicato al testo della potenza della pompa di calore.' },
@@ -11113,6 +12132,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
             { value: 'dots', label: 'Punti' },
             { value: 'arrows', label: 'Frecce' },
             { value: 'shimmer', label: 'Scintillio' }
+          ],
+          performance_modes: [
+            { value: 'auto', label: 'Auto' },
+            { value: 'high', label: 'Alto' },
+            { value: 'balanced', label: 'Bilanciato' },
+            { value: 'low', label: 'Basso' }
           ]
         }
       ,
@@ -11129,7 +12154,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Sprache', helper: 'Editor-Sprache waehlen.' },
           installation_type: { title: 'Installationstyp', helper: 'Wählen Sie Ihren Installationstyp, um die Karte entsprechend zu konfigurieren.' },
-          license_info: { title: 'Lizenz-Info', helper: 'Verwalten Sie Ihre PRO-Lizenz. Zeigen Sie Ihre Installations-ID an, prüfen Sie den Lizenzstatus und fordern Sie eine neue Lizenz an.' },
           general: { title: 'Allgemeine Einstellungen', helper: 'Kartentitel, Hintergrund und Aktualisierungsintervall.' },
           array1: { title: 'Array 1', helper: 'PV Array 1 Entitaeten konfigurieren.' },
           array2: { title: 'Array 2', helper: 'Wenn der PV-Gesamtsensor (WR 2) gesetzt ist oder die PV-String-Werte bereitgestellt werden, wird Array 2 aktiviert und der zweite Wechselrichter aktiviert. Sie müssen auch den Tagesproduktionssensor (Array 2) und die Hauslast (WR 2) aktivieren.' },
@@ -11149,7 +12173,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           animation_styles: { title: 'Animationsstile', helper: 'Fluss-Animationsstil (Striche, Punkte, Pfeile, Shimmer). Standard: Shimmer.' },
           typography: { title: 'Typografie', helper: 'Schriftgroessen der Karte feinjustieren.' },
           flow_path_custom: { title: 'Benutzerdefinierte Flusspfade', helper: 'Passen Sie die Flusspfade an, indem Sie SVG-Pfadzeichenfolgen ändern. Leer lassen, um Standardpfade zu verwenden. Sie können benutzerdefinierte Pfade mit Offsets aus dem Fluss-Pfad-Bereich kombinieren.' },
-          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO-FUNKTIONEN: Premium-Funktionen einschließlich Overlay-Bilder, benutzerdefinierte Flüsse und benutzerdefinierte Texte. Zum Freischalten: senden Sie 1€ an PayPal (3dprint8616@gmail.com) mit Ihrer E-Mail-Adresse in der Nachricht.' },
+          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO-FUNKTIONEN: Premium-Funktionen einschließlich Overlay-Bilder, benutzerdefinierte Flüsse und benutzerdefinierte Texte. Zum Freischalten: senden Sie 5€ als SPENDE an PayPal (3dprint8616@gmail.com) und fordern Sie anschließend die Lizenz über das Formular an (E-Mail, PayPal Zahlungs-E-Mail, Transaktions-ID). Spenden auch via Sponsors/Fund me möglich.' },
           layout: { title: 'Layout & Textpositionen', helper: 'Schieberegler zeigen exakte X, Y (px) und Winkel (°). Step 1 für präzise Werte—notieren für definitive YAML. ViewBox 800×450. Speichern und Dashboard prüfen. YAML: dev_text_*_x, _y, _rotate, _skewX, _skewY, _scaleX, _scaleY.' },
           socBar: { title: 'SOC-Balken', helper: '6-Segment-Balken an der Batterie. Position, Deckkraft, Leuchten, Farben.' },
           gridBox: { title: 'Netz-Box', helper: 'Box oben rechts: Import/Export + Tageswerte. Position und Größe.' },
@@ -11199,6 +12223,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           language: { label: 'Sprache', helper: 'Editor-Sprache waehlen.' },
           display_unit: { label: 'Anzeigeeinheit', helper: 'Einheit fuer Leistungswerte.' },
           update_interval: { label: 'Aktualisierungsintervall', helper: 'Aktualisierungsfrequenz der Karte (0 deaktiviert das Limit).' },
+          performance_mode: { label: 'Performance-Modus', helper: 'Auto = standardmäßig ausgewogen. Low reduziert CPU durch Drosselung der Animationen. High = am flüssigsten aber schwerer.' },
           animation_speed_factor: { label: 'Animationsgeschwindigkeit', helper: 'Animationsfaktor zwischen -3x und 3x. 0 pausiert, negative Werte kehren den Fluss um.' },
           animation_style: { label: 'Animationsstil', helper: 'Motiv der Flussanimation waehlen (Striche, Punkte, Pfeile oder flüssiger Fluss).' },
           fluid_flow_outer_glow: { label: 'Fluid Flow Outer Glow', helper: 'Aktiviert die zusätzliche äußere Halo/Glühen-Schicht für animation_style: fluid_flow.' },
@@ -11256,6 +12281,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_bat4_soc: { label: 'Batterie 4 SOC' },
           sensor_bat4_power: { label: 'Batterie 4 Leistung' },
           battery_power_mode: { label: 'Batterie-Leistungsmodus', helper: 'Flow: ein Sensor mit Vorzeichen (+ = Laden → Batterie, - = Entladen → Wechselrichter). Laden+Entladen: getrennte Sensoren; Laden = Fluss zur Batterie, Entladen = Fluss zum Wechselrichter.' },
+          battery_overlay_enabled: { label: 'Batterie-Overlay + SOC-Balken aktivieren', helper: 'Wenn AUS, sind die Batterie-Entitätsfelder gesperrt. Wenn EIN, wird das Batterie-Overlay angezeigt und der 6-Segment-SOC-Balken darüber aktiviert. Automatisches Bild: battery.png (Holografisch) / battery_real.png (Real).' },
+          battery_overlay_image: { label: 'Pfad Batterie-Overlay-Bild', helper: 'Optionales Override. Leer lassen für automatische Auswahl je nach Bildstil.' },
+          battery_overlay_x: { label: 'Batterie-Overlay X (px)', helper: 'Horizontale Position des Batterie-Overlays. Standard hängt vom Bildstil ab.' },
+          battery_overlay_y: { label: 'Batterie-Overlay Y (px)', helper: 'Vertikale Position des Batterie-Overlays. Standard hängt vom Bildstil ab.' },
+          battery_overlay_width: { label: 'Batterie-Overlay Breite (px)', helper: 'Breite des Batterie-Overlays. Standard hängt vom Bildstil ab.' },
+          battery_overlay_height: { label: 'Batterie-Overlay Höhe (px)', helper: 'Höhe des Batterie-Overlays. Standard hängt vom Bildstil ab.' },
+          battery_overlay_opacity: { label: 'Batterie-Overlay Deckkraft', helper: 'Deckkraft des Batterie-Overlays (0–1).' },
           sensor_battery_flow: { label: 'Batterie Flow (vorzeichenbehaftet)', helper: 'Optional. Ein Leistungssensor: positiv = Laden (Fluss zur Batterie), negativ = Entladen (Fluss zum Wechselrichter). Modus Flow. Wenn leer: Bat 1–4 Leistung.' },
           sensor_battery_charge: { label: 'Batterie Laden', helper: 'Leistungssensor beim Laden. Fluss zur Batterie. Modus Laden+Entladen.' },
           sensor_battery_discharge: { label: 'Batterie Entladen', helper: 'Leistungssensor beim Entladen. Fluss zum Wechselrichter. Modus Laden+Entladen.' },
@@ -11340,6 +12372,25 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_bidirectional: { label: 'Bidirektionale Kapazität Auto 2', helper: 'Aktivieren, wenn Auto 2 V2X-Fähigkeit hat (kann wie eine Hausbatterie laden und entladen).' },
           car1_invert_flow: { label: 'Fluss umkehren Auto 1', helper: 'Kehrt die Flussrichtung für Auto 1 um. Nützlich, wenn die Sensorpolarität umgekehrt ist.' },
           car2_invert_flow: { label: 'Fluss umkehren Auto 2', helper: 'Kehrt die Flussrichtung für Auto 2 um. Nützlich, wenn die Sensorpolarität umgekehrt ist.' },
+          array1_invert_flow: { label: 'Fluss umkehren Array 1', helper: 'Kehrt die Flussrichtung für Array 1 (PV1) um. Nützlich, wenn die Sensorpolarität umgekehrt ist.' },
+          array2_invert_flow: { label: 'Fluss umkehren Array 2', helper: 'Kehrt die Flussrichtung für Array 2 (PV2) um. Nützlich, wenn die Sensorpolarität umgekehrt ist.' },
+          heat_pump_invert_flow: { label: 'Fluss umkehren Wärmepumpe', helper: 'Kehrt die Flussrichtung der Wärmepumpe um. Nützlich, wenn die Sensorpolarität umgekehrt ist.' },
+          pro_debug_grid: { label: 'Positionierungsraster aktivieren (PRO)', helper: 'Zeigt ein Raster + Koordinaten auf dem Bildschirm, um Texte präziser zu positionieren (PRO-Tool).' },
+          custom_text_1_rotate: { label: 'Text 1: Drehung (°)', helper: 'Drehwinkel für Text 1 (-180..180).' },
+          custom_text_1_skew_x: { label: 'Text 1: Scherung X (°)', helper: 'Scherwinkel für Text 1 auf X-Achse (-60..60).' },
+          custom_text_1_skew_y: { label: 'Text 1: Scherung Y (°)', helper: 'Scherwinkel für Text 1 auf Y-Achse (-60..60).' },
+          custom_text_2_rotate: { label: 'Text 2: Drehung (°)', helper: 'Drehwinkel für Text 2 (-180..180).' },
+          custom_text_2_skew_x: { label: 'Text 2: Scherung X (°)', helper: 'Scherwinkel für Text 2 auf X-Achse (-60..60).' },
+          custom_text_2_skew_y: { label: 'Text 2: Scherung Y (°)', helper: 'Scherwinkel für Text 2 auf Y-Achse (-60..60).' },
+          custom_text_3_rotate: { label: 'Text 3: Drehung (°)', helper: 'Drehwinkel für Text 3 (-180..180).' },
+          custom_text_3_skew_x: { label: 'Text 3: Scherung X (°)', helper: 'Scherwinkel für Text 3 auf X-Achse (-60..60).' },
+          custom_text_3_skew_y: { label: 'Text 3: Scherung Y (°)', helper: 'Scherwinkel für Text 3 auf Y-Achse (-60..60).' },
+          custom_text_4_rotate: { label: 'Text 4: Drehung (°)', helper: 'Drehwinkel für Text 4 (-180..180).' },
+          custom_text_4_skew_x: { label: 'Text 4: Scherung X (°)', helper: 'Scherwinkel für Text 4 auf X-Achse (-60..60).' },
+          custom_text_4_skew_y: { label: 'Text 4: Scherung Y (°)', helper: 'Scherwinkel für Text 4 auf Y-Achse (-60..60).' },
+          custom_text_5_rotate: { label: 'Text 5: Drehung (°)', helper: 'Drehwinkel für Text 5 (-180..180).' },
+          custom_text_5_skew_x: { label: 'Text 5: Scherung X (°)', helper: 'Scherwinkel für Text 5 auf X-Achse (-60..60).' },
+          custom_text_5_skew_y: { label: 'Text 5: Scherung Y (°)', helper: 'Scherwinkel für Text 5 auf Y-Achse (-60..60).' },
           car_pct_color: { label: 'Farbe fuer SOC', helper: 'Hex Farbe fuer EV SOC Text (z. B. #00FFFF).' },
           car2_pct_color: { label: 'Farbe SOC Auto 2', helper: 'Hex Farbe fuer SOC Text des zweiten Fahrzeugs (faellt auf Car SOC zurueck).' },
           car1_name_color: { label: 'Farbe Name Auto 1', helper: 'Farbe fuer die Bezeichnung von Fahrzeug 1.' },
@@ -11347,22 +12398,41 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Farbe Auto 1', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 1.' },
           car2_color: { label: 'Farbe Auto 2', helper: 'Farbe fuer die Leistungsanzeige von Fahrzeug 2.' },
           pro_password: { label: 'PRO-Passwort', helper: '⚠️ PRO-FUNKTION: Dies ist eine Premium-Funktion.' },
-          // License Info section fields
-          your_installation_id: 'Ihre Installations-ID',
-          copy_id: 'Kopieren',
-          id_copied: 'Kopiert!',
-          license_status: 'Lizenzstatus',
-          license_active: 'Aktiv',
-          license_inactive: 'Inaktiv',
+          paypal_button: 'PRO-Funktionen freischalten (5€)',
+          paypal_note: 'WICHTIG: Nur als SPENDE senden. Nicht „Waren & Dienstleistungen“ nutzen. Nach der Zahlung unten die PRO-Lizenz anfordern (E-Mail, PayPal Zahlungs-E-Mail, Transaktions-ID).',
+          unlock_pro_features: 'PRO-Funktionen freischalten',
+          activate: 'Aktivieren',
+          checking: 'Prüfe...',
           request_pro_license: 'PRO-Lizenz anfordern',
-          your_email: 'Ihre E-Mail',
+          your_email: 'Deine E-Mail',
+          paypal_payment_email: 'PayPal Zahlungs-E-Mail',
           paypal_transaction_id: 'PayPal Transaktions-ID',
           send_request: 'Anfrage senden',
-          request_sent: 'Anfrage gesendet! Sie erhalten Ihre Lizenz per E-Mail.',
+          request_sent: 'Anfrage gesendet! Du erhältst die Lizenz per E-Mail.',
           request_error: 'Fehler beim Senden. Bitte erneut versuchen.',
-          license_instructions: 'Um eine PRO-Lizenz zu erhalten: 1) Kopieren Sie Ihre Installations-ID, 2) Senden Sie 1 Euro an PayPal, 3) Geben Sie Ihre E-Mail und Transaktions-ID ein, 4) Klicken Sie Anfrage senden.',
-          paypal_button: 'PRO-Funktionen freischalten (1€)',
-          paypal_note: 'WICHTIG: Nur als SPENDE senden. Nicht „Waren & Dienstleistungen“ nutzen. Geben Sie Ihre E-MAIL in den PayPal-Notizen an, um das Passwort zu erhalten.',
+          existing_user_title: 'Schon früher gekauft?',
+          existing_user_desc: 'Wenn du früher schon bezahlt hast, fordere ein kostenloses Upgrade mit deiner alten Transaktions-ID an.',
+          support_contact: 'Bei Problemen: luminaenergycard@gmail.com',
+          request_migration: 'Kostenloses Upgrade anfordern',
+          migration_sent: 'Upgrade-Anfrage gesendet! Du erhältst dein neues Passwort per E-Mail.',
+          pro_password_placeholder: 'Gib dein PRO-Passwort ein',
+          your_email_placeholder: 'deine@email.com',
+          paypal_payment_email_placeholder: 'paypal@email.com',
+          paypal_transaction_id_placeholder: 'z. B. 1AB23456CD789012E',
+          fill_all_fields: 'Bitte alle Felder ausfüllen.',
+          password_ok: '✓ Passwort akzeptiert. PRO ist aktiv.',
+          password_bad: '❌ Ungültiges Passwort. Bitte prüfen und erneut versuchen.',
+          pro_license_title: '💰 PRO-Lizenz',
+          pro_license_line1: 'Sende <b>5€ als SPENDE</b> an PayPal: <b>3dprint8616@gmail.com</b>',
+          pro_license_line2: 'Dann fülle das Formular unten aus (<b>E-Mail</b>, <b>PayPal Zahlungs-E-Mail</b>, Transaktions-ID).',
+          pro_license_line3: 'Spenden sind auch über die Bereiche <b>Sponsors</b> und <b>Fund me</b> unten möglich.',
+          pro_license_line4: 'Spenden: <b>10€</b> = Namen der Unterstützer in der Card; <b>50€</b> = Priorität für persönliche Funktionen. Immer kontaktieren: <b>luminaenergycard@gmail.com</b> oder per Telegram-Gruppe. Bitte auch den <b>SPAM</b>-Ordner prüfen.',
+          follow_title: 'Community',
+          telegram_button: 'Telegram-Gruppe',
+          tiktok_button: 'TikTok-Kanal',
+          fundraiser_title: 'Unterstützen',
+          support_email: 'luminaenergycard@gmail.com',
+          custom_paid_note: 'Für größere Änderungen oder Anpassungen kannst du luminaenergycard@gmail.com kontaktieren. Dieser Service ist kostenpflichtig.',
           overlay_image_enabled: { label: 'Overlay-Bild aktivieren', helper: 'Aktivieren oder deaktivieren Sie das benutzerdefinierte Overlay-Bild (erfordert PRO-Autorisierung).' },
           heat_pump_flow_color: { label: 'Waermepumpenfluss Farbe', helper: 'Farbe fuer die Waermepumpenfluss Animation.' },
           heat_pump_text_color: { label: 'Waermepumpentext Farbe', helper: 'Farbe fuer den Waermepumpenleistungstext.' },
@@ -11543,6 +12613,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
             { value: 'dots', label: 'Punkte' },
             { value: 'arrows', label: 'Pfeile' },
             { value: 'shimmer', label: 'Schimmern' }
+          ],
+          performance_modes: [
+            { value: 'auto', label: 'Auto' },
+            { value: 'high', label: 'Hoch' },
+            { value: 'balanced', label: 'Ausgewogen' },
+            { value: 'low', label: 'Niedrig' }
           ]
         }
       ,
@@ -11559,7 +12635,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Langue', helper: 'Choisissez la langue de l éditeur.' },
           installation_type: { title: 'Type d\'installation', helper: 'Sélectionnez votre type d\'installation pour configurer la carte en conséquence.' },
-          license_info: { title: 'Info Licence', helper: 'Gérez votre licence PRO. Affichez votre ID d\'installation, vérifiez le statut de la licence et demandez une nouvelle licence.' },
           general: { title: 'Paramètres généraux', helper: 'Métadonnées de la carte, arrière-plan et fréquence de mise à jour.' },
           array1: { title: 'Array 1', helper: 'Configurer les entités de l Array PV 1.' },
           array2: { title: 'Array 2', helper: 'Si le capteur PV total (Inverseur 2) est défini ou si les valeurs des chaînes PV sont fournies, Array 2 deviendra actif et activera le second onduleur. Vous devez également activer le capteur de production quotidienne (Array 2) et la charge domestique (Inverseur 2).' },
@@ -11579,7 +12654,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           animation_styles: { title: 'Styles d Animation', helper: 'Style d animation des flux (tirets, points, flèches, scintillement). Par défaut: scintillement.' },
           typography: { title: 'Typographie', helper: 'Ajustez les tailles de police utilisées dans la carte.' },
           flow_path_custom: { title: 'Chemins de Flux Personnalisés', helper: 'Personnalisez les chemins de flux en modifiant les chaînes de chemin SVG. Laissez vide pour utiliser les chemins par défaut. Vous pouvez combiner des chemins personnalisés avec les décalages de la section Chemin de Flux.' },
-          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ FONCTIONS PRO : Fonctions premium incluant images overlay, flux personnalisés et textes personnalisés. Pour débloquer : envoyez 1€ à PayPal (3dprint8616@gmail.com) avec votre adresse e-mail dans le message.' },
+          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ FONCTIONS PRO : Fonctions premium incluant images overlay, flux personnalisés et textes personnalisés. Pour débloquer : envoyez 5€ en DON à PayPal (3dprint8616@gmail.com), puis demandez la licence via le formulaire (e-mail, e-mail de paiement PayPal, ID de transaction). Dons aussi via Sponsors/Fund me.' },
           layout: { title: 'Mise en Page & Positions des Textes', helper: 'Curseurs : X, Y en pixels exacts et angles (°). Step 1 pour valeurs précises—notez-les pour votre YAML définitive. Zone 800×450. Enregistrez et vérifiez le tableau de bord. YAML : dev_text_*_x, _y, _rotate, _skewX, _skewY, _scaleX, _scaleY.' },
           socBar: { title: 'Barre SOC', helper: 'Barre à 6 segments sur la batterie. Position, opacité, lueur, couleurs.' },
           gridBox: { title: 'Boîte Réseau', helper: 'Boîte en haut à droite : Import/Export + totaux journaliers. Position et dimensions.' },
@@ -11629,6 +12704,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           language: { label: 'Langue', helper: 'Choisissez la langue de l éditeur.' },
           display_unit: { label: 'Unité d affichage', helper: 'Unité utilisée pour formater les valeurs de puissance.' },
           update_interval: { label: 'Intervalle de mise à jour', helper: 'Fréquence de rafraîchissement des mises à jour de la carte (0 désactive le throttling).' },
+          performance_mode: { label: 'Mode performance', helper: 'Auto = équilibré par défaut. Low réduit le CPU en limitant les animations. High = le plus fluide mais plus lourd.' },
           animation_speed_factor: { label: 'Facteur de vitesse d animation', helper: 'Ajuste le multiplicateur de vitesse d animation (-3x à 3x). Mettre 0 pour pause; les négatifs inversent la direction.' },
           animation_style: { label: 'Style d animation', helper: 'Choisissez le motif d animation des flux (tirets, points, flèches ou flux fluide).' },
           flow_stroke_width: { label: 'Largeur trait flux (px)', helper: 'Override optionnel pour la largeur du trait animé (pas de modification SVG). Laisser vide pour conserver les valeurs par défaut SVG.' },
@@ -11690,6 +12766,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_bat4_soc: { label: 'SOC Batterie 4' },
           sensor_bat4_power: { label: 'Puissance Batterie 4' },
           battery_power_mode: { label: 'Mode puissance batterie', helper: 'Flow : un capteur signé (+ = charge → batterie, - = décharge → onduleur). Charge+Décharge : capteurs séparés ; charge = flux vers batterie, décharge = flux vers onduleur.' },
+          battery_overlay_enabled: { label: 'Activer overlay batterie + barre SOC', helper: 'Si OFF, les champs d’entités batterie sont verrouillés. Si ON, affiche l’image batterie et active la barre SOC à 6 segments au-dessus. Image auto : battery.png (Holographique) / battery_real.png (Réelle).' },
+          battery_overlay_image: { label: 'Chemin image overlay batterie', helper: 'Override optionnel. Laisser vide pour la sélection automatique selon le style d’image.' },
+          battery_overlay_x: { label: 'Overlay batterie X (px)', helper: 'Position horizontale de l’overlay batterie. Le défaut dépend du style d’image.' },
+          battery_overlay_y: { label: 'Overlay batterie Y (px)', helper: 'Position verticale de l’overlay batterie. Le défaut dépend du style d’image.' },
+          battery_overlay_width: { label: 'Overlay batterie largeur (px)', helper: 'Largeur de l’overlay batterie. Le défaut dépend du style d’image.' },
+          battery_overlay_height: { label: 'Overlay batterie hauteur (px)', helper: 'Hauteur de l’overlay batterie. Le défaut dépend du style d’image.' },
+          battery_overlay_opacity: { label: 'Overlay batterie opacité', helper: 'Opacité de l’overlay batterie (0–1).' },
           sensor_battery_flow: { label: 'Batterie Flow (signé)', helper: 'Optionnel. Un capteur puissance : positif = charge (flux vers batterie), négatif = décharge (flux vers onduleur). Mode Flow. Si vide : Bat 1–4 Puissance.' },
           sensor_battery_charge: { label: 'Batterie charge', helper: 'Capteur puissance en charge. Flux vers batterie. Mode Charge+Décharge.' },
           sensor_battery_discharge: { label: 'Batterie décharge', helper: 'Capteur puissance en décharge. Flux vers onduleur. Mode Charge+Décharge.' },
@@ -11773,6 +12856,23 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_invert_flow: { label: 'Inverser Flux Véhicule 2', helper: 'Inverse la direction du flux pour le Véhicule 2. Utile si la polarité du capteur est inversée.' },
           array1_invert_flow: { label: 'Inverser Flux Array 1', helper: 'Inverse la direction du flux pour l\'Array 1 (PV1). Utile si la polarité du capteur est inversée.' },
           array2_invert_flow: { label: 'Inverser Flux Array 2', helper: 'Inverse la direction du flux pour l\'Array 2 (PV2). Utile si la polarité du capteur est inversée.' },
+          heat_pump_invert_flow: { label: 'Inverser Flux Pompe à chaleur', helper: 'Inverse la direction du flux de la pompe à chaleur. Utile si la polarité du capteur est inversée.' },
+          pro_debug_grid: { label: 'Activer la grille de positionnement (PRO)', helper: 'Affiche une grille + coordonnées à l’écran pour positionner les textes plus précisément (outil PRO).' },
+          custom_text_1_rotate: { label: 'Texte 1 : Rotation (°)', helper: 'Angle de rotation pour le Texte 1 (-180..180).' },
+          custom_text_1_skew_x: { label: 'Texte 1 : Inclinaison X (°)', helper: 'Angle d’inclinaison (skew) sur l’axe X (-60..60).' },
+          custom_text_1_skew_y: { label: 'Texte 1 : Inclinaison Y (°)', helper: 'Angle d’inclinaison (skew) sur l’axe Y (-60..60).' },
+          custom_text_2_rotate: { label: 'Texte 2 : Rotation (°)', helper: 'Angle de rotation pour le Texte 2 (-180..180).' },
+          custom_text_2_skew_x: { label: 'Texte 2 : Inclinaison X (°)', helper: 'Angle d’inclinaison (skew) sur l’axe X (-60..60).' },
+          custom_text_2_skew_y: { label: 'Texte 2 : Inclinaison Y (°)', helper: 'Angle d’inclinaison (skew) sur l’axe Y (-60..60).' },
+          custom_text_3_rotate: { label: 'Texte 3 : Rotation (°)', helper: 'Angle de rotation pour le Texte 3 (-180..180).' },
+          custom_text_3_skew_x: { label: 'Texte 3 : Inclinaison X (°)', helper: 'Angle d’inclinaison (skew) sur l’axe X (-60..60).' },
+          custom_text_3_skew_y: { label: 'Texte 3 : Inclinaison Y (°)', helper: 'Angle d’inclinaison (skew) sur l’axe Y (-60..60).' },
+          custom_text_4_rotate: { label: 'Texte 4 : Rotation (°)', helper: 'Angle de rotation pour le Texte 4 (-180..180).' },
+          custom_text_4_skew_x: { label: 'Texte 4 : Inclinaison X (°)', helper: 'Angle d’inclinaison (skew) sur l’axe X (-60..60).' },
+          custom_text_4_skew_y: { label: 'Texte 4 : Inclinaison Y (°)', helper: 'Angle d’inclinaison (skew) sur l’axe Y (-60..60).' },
+          custom_text_5_rotate: { label: 'Texte 5 : Rotation (°)', helper: 'Angle de rotation pour le Texte 5 (-180..180).' },
+          custom_text_5_skew_x: { label: 'Texte 5 : Inclinaison X (°)', helper: 'Angle d’inclinaison (skew) sur l’axe X (-60..60).' },
+          custom_text_5_skew_y: { label: 'Texte 5 : Inclinaison Y (°)', helper: 'Angle d’inclinaison (skew) sur l’axe Y (-60..60).' },
           car_pct_color: { label: 'Couleur SOC Véhicule', helper: 'Couleur hex pour le texte SOC EV (ex. #00FFFF).' },
           car2_pct_color: { label: 'Couleur SOC Véhicule 2', helper: 'Couleur hex pour le SOC du second EV (retourne sur Car SOC si vide).' },
           car1_name_color: { label: 'Couleur nom Véhicule 1', helper: 'Couleur appliquée au libellé du nom du Véhicule 1.' },
@@ -11780,22 +12880,41 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Couleur Véhicule 1', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 1.' },
           car2_color: { label: 'Couleur Véhicule 2', helper: 'Couleur appliquée à la valeur de puissance du Véhicule 2.' },
           pro_password: { label: 'Mot de passe PRO', helper: '⚠️ FONCTION PRO : C est une fonction premium.' },
-          // License Info section fields
-          your_installation_id: 'Votre ID d\'installation',
-          copy_id: 'Copier',
-          id_copied: 'Copié!',
-          license_status: 'Statut de la licence',
-          license_active: 'Active',
-          license_inactive: 'Inactive',
+          paypal_button: 'Débloquer les fonctions PRO (5€)',
+          paypal_note: 'IMPORTANT : Envoyez uniquement en DON. Ne pas utiliser « Biens et services ». Après le paiement, demandez la licence PRO ci-dessous (e-mail, e-mail de paiement PayPal, ID de transaction).',
+          unlock_pro_features: 'Débloquer les fonctions PRO',
+          activate: 'Activer',
+          checking: 'Vérification...',
           request_pro_license: 'Demander une licence PRO',
           your_email: 'Votre e-mail',
+          paypal_payment_email: 'E-mail de paiement PayPal',
           paypal_transaction_id: 'ID de transaction PayPal',
           send_request: 'Envoyer la demande',
-          request_sent: 'Demande envoyée! Vous recevrez votre licence par e-mail.',
-          request_error: 'Erreur lors de l\'envoi. Veuillez réessayer.',
-          license_instructions: 'Pour obtenir une licence PRO: 1) Copiez votre ID d\'installation, 2) Envoyez 1 euro à PayPal, 3) Entrez votre e-mail et ID de transaction ci-dessous, 4) Cliquez sur Envoyer.',
-          paypal_button: 'Débloquer les fonctions PRO (1€)',
-          paypal_note: 'IMPORTANT : Envoyez uniquement en DON. Ne pas utiliser « Biens et services ». Incluez votre E-MAIL dans les notes PayPal pour recevoir le mot de passe.',
+          request_sent: 'Demande envoyée ! Vous recevrez la licence par e-mail.',
+          request_error: 'Erreur lors de l’envoi. Veuillez réessayer.',
+          existing_user_title: 'Déjà acheté auparavant ?',
+          existing_user_desc: 'Si vous avez déjà payé par le passé, demandez une mise à niveau gratuite en indiquant votre ancien ID de transaction.',
+          support_contact: 'Pour tout problème : luminaenergycard@gmail.com',
+          request_migration: 'Demander une mise à niveau gratuite',
+          migration_sent: 'Demande envoyée ! Vous recevrez votre nouveau mot de passe par e-mail.',
+          pro_password_placeholder: 'Entrez votre mot de passe PRO',
+          your_email_placeholder: 'votre@email.com',
+          paypal_payment_email_placeholder: 'paypal@email.com',
+          paypal_transaction_id_placeholder: 'ex. 1AB23456CD789012E',
+          fill_all_fields: 'Veuillez remplir tous les champs.',
+          password_ok: '✓ Mot de passe accepté. PRO est actif.',
+          password_bad: '❌ Mot de passe invalide. Veuillez vérifier et réessayer.',
+          pro_license_title: '💰 Licence PRO',
+          pro_license_line1: 'Envoyez <b>5€ en DON</b> sur PayPal : <b>3dprint8616@gmail.com</b>',
+          pro_license_line2: 'Puis remplissez le formulaire ci-dessous (<b>e-mail</b>, <b>e-mail de paiement PayPal</b>, ID de transaction).',
+          pro_license_line3: 'Vous pouvez aussi faire un don via les sections <b>Sponsors</b> et <b>Fund me</b> ci-dessous.',
+          pro_license_line4: 'Dons : <b>10€</b> = noms des contributeurs dans la carte ; <b>50€</b> = priorité pour des fonctionnalités personnelles. Contactez toujours <b>luminaenergycard@gmail.com</b> ou via le groupe Telegram. Vérifiez aussi le dossier <b>SPAM</b>.',
+          follow_title: 'Communauté',
+          telegram_button: 'Groupe Telegram',
+          tiktok_button: 'Chaîne TikTok',
+          fundraiser_title: 'Soutien',
+          support_email: 'luminaenergycard@gmail.com',
+          custom_paid_note: 'Pour des modifications importantes ou des personnalisations, contactez luminaenergycard@gmail.com. Le service est payant.',
           overlay_image_enabled: { label: 'Activer l image de superposition', helper: 'Activer ou désactiver l image de superposition personnalisée (nécessite une autorisation PRO).' },
           heat_pump_flow_color: { label: 'Couleur flux pompe à chaleur', helper: 'Couleur appliquée à l animation du flux de la pompe à chaleur.' },
           heat_pump_text_color: { label: 'Couleur texte pompe à chaleur', helper: 'Couleur appliquée au texte de puissance de la pompe à chaleur.' },
@@ -11981,6 +13100,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
             { value: 'arrows', label: 'Flèches' },
             { value: 'fluid_flow', label: 'Flux fluide' },
             { value: 'shimmer', label: 'Scintillement' }
+          ],
+          performance_modes: [
+            { value: 'auto', label: 'Auto' },
+            { value: 'high', label: 'Élevé' },
+            { value: 'balanced', label: 'Équilibré' },
+            { value: 'low', label: 'Faible' }
           ]
         }
       ,
@@ -11997,7 +13122,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
         sections: {
           language: { title: 'Taal', helper: 'Kies de taal van de editor.' },
           installation_type: { title: 'Installatietype', helper: 'Selecteer uw installatietype om de kaart dienovereenkomstig te configureren.' },
-          license_info: { title: 'Licentie Info', helper: 'Beheer uw PRO-licentie. Bekijk uw installatie-ID, controleer de licentiestatus en vraag een nieuwe licentie aan.' },
           general: { title: 'Algemene instellingen', helper: 'Metadata van de kaart, achtergrond en update frequentie.' },
           array1: { title: 'Array 1', helper: 'Configureer PV Array 1 entiteiten.' },
           array2: { title: 'Array 2', helper: 'Als de Totale PV sensor (Inverter 2) is ingesteld of de PV String waarden zijn opgegeven, wordt Array 2 actief en wordt de tweede inverter ingeschakeld. U moet ook de Dagelijkse Productie Sensor (Array 2) en Huisbelasting (Inverter 2) inschakelen.' },
@@ -12017,7 +13141,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           animation_styles: { title: 'Animatietijlen', helper: 'Stroom animatiestijl (strepen, stippen, pijlen, glinsteren). Standaard: glinsteren.' },
           typography: { title: 'Typografie', helper: 'Pas de lettergrootte aan gebruikt in de kaart.' },
           flow_path_custom: { title: 'Aangepaste Stroompaden', helper: 'Pas stroompaden aan door SVG-padstrings te wijzigen. Laat leeg om standaardpaden te gebruiken. U kunt aangepaste paden combineren met offsets uit de Stroompad-sectie.' },
-          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO-FUNCTIES: Premium functies inclusief overlay afbeeldingen, aangepaste stromen en aangepaste teksten. Om te ontgrendelen: stuur 1€ naar PayPal (3dprint8616@gmail.com) met uw e-mailadres in het bericht.' },
+          lumina_pro: { title: 'Lumina PRO', helper: '⚠️ PRO-FUNCTIES: Premium functies inclusief overlay afbeeldingen, aangepaste stromen en aangepaste teksten. Om te ontgrendelen: stuur 5€ als DONATIE naar PayPal (3dprint8616@gmail.com) en vraag daarna de licentie aan via het formulier (e-mail, PayPal betaal-e-mail, transactie-ID). Doneren kan ook via Sponsors/Fund me.' },
           layout: { title: 'Layout & Tekstposities', helper: 'Schuifregelaars tonen exacte X, Y (px) en hoeken (°). Step 1 voor precise waarden—noteer voor uw definitieve YAML. ViewBox 800×450. Opslaan en dashboard controleren. YAML: dev_text_*_x, _y, _rotate, _skewX, _skewY, _scaleX, _scaleY.' },
           socBar: { title: 'SOC-balk', helper: '6-segmenten balk op de batterij. Positie, dekking, gloed, kleuren.' },
           gridBox: { title: 'Netwerkbox', helper: 'Box rechtsboven: Import/Export + dagtotalen. Positie en grootte.' },
@@ -12067,6 +13191,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
           language: { label: 'Taal', helper: 'Kies de taal van de editor.' },
           display_unit: { label: 'Weergave eenheid', helper: 'Eenheid gebruikt om kracht waarden te formatteren.' },
           update_interval: { label: 'Update interval', helper: 'Frequentie van kaart updates verversen (0 schakelt throttling uit).' },
+          performance_mode: { label: 'Performance-modus', helper: 'Auto = standaard gebalanceerd. Low verlaagt CPU door animaties te beperken. High = soepelst maar zwaarder.' },
           animation_speed_factor: { label: 'Animatie snelheid factor', helper: 'Pas de animatie snelheid multiplier aan (-3x tot 3x). Stel in op 0 voor pauze; negatieven keren richting om.' },
           animation_style: { label: 'Animatie stijl', helper: 'Kies het patroon voor flow animaties (strepen, stippen, pijlen of shimmer).' },
           flow_stroke_width: { label: 'Flow lijnbreedte (px)', helper: 'Optionele overschrijving voor de geanimeerde flow lijnbreedte (geen SVG-bewerkingen). Laat leeg om SVG-standaardwaarden te behouden.' },
@@ -12128,6 +13253,13 @@ class LuminaEnergyCardEditor extends HTMLElement {
           sensor_bat4_soc: { label: 'Batterij 4 SOC' },
           sensor_bat4_power: { label: 'Batterij 4 vermogen' },
           battery_power_mode: { label: 'Batterij vermogenmodus', helper: 'Flow: enkele sensor met teken (+ = laden → batterij, - = ontladen → omvormer). Laden+Ontladen: aparte sensoren; laden = stroom naar batterij, ontladen = stroom naar omvormer.' },
+          battery_overlay_enabled: { label: 'Batterij-overlay + SOC-balk inschakelen', helper: 'Als UIT, zijn batterij-entityvelden vergrendeld. Als AAN, toont de batterij-overlay en activeert de 6-segment SOC-balk erboven. Automatisch beeld: battery.png (Holografisch) / battery_real.png (Echt).' },
+          battery_overlay_image: { label: 'Pad batterij-overlay afbeelding', helper: 'Optionele override. Laat leeg voor automatische keuze op basis van afbeeldingsstijl.' },
+          battery_overlay_x: { label: 'Batterij-overlay X (px)', helper: 'Horizontale positie van de batterij-overlay. Standaard hangt af van afbeeldingsstijl.' },
+          battery_overlay_y: { label: 'Batterij-overlay Y (px)', helper: 'Verticale positie van de batterij-overlay. Standaard hangt af van afbeeldingsstijl.' },
+          battery_overlay_width: { label: 'Batterij-overlay breedte (px)', helper: 'Breedte van de batterij-overlay. Standaard hangt af van afbeeldingsstijl.' },
+          battery_overlay_height: { label: 'Batterij-overlay hoogte (px)', helper: 'Hoogte van de batterij-overlay. Standaard hangt af van afbeeldingsstijl.' },
+          battery_overlay_opacity: { label: 'Batterij-overlay opacity', helper: 'Doorzichtigheid van de batterij-overlay (0–1).' },
           sensor_battery_flow: { label: 'Batterij Flow (met teken)', helper: 'Optioneel. Enkele vermogenssensor: positief = laden (stroom naar batterij), negatief = ontladen (stroom naar omvormer). Modus Flow. Leeg = Bat 1–4 vermogen.' },
           sensor_battery_charge: { label: 'Batterij laden', helper: 'Vermogenssensor bij laden. Stroom naar batterij. Modus Laden+Ontladen.' },
           sensor_battery_discharge: { label: 'Batterij ontladen', helper: 'Vermogenssensor bij ontladen. Stroom naar omvormer. Modus Laden+Ontladen.' },
@@ -12211,6 +13343,23 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car2_invert_flow: { label: 'Stroom Omkeren Voertuig 2', helper: 'Keert de stroomrichting voor Voertuig 2 om. Handig als de sensorpolariteit omgekeerd is.' },
           array1_invert_flow: { label: 'Stroom Omkeren Array 1', helper: 'Keert de stroomrichting voor Array 1 (PV1) om. Handig als de sensorpolariteit omgekeerd is.' },
           array2_invert_flow: { label: 'Stroom Omkeren Array 2', helper: 'Keert de stroomrichting voor Array 2 (PV2) om. Handig als de sensorpolariteit omgekeerd is.' },
+          heat_pump_invert_flow: { label: 'Stroom Omkeren Warmtepomp', helper: 'Keert de stroomrichting van de warmtepomp om. Handig als de sensorpolariteit omgekeerd is.' },
+          pro_debug_grid: { label: 'Positioneringsraster inschakelen (PRO)', helper: 'Toont een raster + coördinaten op het scherm om teksten nauwkeuriger te positioneren (PRO-tool).' },
+          custom_text_1_rotate: { label: 'Tekst 1: Rotatie (°)', helper: 'Rotatiehoek voor Tekst 1 (-180..180).' },
+          custom_text_1_skew_x: { label: 'Tekst 1: Scheefstand X (°)', helper: 'Skewhoek voor Tekst 1 op X-as (-60..60).' },
+          custom_text_1_skew_y: { label: 'Tekst 1: Scheefstand Y (°)', helper: 'Skewhoek voor Tekst 1 op Y-as (-60..60).' },
+          custom_text_2_rotate: { label: 'Tekst 2: Rotatie (°)', helper: 'Rotatiehoek voor Tekst 2 (-180..180).' },
+          custom_text_2_skew_x: { label: 'Tekst 2: Scheefstand X (°)', helper: 'Skewhoek voor Tekst 2 op X-as (-60..60).' },
+          custom_text_2_skew_y: { label: 'Tekst 2: Scheefstand Y (°)', helper: 'Skewhoek voor Tekst 2 op Y-as (-60..60).' },
+          custom_text_3_rotate: { label: 'Tekst 3: Rotatie (°)', helper: 'Rotatiehoek voor Tekst 3 (-180..180).' },
+          custom_text_3_skew_x: { label: 'Tekst 3: Scheefstand X (°)', helper: 'Skewhoek voor Tekst 3 op X-as (-60..60).' },
+          custom_text_3_skew_y: { label: 'Tekst 3: Scheefstand Y (°)', helper: 'Skewhoek voor Tekst 3 op Y-as (-60..60).' },
+          custom_text_4_rotate: { label: 'Tekst 4: Rotatie (°)', helper: 'Rotatiehoek voor Tekst 4 (-180..180).' },
+          custom_text_4_skew_x: { label: 'Tekst 4: Scheefstand X (°)', helper: 'Skewhoek voor Tekst 4 op X-as (-60..60).' },
+          custom_text_4_skew_y: { label: 'Tekst 4: Scheefstand Y (°)', helper: 'Skewhoek voor Tekst 4 op Y-as (-60..60).' },
+          custom_text_5_rotate: { label: 'Tekst 5: Rotatie (°)', helper: 'Rotatiehoek voor Tekst 5 (-180..180).' },
+          custom_text_5_skew_x: { label: 'Tekst 5: Scheefstand X (°)', helper: 'Skewhoek voor Tekst 5 op X-as (-60..60).' },
+          custom_text_5_skew_y: { label: 'Tekst 5: Scheefstand Y (°)', helper: 'Skewhoek voor Tekst 5 op Y-as (-60..60).' },
           car_pct_color: { label: 'Voertuig SOC kleur', helper: 'Hex kleur voor EV SOC tekst (bijv. #00FFFF).' },
           car2_pct_color: { label: 'Voertuig 2 SOC kleur', helper: 'Hex kleur voor tweede EV SOC (valt terug op Voertuig SOC indien leeg).' },
           car1_name_color: { label: 'Voertuig 1 naam kleur', helper: 'Kleur toegepast op Voertuig 1 naam label.' },
@@ -12218,22 +13367,41 @@ class LuminaEnergyCardEditor extends HTMLElement {
           car1_color: { label: 'Voertuig 1 kleur', helper: 'Kleur toegepast op Voertuig 1 vermogen waarde.' },
           car2_color: { label: 'Voertuig 2 kleur', helper: 'Kleur toegepast op de vermogenswaarde van voertuig 2.' },
           pro_password: { label: 'PRO-wachtwoord', helper: '⚠️ PRO-FUNCTIE: Dit is een premium-functie.' },
-          // License Info section fields
-          your_installation_id: 'Uw Installatie-ID',
-          copy_id: 'Kopiëren',
-          id_copied: 'Gekopieerd!',
-          license_status: 'Licentiestatus',
-          license_active: 'Actief',
-          license_inactive: 'Inactief',
+          paypal_button: 'PRO-functies ontgrendelen (5€)',
+          paypal_note: 'BELANGRIJK: Alleen als DONATIE sturen. Gebruik geen "Goederen en diensten". Vraag na betaling hieronder de PRO-licentie aan (e-mail, PayPal betaal-e-mail, transactie-ID).',
+          unlock_pro_features: 'PRO-functies ontgrendelen',
+          activate: 'Activeren',
+          checking: 'Controleren...',
           request_pro_license: 'PRO-licentie aanvragen',
-          your_email: 'Uw e-mail',
-          paypal_transaction_id: 'PayPal Transactie-ID',
+          your_email: 'Jouw e-mail',
+          paypal_payment_email: 'PayPal betaal-e-mail',
+          paypal_transaction_id: 'PayPal transactie-ID',
           send_request: 'Verzoek verzenden',
-          request_sent: 'Verzoek verzonden! U ontvangt uw licentie per e-mail.',
+          request_sent: 'Verzoek verzonden! Je ontvangt de licentie per e-mail.',
           request_error: 'Fout bij verzenden. Probeer opnieuw.',
-          license_instructions: 'Om een PRO-licentie te krijgen: 1) Kopieer uw Installatie-ID, 2) Stuur 1 euro naar PayPal, 3) Vul uw e-mail en PayPal Transactie-ID hieronder in, 4) Klik op Verzoek verzenden.',
-          paypal_button: 'PRO-functies ontgrendelen (1€)',
-          paypal_note: 'BELANGRIJK: Alleen als DONATIE sturen. Gebruik geen "Goederen en diensten". Vermeld je E-MAIL in de PayPal-notities om het wachtwoord te ontvangen.',
+          existing_user_title: 'Al eerder gekocht?',
+          existing_user_desc: 'Als je in het verleden al hebt betaald, vraag dan een gratis upgrade aan met je oude transactie-ID.',
+          support_contact: 'Bij problemen: luminaenergycard@gmail.com',
+          request_migration: 'Gratis upgrade aanvragen',
+          migration_sent: 'Upgrade-verzoek verzonden! Je ontvangt je nieuwe wachtwoord per e-mail.',
+          pro_password_placeholder: 'Voer je PRO-wachtwoord in',
+          your_email_placeholder: 'jouw@email.com',
+          paypal_payment_email_placeholder: 'paypal@email.com',
+          paypal_transaction_id_placeholder: 'bijv. 1AB23456CD789012E',
+          fill_all_fields: 'Vul alle velden in.',
+          password_ok: '✓ Wachtwoord geaccepteerd. PRO is actief.',
+          password_bad: '❌ Ongeldig wachtwoord. Controleer en probeer opnieuw.',
+          pro_license_title: '💰 PRO-licentie',
+          pro_license_line1: 'Stuur <b>5€ als DONATIE</b> naar PayPal: <b>3dprint8616@gmail.com</b>',
+          pro_license_line2: 'Vul daarna het formulier hieronder in (<b>e-mail</b>, <b>PayPal betaal-e-mail</b>, transactie-ID).',
+          pro_license_line3: 'Doneren kan ook via de secties <b>Sponsors</b> en <b>Fund me</b> hieronder.',
+          pro_license_line4: 'Donaties: <b>10€</b> = namen van bijdragers in de kaart; <b>50€</b> = prioriteit voor persoonlijke functies. Neem altijd contact op met <b>luminaenergycard@gmail.com</b> of via de Telegram-groep. Controleer ook je <b>SPAM</b>.',
+          follow_title: 'Community',
+          telegram_button: 'Telegram-groep',
+          tiktok_button: 'TikTok-kanaal',
+          fundraiser_title: 'Steun',
+          support_email: 'luminaenergycard@gmail.com',
+          custom_paid_note: 'Voor grote wijzigingen of maatwerk kun je contact opnemen via luminaenergycard@gmail.com. Deze service is betaald.',
           overlay_image_enabled: { label: 'Overlay-afbeelding inschakelen', helper: 'Schakel de aangepaste overlay-afbeelding in of uit (vereist PRO-autorisatie).' },
           heat_pump_flow_color: { label: 'Warmtepomp stroom kleur', helper: 'Kleur toegepast op de warmtepomp stroom animatie.' },
           heat_pump_text_color: { label: 'Warmtepomp tekst kleur', helper: 'Kleur toegepast op de warmtepomp vermogen tekst.' },
@@ -12418,6 +13586,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
             { value: 'dots', label: 'Stippen' },
             { value: 'arrows', label: 'Pijlen' },
             { value: 'shimmer', label: 'Glinsteren' }
+          ],
+          performance_modes: [
+            { value: 'auto', label: 'Auto' },
+            { value: 'high', label: 'Hoog' },
+            { value: 'balanced', label: 'Gebalanceerd' },
+            { value: 'low', label: 'Laag' }
           ]
         },
         view: {
@@ -12478,6 +13652,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
     return {
       language: this._getAvailableLanguageOptions(localeStrings),
       display_unit: localeStrings.options.display_units,
+      performance_mode: localeStrings.options.performance_modes,
       animation_style: localeStrings.options.animation_styles,
       layout_fields: {
         solar: layoutFields('solar', 'Solar'),
@@ -12590,6 +13765,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       return popupFields;
     };
     const configWithDefaults = this._configWithDefaults();
+    const imageStyleValue = (configWithDefaults && configWithDefaults.image_style === 'real') ? 'real' : 'holographic';
+    const batteryOverlayDefaults = imageStyleValue === 'real' ? DEFAULT_BATTERY_OVERLAY.real : DEFAULT_BATTERY_OVERLAY.holographic;
+    const batteryOverlayImageDefault = imageStyleValue === 'real' ? DEFAULT_BATTERY_OVERLAY.imageReal : DEFAULT_BATTERY_OVERLAY.imageHolographic;
     const displayUnitValue = (configWithDefaults.display_unit || 'kW').toUpperCase();
     const buildThresholdSelector = () => (
       displayUnitValue === 'KW'
@@ -12620,6 +13798,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
       general: define([
         { name: 'card_title', label: fields.card_title.label, helper: fields.card_title.helper, selector: { text: { mode: 'blur' } } },
         { name: 'display_unit', label: fields.display_unit.label, helper: fields.display_unit.helper, selector: { select: { options: optionDefs.display_unit } } },
+        { name: 'performance_mode', label: (fields.performance_mode && fields.performance_mode.label) || 'Performance Mode', helper: (fields.performance_mode && fields.performance_mode.helper) || 'Auto = balanced by default; Low reduces CPU by throttling animations; High = smoothest but heavier.', selector: { select: { options: optionDefs.performance_mode } }, default: 'auto' },
         { name: 'update_interval', label: fields.update_interval.label, helper: fields.update_interval.helper, selector: { number: { min: 0, max: 60, step: 5, mode: 'slider', unit_of_measurement: 's' } } },
         { name: 'animation_speed_factor', label: fields.animation_speed_factor.label, helper: fields.animation_speed_factor.helper, selector: { number: { min: -3, max: 3, step: 0.25, mode: 'slider', unit_of_measurement: 'x' } } },
         { name: 'enable_text_toggle_button', label: fields.enable_text_toggle_button.label, helper: fields.enable_text_toggle_button.helper, selector: { boolean: {} }, default: true },
@@ -12654,8 +13833,16 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'sensor_daily_array2', label: fields.sensor_daily_array2.label, helper: fields.sensor_daily_array2.helper, selector: entitySelector },
         { name: 'pv_secondary_text_color', label: (fields.pv_secondary_text_color && fields.pv_secondary_text_color.label) || 'Array 2 Text Color', helper: (fields.pv_secondary_text_color && fields.pv_secondary_text_color.helper) || 'Color for Array 2 text labels.', selector: { color_picker: {} }, default: '#00f9f9' },
         { name: 'pv_secondary_font_size', label: (fields.pv_secondary_font_size && fields.pv_secondary_font_size.label) || 'Array 2 Font Size (px)', helper: (fields.pv_secondary_font_size && fields.pv_secondary_font_size.helper) || 'Font size for Array 2 text.', selector: { number: { min: 8, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 12 },
+        { name: 'array2_invert_flow', label: (fields.array2_invert_flow && fields.array2_invert_flow.label) || 'Array 2 Invert Flow', helper: (fields.array2_invert_flow && fields.array2_invert_flow.helper) || 'Invert the flow direction for Array 2 (PV2). Useful if the sensor polarity is reversed.', selector: { boolean: {} }, default: false },
       ]),
       battery: define([
+        { name: 'battery_overlay_enabled', label: (fields.battery_overlay_enabled && fields.battery_overlay_enabled.label) || 'Enable Battery + SOC Overlay', helper: (fields.battery_overlay_enabled && fields.battery_overlay_enabled.helper) || 'Shows the battery overlay (battery.png in Holographic, battery_real.png in Real) and enables the 6-segment SOC bar on top.', selector: { boolean: {} }, default: false },
+        { name: 'battery_overlay_image', label: (fields.battery_overlay_image && fields.battery_overlay_image.label) || 'Battery Overlay Image Path', helper: (fields.battery_overlay_image && fields.battery_overlay_image.helper) || 'Optional override. Leave empty to auto-select based on Image style.', selector: { text: { mode: 'blur' } }, default: batteryOverlayImageDefault },
+        { name: 'battery_overlay_x', label: (fields.battery_overlay_x && fields.battery_overlay_x.label) || 'Battery Overlay X (px)', helper: (fields.battery_overlay_x && fields.battery_overlay_x.helper) || 'Horizontal position (battery overlay). Default depends on Image style.', selector: { number: { min: -800, max: 1600, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: batteryOverlayDefaults.x },
+        { name: 'battery_overlay_y', label: (fields.battery_overlay_y && fields.battery_overlay_y.label) || 'Battery Overlay Y (px)', helper: (fields.battery_overlay_y && fields.battery_overlay_y.helper) || 'Vertical position (battery overlay). Default depends on Image style.', selector: { number: { min: -450, max: 900, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: batteryOverlayDefaults.y },
+        { name: 'battery_overlay_width', label: (fields.battery_overlay_width && fields.battery_overlay_width.label) || 'Battery Overlay Width (px)', helper: (fields.battery_overlay_width && fields.battery_overlay_width.helper) || 'Width (battery overlay). Default depends on Image style.', selector: { number: { min: 1, max: 1600, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: batteryOverlayDefaults.width },
+        { name: 'battery_overlay_height', label: (fields.battery_overlay_height && fields.battery_overlay_height.label) || 'Battery Overlay Height (px)', helper: (fields.battery_overlay_height && fields.battery_overlay_height.helper) || 'Height (battery overlay). Default depends on Image style.', selector: { number: { min: 1, max: 900, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: batteryOverlayDefaults.height },
+        { name: 'battery_overlay_opacity', label: (fields.battery_overlay_opacity && fields.battery_overlay_opacity.label) || 'Battery Overlay Opacity', helper: (fields.battery_overlay_opacity && fields.battery_overlay_opacity.helper) || 'Opacity (battery overlay).', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } }, default: 1.0 },
         { name: 'sensor_bat1_soc', label: fields.sensor_bat1_soc.label, helper: fields.sensor_bat1_soc.helper, selector: entitySelector },
         { name: 'sensor_bat1_power', label: fields.sensor_bat1_power.label, helper: fields.sensor_bat1_power.helper, selector: entitySelector },
         { name: 'sensor_bat2_soc', label: fields.sensor_bat2_soc.label, helper: fields.sensor_bat2_soc.helper, selector: entitySelector },
@@ -12703,6 +13890,7 @@ class LuminaEnergyCardEditor extends HTMLElement {
       ]),
       heatPump: define([
         { name: 'sensor_heat_pump_consumption', label: fields.sensor_heat_pump_consumption.label, helper: fields.sensor_heat_pump_consumption.helper, selector: entitySelector },
+        { name: 'heat_pump_invert_flow', label: (fields.heat_pump_invert_flow && fields.heat_pump_invert_flow.label) || 'Heat Pump Invert Flow', helper: (fields.heat_pump_invert_flow && fields.heat_pump_invert_flow.helper) || 'Invert the heat pump flow direction. Useful if the sensor polarity is reversed.', selector: { boolean: {} }, default: false },
         { name: 'heat_pump_text_color', label: (fields.heat_pump_text_color && fields.heat_pump_text_color.label) || 'Heat Pump Text Color', helper: (fields.heat_pump_text_color && fields.heat_pump_text_color.helper) || 'Color for heat pump text.', selector: { color_picker: {} }, default: '#00f9f9' },
         { name: 'heat_pump_font_size', label: (fields.heat_pump_font_size && fields.heat_pump_font_size.label) || 'Heat Pump Font Size (px)', helper: (fields.heat_pump_font_size && fields.heat_pump_font_size.helper) || 'Font size for heat pump text.', selector: { number: { min: 8, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 12 },
       ]),
@@ -13010,8 +14198,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'dev_pv_box_text_color', label: (fields.dev_pv_box_text_color && fields.dev_pv_box_text_color.label) || 'PV Box Text Color', helper: (fields.dev_pv_box_text_color && fields.dev_pv_box_text_color.helper) || 'Color for all text in PV box. Leave empty to use PV total color.', selector: { color_picker: {} } }
       ]),
       lumina_pro: define([
-      // PRO Password moved to "License Info" section
       { name: 'text_visibility_sensor', label: fields.text_visibility_sensor.label, helper: fields.text_visibility_sensor.helper, selector: motionSensorSelector },
+      { name: 'pro_debug_grid', label: (fields.pro_debug_grid && fields.pro_debug_grid.label) || 'Enable Positioning Grid (PRO)', helper: (fields.pro_debug_grid && fields.pro_debug_grid.helper) || 'Show an on-screen grid + coordinates to position texts more precisely (PRO tool).', selector: { boolean: {} }, default: false },
 
       // Overlay Image fields
       { name: 'overlay_image_enabled', label: (fields.overlay_image_enabled && fields.overlay_image_enabled.label) || 'Enable Overlay Image', helper: (fields.overlay_image_enabled && fields.overlay_image_enabled.helper) || '⚠️ Requires valid PRO password above. Enable or disable the overlay image.', selector: { boolean: {} } },
@@ -13127,6 +14315,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_1_sensor', label: `Text 1: Sensor`, selector: entitySelector },
       { name: 'custom_text_1_x', label: `Text 1: X Position`, selector: { number: { min: 0, max: 800, step: 1, mode: 'slider' } } },
       { name: 'custom_text_1_y', label: `Text 1: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
+      { name: 'custom_text_1_rotate', label: (fields.custom_text_1_rotate && fields.custom_text_1_rotate.label) || `Text 1: Rotation (°)`, helper: (fields.custom_text_1_rotate && fields.custom_text_1_rotate.helper) || 'Rotation angle for Text 1 (-180..180).', selector: { number: { min: -180, max: 180, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_1_skew_x', label: (fields.custom_text_1_skew_x && fields.custom_text_1_skew_x.label) || `Text 1: Skew X (°)`, helper: (fields.custom_text_1_skew_x && fields.custom_text_1_skew_x.helper) || 'Skew angle for Text 1 on X axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_1_skew_y', label: (fields.custom_text_1_skew_y && fields.custom_text_1_skew_y.label) || `Text 1: Skew Y (°)`, helper: (fields.custom_text_1_skew_y && fields.custom_text_1_skew_y.helper) || 'Skew angle for Text 1 on Y axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
       { name: 'custom_text_1_color', label: `Text 1: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_1_size', label: `Text 1: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
 
@@ -13135,6 +14326,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_2_sensor', label: `Text 2: Sensor`, selector: entitySelector },
       { name: 'custom_text_2_x', label: `Text 2: X Position`, selector: { number: { min: 0, max: 800, step: 1, mode: 'slider' } } },
       { name: 'custom_text_2_y', label: `Text 2: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
+      { name: 'custom_text_2_rotate', label: (fields.custom_text_2_rotate && fields.custom_text_2_rotate.label) || `Text 2: Rotation (°)`, helper: (fields.custom_text_2_rotate && fields.custom_text_2_rotate.helper) || 'Rotation angle for Text 2 (-180..180).', selector: { number: { min: -180, max: 180, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_2_skew_x', label: (fields.custom_text_2_skew_x && fields.custom_text_2_skew_x.label) || `Text 2: Skew X (°)`, helper: (fields.custom_text_2_skew_x && fields.custom_text_2_skew_x.helper) || 'Skew angle for Text 2 on X axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_2_skew_y', label: (fields.custom_text_2_skew_y && fields.custom_text_2_skew_y.label) || `Text 2: Skew Y (°)`, helper: (fields.custom_text_2_skew_y && fields.custom_text_2_skew_y.helper) || 'Skew angle for Text 2 on Y axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
       { name: 'custom_text_2_color', label: `Text 2: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_2_size', label: `Text 2: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
 
@@ -13143,6 +14337,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_3_sensor', label: `Text 3: Sensor`, selector: entitySelector },
       { name: 'custom_text_3_x', label: `Text 3: X Position`, selector: { number: { min: 0, max: 800, step: 1, mode: 'slider' } } },
       { name: 'custom_text_3_y', label: `Text 3: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
+      { name: 'custom_text_3_rotate', label: (fields.custom_text_3_rotate && fields.custom_text_3_rotate.label) || `Text 3: Rotation (°)`, helper: (fields.custom_text_3_rotate && fields.custom_text_3_rotate.helper) || 'Rotation angle for Text 3 (-180..180).', selector: { number: { min: -180, max: 180, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_3_skew_x', label: (fields.custom_text_3_skew_x && fields.custom_text_3_skew_x.label) || `Text 3: Skew X (°)`, helper: (fields.custom_text_3_skew_x && fields.custom_text_3_skew_x.helper) || 'Skew angle for Text 3 on X axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_3_skew_y', label: (fields.custom_text_3_skew_y && fields.custom_text_3_skew_y.label) || `Text 3: Skew Y (°)`, helper: (fields.custom_text_3_skew_y && fields.custom_text_3_skew_y.helper) || 'Skew angle for Text 3 on Y axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
       { name: 'custom_text_3_color', label: `Text 3: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_3_size', label: `Text 3: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
 
@@ -13151,6 +14348,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_4_sensor', label: `Text 4: Sensor`, selector: entitySelector },
       { name: 'custom_text_4_x', label: `Text 4: X Position`, selector: { number: { min: 0, max: 800, step: 1, mode: 'slider' } } },
       { name: 'custom_text_4_y', label: `Text 4: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
+      { name: 'custom_text_4_rotate', label: (fields.custom_text_4_rotate && fields.custom_text_4_rotate.label) || `Text 4: Rotation (°)`, helper: (fields.custom_text_4_rotate && fields.custom_text_4_rotate.helper) || 'Rotation angle for Text 4 (-180..180).', selector: { number: { min: -180, max: 180, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_4_skew_x', label: (fields.custom_text_4_skew_x && fields.custom_text_4_skew_x.label) || `Text 4: Skew X (°)`, helper: (fields.custom_text_4_skew_x && fields.custom_text_4_skew_x.helper) || 'Skew angle for Text 4 on X axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_4_skew_y', label: (fields.custom_text_4_skew_y && fields.custom_text_4_skew_y.label) || `Text 4: Skew Y (°)`, helper: (fields.custom_text_4_skew_y && fields.custom_text_4_skew_y.helper) || 'Skew angle for Text 4 on Y axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
       { name: 'custom_text_4_color', label: `Text 4: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_4_size', label: `Text 4: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
 
@@ -13159,6 +14359,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
       { name: 'custom_text_5_sensor', label: `Text 5: Sensor`, selector: entitySelector },
       { name: 'custom_text_5_x', label: `Text 5: X Position`, selector: { number: { min: 0, max: 800, step: 1, mode: 'slider' } } },
       { name: 'custom_text_5_y', label: `Text 5: Y Position`, selector: { number: { min: 0, max: 450, step: 1, mode: 'slider' } } },
+      { name: 'custom_text_5_rotate', label: (fields.custom_text_5_rotate && fields.custom_text_5_rotate.label) || `Text 5: Rotation (°)`, helper: (fields.custom_text_5_rotate && fields.custom_text_5_rotate.helper) || 'Rotation angle for Text 5 (-180..180).', selector: { number: { min: -180, max: 180, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_5_skew_x', label: (fields.custom_text_5_skew_x && fields.custom_text_5_skew_x.label) || `Text 5: Skew X (°)`, helper: (fields.custom_text_5_skew_x && fields.custom_text_5_skew_x.helper) || 'Skew angle for Text 5 on X axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
+      { name: 'custom_text_5_skew_y', label: (fields.custom_text_5_skew_y && fields.custom_text_5_skew_y.label) || `Text 5: Skew Y (°)`, helper: (fields.custom_text_5_skew_y && fields.custom_text_5_skew_y.helper) || 'Skew angle for Text 5 on Y axis (-60..60).', selector: { number: { min: -60, max: 60, step: 1, mode: 'slider', unit_of_measurement: '°' } }, default: 0 },
       { name: 'custom_text_5_color', label: `Text 5: Color`, selector: { color_picker: {} } },
       { name: 'custom_text_5_size', label: `Text 5: Font Size`, selector: { number: { min: 8, max: 48, step: 1, mode: 'slider' } } },
 
@@ -13211,12 +14414,24 @@ _createSectionDefs(localeStrings, schemaDefs) {
       { id: 'gridBox', title: (sections.gridBox && sections.gridBox.title) || 'Grid Box', helper: (sections.gridBox && sections.gridBox.helper) || 'Top-right box. Import/Export + daily. Position and size.', schema: schemaDefs.gridBox, defaultOpen: false },
       { id: 'pvBox', title: (sections.pvBox && sections.pvBox.title) || 'PV Box', helper: (sections.pvBox && sections.pvBox.helper) || 'Top-left box. PV Total (sum) + Daily production. Position and size.', schema: schemaDefs.pvBox, defaultOpen: false },
       { id: 'about', title: sections.about.title, helper: sections.about.helper, schema: null, defaultOpen: false, renderContent: () => this._createAboutContent() },
-      { id: 'lumina_pro', title: sections.lumina_pro.title, helper: sections.lumina_pro.helper, renderContent: () => this._createLuminaProSection(schemaDefs.lumina_pro), defaultOpen: false }
+      { id: 'lumina_pro', title: sections.lumina_pro.title, helper: sections.lumina_pro.helper, schema: null, defaultOpen: false, renderContent: () => this._createLuminaProSection(schemaDefs.lumina_pro) }
     ];
   }
 
   _configWithDefaults() {
-    return { ...this._defaults, ...this._config };
+    const merged = { ...this._defaults, ...this._config };
+    const raw = this._config || {};
+    const style = (merged && merged.image_style === 'real') ? 'real' : 'holographic';
+    const def = style === 'real' ? DEFAULT_BATTERY_OVERLAY.real : DEFAULT_BATTERY_OVERLAY.holographic;
+    const defImg = style === 'real' ? DEFAULT_BATTERY_OVERLAY.imageReal : DEFAULT_BATTERY_OVERLAY.imageHolographic;
+
+    // Apply style-dependent defaults only when not explicitly set by user
+    if (!Object.prototype.hasOwnProperty.call(raw, 'battery_overlay_image')) merged.battery_overlay_image = defImg;
+    if (!Object.prototype.hasOwnProperty.call(raw, 'battery_overlay_x')) merged.battery_overlay_x = def.x;
+    if (!Object.prototype.hasOwnProperty.call(raw, 'battery_overlay_y')) merged.battery_overlay_y = def.y;
+    if (!Object.prototype.hasOwnProperty.call(raw, 'battery_overlay_width')) merged.battery_overlay_width = def.width;
+    if (!Object.prototype.hasOwnProperty.call(raw, 'battery_overlay_height')) merged.battery_overlay_height = def.height;
+    return merged;
   }
 
   setConfig(config) {
@@ -13324,10 +14539,6 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const summary = document.createElement('summary');
     summary.className = 'section-summary';
     summary.textContent = title;
-    if (id === 'overlay_image') {
-      summary.style.color = '#ff4444';
-      summary.style.fontWeight = 'bold';
-    }
     section.appendChild(summary);
 
     const content = document.createElement('div');
@@ -13337,14 +14548,10 @@ _createSectionDefs(localeStrings, schemaDefs) {
       const helperEl = document.createElement('div');
       helperEl.className = 'section-helper';
       helperEl.textContent = helper;
-      if (id === 'overlay_image') {
-        helperEl.style.color = '#ff4444';
-        helperEl.style.fontWeight = 'bold';
-      }
       content.appendChild(helperEl);
     }
 
-    if (id === 'overlay_image' || id === 'lumina_pro') {
+    if (id === 'overlay_image') {
       content.appendChild(this._createPayPalButton());
     }
 
@@ -13356,18 +14563,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         filteredSchema = schema.filter(field => field.name !== 'sensor_home_load_secondary');
       }
 
-      if (id === 'lumina_pro') {
-        const cfg = this._configWithDefaults();
-        const pw = cfg.pro_password;
-        let ok = false;
-        if (pw && typeof pw === 'string' && pw.trim()) {
-          const h = LUMINA_SHA256(pw.trim());
-          if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(h)) ok = true;
-        }
-        if (!ok) filteredSchema = schema.filter((f) => f.name === 'pro_password');
-      }
-
-      content.appendChild(this._createForm(filteredSchema, id === 'overlay_image'));
+      content.appendChild(this._createForm(filteredSchema));
     } else if (typeof renderContent === 'function') {
       const custom = renderContent();
       if (custom) {
@@ -13516,230 +14712,10 @@ _createSectionDefs(localeStrings, schemaDefs) {
     });
   }
 
-  _createLuminaProSection(schema) {
-    const container = document.createElement('div');
-    container.className = 'lumina-pro-content';
-    container.style.cssText = 'padding: 8px 0;';
-    
-    const config = this._configWithDefaults();
-    const lang = (config.language || 'en').toLowerCase();
-    const fields = this._getLocaleStrings().fields || {};
-    
-    // Get localized strings
-    const labels = {
-      your_installation_id: fields.your_installation_id || 'Your Installation ID',
-      copy_id: fields.copy_id || 'Copy',
-      id_copied: fields.id_copied || 'Copied!',
-      license_status: fields.license_status || 'License Status',
-      license_active: fields.license_active || 'PRO Active',
-      license_inactive: fields.license_inactive || 'Not Active',
-      pro_password: (fields.pro_password && fields.pro_password.label) || 'PRO Password',
-      request_pro_license: fields.request_pro_license || 'Request PRO License',
-      your_email: fields.your_email || 'Your Email',
-      paypal_transaction_id: fields.paypal_transaction_id || 'PayPal Transaction ID',
-      send_request: fields.send_request || 'Send Request',
-      request_sent: fields.request_sent || 'Request sent! You will receive your license via email.',
-      request_error: fields.request_error || 'Error sending request. Please try again.',
-      license_instructions: fields.license_instructions || 'Send 1€ as DONATION to PayPal (3dprint8616@gmail.com). Include your email in the PayPal notes. Then fill in your email and transaction ID below.'
-    };
-    
-    // Get UID
-    const uid = getLuminaUID();
-    
-    // Check license status
-    const proPassword = config.pro_password;
-    let isLicenseActive = false;
-    if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-      // Check legacy
-      const legacyHash = LUMINA_SHA256(proPassword.trim());
-      if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(legacyHash)) {
-        isLicenseActive = true;
-      }
-      // Check V2
-      if (!isLicenseActive) {
-        const uidBoundHash = LUMINA_SHA256(proPassword.trim() + uid);
-        if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
-          isLicenseActive = true;
-        }
-      }
-    }
-    
-    // --- Status Banner ---
-    const statusBanner = document.createElement('div');
-    statusBanner.style.cssText = `display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; margin-bottom: 16px; border-radius: 8px; background: ${isLicenseActive ? 'rgba(0,204,0,0.15)' : 'rgba(0,249,249,0.1)'}; border: 1px solid ${isLicenseActive ? 'rgba(0,204,0,0.3)' : 'rgba(0,249,249,0.3)'};`;
-    
-    const statusLeft = document.createElement('div');
-    statusLeft.style.cssText = 'display: flex; align-items: center; gap: 10px;';
-    const statusIcon = document.createElement('span');
-    statusIcon.textContent = isLicenseActive ? '✓' : '⚡';
-    statusIcon.style.cssText = `font-size: 20px; color: ${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
-    const statusText = document.createElement('span');
-    statusText.textContent = isLicenseActive ? labels.license_active : 'Unlock PRO Features';
-    statusText.style.cssText = `font-size: 14px; font-weight: bold; color: ${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
-    statusLeft.appendChild(statusIcon);
-    statusLeft.appendChild(statusText);
-    statusBanner.appendChild(statusLeft);
-    
-    container.appendChild(statusBanner);
-    
-    // --- PRO Password Field with Activate Button ---
-    const passwordRow = document.createElement('div');
-    passwordRow.style.cssText = 'margin-bottom: 20px;';
-    const passwordLabel = document.createElement('label');
-    passwordLabel.textContent = labels.pro_password;
-    passwordLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 6px;';
-    
-    const passwordWrapper = document.createElement('div');
-    passwordWrapper.style.cssText = 'display: flex; gap: 8px;';
-    
-    const passwordInput = document.createElement('input');
-    passwordInput.type = 'text';
-    passwordInput.value = config.pro_password || '';
-    passwordInput.placeholder = 'Enter your PRO password';
-    passwordInput.style.cssText = 'flex: 1; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 14px; box-sizing: border-box;';
-    
-    const activateBtn = document.createElement('button');
-    activateBtn.textContent = isLicenseActive ? '✓ Active' : 'Activate';
-    activateBtn.style.cssText = `padding: 12px 24px; background: ${isLicenseActive ? '#00cc00' : '#00f9f9'}; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;`;
-    activateBtn.addEventListener('click', () => {
-      const newConfig = { ...this._config, pro_password: passwordInput.value };
-      this._config = newConfig;
-      this._debouncedConfigChanged(newConfig, true);
-      this._rendered = false;
-      this.render();
-    });
-    
-    passwordWrapper.appendChild(passwordInput);
-    passwordWrapper.appendChild(activateBtn);
-    passwordRow.appendChild(passwordLabel);
-    passwordRow.appendChild(passwordWrapper);
-    container.appendChild(passwordRow);
-    
-    // --- Get License Section (only if not active) ---
-    if (!isLicenseActive) {
-      const getLicenseBox = document.createElement('div');
-      getLicenseBox.style.cssText = 'background: rgba(0,0,0,0.2); border-radius: 8px; padding: 16px; margin-bottom: 16px;';
-      
-      // PayPal instruction
-      const paypalInfo = document.createElement('div');
-      paypalInfo.innerHTML = `
-        <div style="font-size: 13px; color: #00f9f9; font-weight: bold; margin-bottom: 8px;">💰 Get PRO License (1€)</div>
-        <div style="font-size: 12px; color: #ccc; line-height: 1.6; margin-bottom: 12px;">
-          Send <b>1€ as DONATION</b> to PayPal: <span style="color: #00f9f9;">3dprint8616@gmail.com</span><br>
-          Then fill in your email and PayPal transaction ID below.
-        </div>
-      `;
-      getLicenseBox.appendChild(paypalInfo);
-      container.appendChild(getLicenseBox);
-    }
-    
-    // --- Request Form (only if not active) ---
-    if (!isLicenseActive) {
-      // Email field
-      const emailRow = document.createElement('div');
-      emailRow.style.cssText = 'margin-bottom: 12px;';
-      const emailLabel = document.createElement('label');
-      emailLabel.textContent = labels.your_email;
-      emailLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 4px;';
-      const emailInput = document.createElement('input');
-      emailInput.type = 'email';
-      emailInput.id = 'license-email';
-      emailInput.placeholder = 'your@email.com';
-      emailInput.style.cssText = 'width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; box-sizing: border-box;';
-      emailRow.appendChild(emailLabel);
-      emailRow.appendChild(emailInput);
-      container.appendChild(emailRow);
-      
-      // Transaction ID field
-      const txnRow = document.createElement('div');
-      txnRow.style.cssText = 'margin-bottom: 16px;';
-      const txnLabel = document.createElement('label');
-      txnLabel.textContent = labels.paypal_transaction_id;
-      txnLabel.style.cssText = 'display: block; font-size: 12px; color: #888; margin-bottom: 4px;';
-      const txnInput = document.createElement('input');
-      txnInput.type = 'text';
-      txnInput.id = 'license-txn';
-      txnInput.placeholder = 'e.g., 1AB23456CD789012E';
-      txnInput.style.cssText = 'width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; box-sizing: border-box;';
-      txnRow.appendChild(txnLabel);
-      txnRow.appendChild(txnInput);
-      container.appendChild(txnRow);
-      
-      // Status message
-      const statusMsg = document.createElement('div');
-      statusMsg.id = 'license-status-msg';
-      statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: none;';
-      container.appendChild(statusMsg);
-      
-      // Send button
-      const sendBtn = document.createElement('button');
-      sendBtn.textContent = labels.send_request;
-      sendBtn.style.cssText = 'width: 100%; padding: 14px; background: #00f9f9; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;';
-      sendBtn.addEventListener('click', async () => {
-        const email = emailInput.value.trim();
-        const txn = txnInput.value.trim();
-        
-        if (!email || !txn) {
-          statusMsg.textContent = 'Please fill in all fields.';
-          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
-          return;
-        }
-        
-        sendBtn.disabled = true;
-        sendBtn.textContent = '...';
-        
-        try {
-          // Use no-cors mode to avoid CORS issues with Google Apps Script
-          await fetch(LUMINA_LICENSE_ENDPOINT, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-              action: 'request',
-              email: email,
-              uid: uid,
-              transaction_id: txn
-            })
-          });
-          
-          // With no-cors we can't read response, but request was sent
-          statusMsg.textContent = labels.request_sent;
-          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(0,204,0,0.2); color: #00cc00;';
-          emailInput.value = '';
-          txnInput.value = '';
-        } catch (e) {
-          statusMsg.textContent = labels.request_error;
-          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
-        } finally {
-          sendBtn.disabled = false;
-          sendBtn.textContent = labels.send_request;
-        }
-      });
-      container.appendChild(sendBtn);
-    }
-    
-    // --- PRO Features (only visible when license is active) ---
-    if (isLicenseActive && schema) {
-      const proFeaturesDiv = document.createElement('div');
-      proFeaturesDiv.style.cssText = 'margin-top: 30px; padding-top: 20px; border-top: 2px solid #00f9f9;';
-      
-      const proTitle = document.createElement('div');
-      proTitle.textContent = '✓ PRO Features Unlocked';
-      proTitle.style.cssText = 'font-size: 16px; font-weight: bold; color: #00f9f9; margin-bottom: 16px;';
-      proFeaturesDiv.appendChild(proTitle);
-      
-      // Add the schema form for PRO options
-      const form = this._createForm(schema);
-      proFeaturesDiv.appendChild(form);
-      
-      container.appendChild(proFeaturesDiv);
-    }
-    
-    return container;
-  }
-
   _updateSectionVisibility(type) {
     // Hide/show sections based on installation type
+    const cfg = this._configWithDefaults();
+    const batteryOverlayEnabled = Boolean(cfg && cfg.battery_overlay_enabled);
     const sections = this.shadowRoot.querySelectorAll('details.section');
     sections.forEach((section) => {
       const sectionId = section.dataset.sectionId;
@@ -13849,6 +14825,46 @@ _createSectionDefs(localeStrings, schemaDefs) {
           if (row) row.style.display = '';
         }
       }
+
+      // Battery overlay toggle gates Battery entities + SOC Bar section (only for types 1/2)
+      if (type === '1' || type === '2') {
+        if (sectionId === 'socBar') {
+          section.style.display = batteryOverlayEnabled ? '' : 'none';
+        }
+        if (sectionId === 'battery') {
+          const namedFields = section.querySelectorAll('[name]');
+          namedFields.forEach((field) => {
+            const nm = field.getAttribute('name');
+            if (!nm) return;
+            const row = field.closest('.form-row, .form-element, ha-formfield');
+            if (!row) return;
+            const isOverlayField = (nm === 'battery_overlay_enabled') || nm.startsWith('battery_overlay_');
+            const isBatteryEntityField =
+              nm.startsWith('sensor_bat') ||
+              nm.startsWith('sensor_battery_') ||
+              nm === 'battery_power_mode' ||
+              nm === 'invert_battery';
+            const locked = (!batteryOverlayEnabled && isBatteryEntityField && !isOverlayField);
+            row.style.display = '';
+            row.style.opacity = locked ? '0.55' : '';
+            row.style.pointerEvents = locked ? 'none' : '';
+            row.style.filter = locked ? 'grayscale(0.6)' : '';
+            row.setAttribute('data-battery-locked', locked ? 'true' : 'false');
+
+            // Best-effort: also set disabled on typical interactive controls
+            const controls = row.querySelectorAll('ha-entity-picker, ha-textfield, ha-switch, mwc-switch, input, select, textarea, button');
+            controls.forEach((el) => {
+              try {
+                if ('disabled' in el) el.disabled = locked;
+                if (locked) el.setAttribute('disabled', 'true');
+                else el.removeAttribute('disabled');
+              } catch (e) {
+                // ignore
+              }
+            });
+          });
+        }
+      }
     });
   }
 
@@ -13912,16 +14928,23 @@ _createSectionDefs(localeStrings, schemaDefs) {
     let isAuthorized = false;
     const pw = config.pro_password;
     if (pw && typeof pw === 'string' && pw.trim()) {
-      const h = LUMINA_SHA256(pw.trim());
-      if (LUMINA_AUTH_LIST && LUMINA_AUTH_LIST.includes(h)) isAuthorized = true;
+      const uid = getLuminaUID();
+      const h = LUMINA_SHA256(pw.trim() + uid);
+      if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(h)) isAuthorized = true;
     }
     if (isAuthorized) wrapper.classList.add('authorized');
 
-    const paypalUrl = 'https://paypal.me/giorgiosalierno';
+    const PAYPAL_EMAIL = '3dprint8616@gmail.com';
+    const paypalUrl =
+      'https://www.paypal.com/cgi-bin/webscr?cmd=_donations' +
+      '&business=' + encodeURIComponent(PAYPAL_EMAIL) +
+      '&currency_code=EUR' +
+      '&amount=5';
     
     const link = document.createElement('a');
     link.href = paypalUrl;
     link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     link.className = 'paypal-link';
     
     // PayPal SVG Icon
@@ -13941,6 +14964,440 @@ _createSectionDefs(localeStrings, schemaDefs) {
     wrapper.appendChild(note);
     
     return wrapper;
+  }
+
+  _createLuminaProSection(schema) {
+    const container = document.createElement('div');
+    container.className = 'lumina-pro-content';
+    container.style.cssText = 'padding: 8px 0;';
+
+    const config = this._configWithDefaults();
+    const fields = (this._getLocaleStrings() && this._getLocaleStrings().fields) ? this._getLocaleStrings().fields : {};
+
+    const PAYPAL_EMAIL = '3dprint8616@gmail.com';
+    const SUPPORT_EMAIL = 'luminaenergycard@gmail.com';
+    const PAYPAL_DONATE_URL =
+      'https://www.paypal.com/cgi-bin/webscr?cmd=_donations' +
+      '&business=' + encodeURIComponent(PAYPAL_EMAIL) +
+      '&currency_code=EUR' +
+      '&amount=5';
+    const PAYPAL_BUTTON_TEXT = (fields && fields.paypal_button) ? fields.paypal_button : 'Donate 5€';
+
+    const labels = {
+      license_status: fields.license_status || 'License Status',
+      license_active: fields.license_active || 'PRO Active',
+      license_inactive: fields.license_inactive || 'Not Active',
+      unlock_pro_features: fields.unlock_pro_features || 'Unlock PRO Features',
+      pro_password: (fields.pro_password && fields.pro_password.label) ? fields.pro_password.label : 'PRO Password',
+      pro_password_placeholder: fields.pro_password_placeholder || 'Enter your PRO password',
+      activate: fields.activate || 'Activate',
+      checking: fields.checking || 'Checking...',
+      request_pro_license: fields.request_pro_license || 'Request PRO License',
+      your_email: fields.your_email || 'Your Email',
+      paypal_payment_email: fields.paypal_payment_email || 'PayPal payment email',
+      paypal_transaction_id: fields.paypal_transaction_id || 'PayPal Transaction ID',
+      your_email_placeholder: fields.your_email_placeholder || 'your@email.com',
+      paypal_payment_email_placeholder: fields.paypal_payment_email_placeholder || 'paypal@email.com',
+      paypal_transaction_id_placeholder: fields.paypal_transaction_id_placeholder || 'e.g., 1AB23456CD789012E',
+      fill_all_fields: fields.fill_all_fields || 'Please fill in all fields.',
+      send_request: fields.send_request || 'Send Request',
+      request_sent: fields.request_sent || 'Request sent! You will receive your license via email.',
+      request_error: fields.request_error || 'Error sending request. Please try again.',
+      existing_user_title: fields.existing_user_title || 'Already purchased before?',
+      existing_user_desc: fields.existing_user_desc || 'If you already paid in the past, request a free upgrade by sending your old transaction ID.',
+      support_contact: fields.support_contact || ('For any problem, contact: ' + SUPPORT_EMAIL),
+      request_migration: fields.request_migration || 'Request Free Upgrade',
+      migration_sent: fields.migration_sent || 'Migration request sent! You will receive your new password via email.',
+      pro_unlocked: fields.pro_unlocked || '✓ PRO Features Unlocked',
+      password_ok: fields.password_ok || '✓ Password accepted. PRO is now active.',
+      password_bad: fields.password_bad || '❌ Invalid password. Please check and try again.',
+      pro_license_title: fields.pro_license_title || '💰 PRO License',
+      pro_license_line1: fields.pro_license_line1 || 'Send <b>5€ as DONATION</b> to PayPal:',
+      pro_license_line2: fields.pro_license_line2 || 'Then fill the form below (email, <b>PayPal payment email</b>, transaction ID).',
+      pro_license_line3: fields.pro_license_line3 || '',
+      pro_license_line4: fields.pro_license_line4 || ''
+      ,
+      follow_title: fields.follow_title || 'Community',
+      telegram_button: fields.telegram_button || 'Telegram Group',
+      tiktok_button: fields.tiktok_button || 'TikTok Channel',
+      fundraiser_title: fields.fundraiser_title || 'Support',
+      support_email: fields.support_email || SUPPORT_EMAIL,
+      custom_paid_note: fields.custom_paid_note || ('For substantial changes/customizations contact ' + SUPPORT_EMAIL + ' (paid service).')
+    };
+
+    const uid = getLuminaUID();
+
+    // Determine license status (V2 only)
+    let isLicenseActive = false;
+    const proPassword = config.pro_password;
+    if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
+      const uidBoundHash = LUMINA_SHA256(proPassword.trim() + uid);
+      if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+        isLicenseActive = true;
+      }
+    }
+    if (LUMINA_AUTH_LIST_V2 === null) {
+      LUMINA_REFRESH_AUTH(() => { this._rendered = false; this.render(); });
+    }
+
+    // Status banner
+    const statusBanner = document.createElement('div');
+    const activationState = this._proActivationState || null; // 'success' | 'error' | null
+    const glow = (isLicenseActive || activationState === 'success')
+      ? 'box-shadow: 0 0 0 2px rgba(0,204,0,0.25), 0 0 18px rgba(0,204,0,0.22);'
+      : '';
+    statusBanner.style.cssText = `display:flex; align-items:center; justify-content:space-between; padding:12px 16px; margin-bottom:14px; border-radius:8px; background:${isLicenseActive ? 'rgba(0,204,0,0.15)' : 'rgba(0,249,249,0.10)'}; border:1px solid ${isLicenseActive ? 'rgba(0,204,0,0.30)' : 'rgba(0,249,249,0.30)'}; transition: box-shadow 240ms ease; ${glow}`;
+    const statusLeft = document.createElement('div');
+    statusLeft.style.cssText = 'display:flex; align-items:center; gap:10px;';
+    const statusIcon = document.createElement('span');
+    statusIcon.textContent = isLicenseActive ? '✓' : '⚡';
+    statusIcon.style.cssText = `font-size:18px; color:${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
+    const statusText = document.createElement('span');
+    statusText.textContent = isLicenseActive ? labels.license_active : labels.unlock_pro_features;
+    statusText.style.cssText = `font-size:14px; font-weight:bold; color:${isLicenseActive ? '#00cc00' : '#00f9f9'};`;
+    statusLeft.appendChild(statusIcon);
+    statusLeft.appendChild(statusText);
+    statusBanner.appendChild(statusLeft);
+    container.appendChild(statusBanner);
+
+    // Password field + activate
+    const pwRow = document.createElement('div');
+    pwRow.style.cssText = 'margin-bottom: 16px;';
+    const pwLabel = document.createElement('label');
+    pwLabel.textContent = labels.pro_password;
+    pwLabel.style.cssText = 'display:block; font-size:12px; color:#888; margin-bottom:6px;';
+    const pwWrap = document.createElement('div');
+    pwWrap.style.cssText = 'display:flex; gap:8px;';
+    const pwInput = document.createElement('input');
+    pwInput.type = 'text';
+    pwInput.value = config.pro_password || '';
+    pwInput.placeholder = labels.pro_password_placeholder;
+    pwInput.style.cssText = 'flex:1; padding:12px; background: var(--ha-card-background, var(--card-background-color, rgba(0,0,0,0.06))); border:1px solid var(--divider-color); border-radius:6px; color: var(--primary-text-color); font-size:14px; box-sizing:border-box;';
+    const activateBtn = document.createElement('button');
+    activateBtn.textContent = isLicenseActive ? labels.license_active : labels.activate;
+    activateBtn.style.cssText = `padding:12px 18px; background:${isLicenseActive ? '#00cc00' : '#00f9f9'}; color:#000; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:14px;`;
+
+    const pwMsg = document.createElement('div');
+    pwMsg.style.cssText = 'margin-top: 10px; padding: 10px; border-radius: 8px; display: none; font-size: 12px; line-height: 1.4;';
+    if (activationState === 'error') {
+      pwMsg.textContent = labels.password_bad;
+      pwMsg.style.cssText += 'display:block; background: rgba(255,68,68,0.16); color: #ff4444; border: 1px solid rgba(255,68,68,0.28);';
+    } else if (activationState === 'success' || isLicenseActive) {
+      pwMsg.textContent = labels.password_ok;
+      pwMsg.style.cssText += 'display:block; background: rgba(0,204,0,0.14); color: #00cc00; border: 1px solid rgba(0,204,0,0.28);';
+      if (activationState === 'success') {
+        setTimeout(() => { this._proActivationState = null; }, 2000);
+      }
+    }
+
+    const doActivate = async () => {
+      const entered = (pwInput.value || '').trim();
+      const newConfig = { ...this._config, pro_password: entered };
+      this._debouncedConfigChanged(newConfig, true);
+
+      activateBtn.disabled = true;
+      const prevText = activateBtn.textContent;
+      activateBtn.textContent = labels.checking;
+
+      let ok = false;
+      try {
+        // Always refresh authorization list on activation attempt.
+        // This avoids "password doesn't work" right after approval if the card cached an old list.
+        LUMINA_AUTH_LIST_V2 = null;
+        await LUMINA_REFRESH_AUTH();
+        if (entered && Array.isArray(LUMINA_AUTH_LIST_V2)) {
+          const uidBoundHash = LUMINA_SHA256(entered + uid);
+          ok = LUMINA_AUTH_LIST_V2.includes(uidBoundHash);
+        }
+      } catch (e) {
+        ok = false;
+      } finally {
+        this._proActivationState = ok ? 'success' : 'error';
+        activateBtn.disabled = false;
+        activateBtn.textContent = ok ? labels.license_active : prevText;
+        this._rendered = false;
+        this.render();
+      }
+    };
+
+    activateBtn.addEventListener('click', doActivate);
+    pwInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') doActivate();
+    });
+    pwWrap.appendChild(pwInput);
+    pwWrap.appendChild(activateBtn);
+    pwRow.appendChild(pwLabel);
+    pwRow.appendChild(pwWrap);
+    container.appendChild(pwRow);
+    container.appendChild(pwMsg);
+
+    // Donation instructions (always visible)
+    const instructions = document.createElement('div');
+    instructions.style.cssText = 'background: rgba(0,0,0,0.20); border-radius: 8px; padding: 14px; margin-bottom: 14px; border: 1px solid rgba(0,249,249,0.25);';
+    instructions.innerHTML = `
+      <div style="font-size: 13px; color: #00f9f9; font-weight: bold; margin-bottom: 8px;">${labels.pro_license_title}</div>
+      <div style="font-size: 12px; color: var(--secondary-text-color, #ccc); line-height: 1.6;">
+        ${labels.pro_license_line1} <span style="color:#00f9f9;">${PAYPAL_EMAIL}</span><br/>
+        ${labels.pro_license_line2}<br/>
+        ${(labels.pro_license_line3 && String(labels.pro_license_line3).trim()) ? (labels.pro_license_line3 + '<br/>') : ''}
+        ${(labels.pro_license_line4 && String(labels.pro_license_line4).trim()) ? labels.pro_license_line4 : ''}
+      </div>
+      <div style="margin-top:12px;">
+        <a href="${PAYPAL_DONATE_URL}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:10px 14px;border-radius:10px;background:#00f9f9;color:#000;text-decoration:none;font-weight:900;">
+          <span>PayPal</span>
+          <span>${PAYPAL_BUTTON_TEXT}</span>
+        </a>
+      </div>
+    `;
+    container.appendChild(instructions);
+
+    // Helper to create input
+    const makeInput = (type, placeholder, borderColor) => {
+      const input = document.createElement('input');
+      input.type = type;
+      input.placeholder = placeholder;
+      input.style.cssText = `width:100%; padding:12px; background: var(--ha-card-background, var(--card-background-color, rgba(0,0,0,0.06))); border:1px solid ${borderColor || 'var(--divider-color)'}; border-radius:6px; color: var(--primary-text-color); box-sizing:border-box;`;
+      return input;
+    };
+    const makeField = (labelText, inputEl) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom: 12px;';
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      label.style.cssText = 'display:block; font-size:12px; color:#888; margin-bottom:4px;';
+      row.appendChild(label);
+      row.appendChild(inputEl);
+      return row;
+    };
+
+    // JSONP helper to get real success/errors (avoids no-cors opaque responses)
+    const jsonp = (url) => new Promise((resolve, reject) => {
+      const cb = `lcb_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+      const s = document.createElement('script');
+      let done = false;
+      const cleanup = () => {
+        if (done) return;
+        done = true;
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+        if (s && s.parentNode) s.parentNode.removeChild(s);
+      };
+      const t = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 15000);
+      window[cb] = (data) => { clearTimeout(t); cleanup(); resolve(data); };
+      s.onerror = () => { clearTimeout(t); cleanup(); reject(new Error('Script load error')); };
+      s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + cb + '&t=' + Date.now();
+      document.body.appendChild(s);
+    });
+
+    if (!isLicenseActive) {
+      // Request form (NEW)
+      const statusMsg = document.createElement('div');
+      statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: none;';
+
+      const emailInput = makeInput('email', labels.your_email_placeholder);
+      const paymentEmailInput = makeInput('email', labels.paypal_payment_email_placeholder);
+      const txnInput = makeInput('text', labels.paypal_transaction_id_placeholder);
+
+      container.appendChild(makeField(labels.your_email, emailInput));
+      container.appendChild(makeField(labels.paypal_payment_email, paymentEmailInput));
+      container.appendChild(makeField(labels.paypal_transaction_id, txnInput));
+      container.appendChild(statusMsg);
+
+      const sendBtn = document.createElement('button');
+      sendBtn.textContent = labels.send_request;
+      sendBtn.style.cssText = 'width: 100%; padding: 14px; background: #00f9f9; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;';
+      sendBtn.addEventListener('click', async () => {
+        const email = emailInput.value.trim();
+        const payEmail = paymentEmailInput.value.trim();
+        const txn = txnInput.value.trim();
+
+        if (!email || !payEmail || !txn || email.indexOf('@') === -1 || payEmail.indexOf('@') === -1) {
+          statusMsg.textContent = labels.fill_all_fields;
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+          return;
+        }
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = '...';
+        try {
+          const url = `${LUMINA_LICENSE_ENDPOINT}?action=${encodeURIComponent(LUMINA_ACT_REQ)}&email=${encodeURIComponent(email)}&payment_email=${encodeURIComponent(payEmail)}&uid=${encodeURIComponent(uid)}&transaction_id=${encodeURIComponent(txn)}`;
+          const data = await jsonp(url);
+          if (!data || !data.success) throw new Error((data && data.error) ? data.error : 'Request failed');
+          statusMsg.textContent = (data && data.message) ? data.message : labels.request_sent;
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(0,204,0,0.2); color: #00cc00;';
+          emailInput.value = '';
+          paymentEmailInput.value = '';
+          txnInput.value = '';
+        } catch (e) {
+          statusMsg.textContent = labels.request_error + ' (' + (e && e.message ? e.message : String(e)) + ')';
+          statusMsg.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = labels.send_request;
+        }
+      });
+      container.appendChild(sendBtn);
+
+      // Migration section (existing users)
+      const migrationBox = document.createElement('div');
+    migrationBox.style.cssText = 'margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.18);';
+
+    const migTitle = document.createElement('div');
+    migTitle.textContent = '🔄 ' + labels.existing_user_title;
+    migTitle.style.cssText = 'font-size: 14px; font-weight: bold; color: #ffa500; margin-bottom: 10px;';
+    migrationBox.appendChild(migTitle);
+
+    const migDesc = document.createElement('div');
+    migDesc.textContent = labels.existing_user_desc;
+    migDesc.style.cssText = 'font-size: 12px; color: #888; line-height: 1.5; margin-bottom: 12px;';
+    migrationBox.appendChild(migDesc);
+
+    const migSupport = document.createElement('div');
+    migSupport.textContent = labels.support_contact;
+    migSupport.style.cssText = 'font-size: 12px; color: var(--secondary-text-color, #ccc); line-height: 1.5; margin-bottom: 12px;';
+    migrationBox.appendChild(migSupport);
+
+    const migStatus = document.createElement('div');
+    migStatus.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: none;';
+
+    const migEmailInput = makeInput('email', labels.your_email_placeholder, 'rgba(255,165,0,0.35)');
+    const migPaymentEmailInput = makeInput('email', labels.paypal_payment_email_placeholder, 'rgba(255,165,0,0.35)');
+    const migTxnInput = makeInput('text', labels.paypal_transaction_id_placeholder, 'rgba(255,165,0,0.35)');
+
+    migrationBox.appendChild(makeField(labels.your_email, migEmailInput));
+    migrationBox.appendChild(makeField(labels.paypal_payment_email, migPaymentEmailInput));
+    migrationBox.appendChild(makeField(labels.paypal_transaction_id, migTxnInput));
+    migrationBox.appendChild(migStatus);
+
+    const migBtn = document.createElement('button');
+    migBtn.textContent = labels.request_migration;
+    migBtn.style.cssText = 'width: 100%; padding: 12px; background: #ffa500; color: #000; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;';
+    migBtn.addEventListener('click', async () => {
+      const email = migEmailInput.value.trim();
+      const payEmail = migPaymentEmailInput.value.trim();
+      const txn = migTxnInput.value.trim();
+
+      if (!email || !payEmail || !txn || email.indexOf('@') === -1 || payEmail.indexOf('@') === -1) {
+        migStatus.textContent = labels.fill_all_fields;
+        migStatus.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+        return;
+      }
+
+      migBtn.disabled = true;
+      migBtn.textContent = '...';
+      try {
+        const url = `${LUMINA_LICENSE_ENDPOINT}?action=${encodeURIComponent(LUMINA_ACT_MIG)}&email=${encodeURIComponent(email)}&payment_email=${encodeURIComponent(payEmail)}&uid=${encodeURIComponent(uid)}&transaction_id=${encodeURIComponent(txn)}`;
+        const data = await jsonp(url);
+        if (!data || !data.success) throw new Error((data && data.error) ? data.error : 'Request failed');
+        migStatus.textContent = (data && data.message) ? data.message : labels.migration_sent;
+        migStatus.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(0,204,0,0.2); color: #00cc00;';
+        migEmailInput.value = '';
+        migPaymentEmailInput.value = '';
+        migTxnInput.value = '';
+      } catch (e) {
+        migStatus.textContent = labels.request_error + ' (' + (e && e.message ? e.message : String(e)) + ')';
+        migStatus.style.cssText = 'margin-bottom: 12px; padding: 8px; border-radius: 4px; display: block; background: rgba(255,68,68,0.2); color: #ff4444;';
+      } finally {
+        migBtn.disabled = false;
+        migBtn.textContent = labels.request_migration;
+      }
+    });
+    migrationBox.appendChild(migBtn);
+    container.appendChild(migrationBox);
+    }
+
+    // Footer: Sponsors + social + fundraiser + note
+    const TELEGRAM_URL = 'https://t.me/+fv83dftOM2M5NDA0';
+    const TIKTOK_URL = 'https://www.tiktok.com/@stampa3ditalia?_r=1&_t=ZN-93UHlu5Clfy';
+    const FUNDRAISER_URL = 'https://4fund.com/it/e6nv87/widget/24';
+
+    const footerWrap = document.createElement('div');
+    footerWrap.style.cssText = 'margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.12); display:flex; flex-direction:column; gap:10px; align-items:center;';
+
+    // GitHub Sponsors button
+    const sponsorFrame = document.createElement('iframe');
+    sponsorFrame.src = 'https://github.com/sponsors/Giorgio866/button';
+    sponsorFrame.title = 'Sponsor Giorgio866';
+    sponsorFrame.height = '32';
+    sponsorFrame.width = '114';
+    sponsorFrame.loading = 'lazy';
+    sponsorFrame.style.cssText = 'border: 0; border-radius: 6px; overflow: hidden;';
+    footerWrap.appendChild(sponsorFrame);
+
+    const bottomWrap = document.createElement('div');
+    bottomWrap.style.cssText = 'display:flex; flex-direction:column; gap:10px; align-items:center;';
+
+    const followTitle = document.createElement('div');
+    followTitle.textContent = labels.follow_title || 'Community';
+    followTitle.style.cssText = 'font-weight: 800; color: #00f9f9; font-size: 13px;';
+    bottomWrap.appendChild(followTitle);
+
+    const linkRow = document.createElement('div');
+    linkRow.style.cssText = 'display:flex; gap:10px; flex-wrap:wrap; justify-content:center;';
+
+    const makeLinkBtn = (text, href) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = text;
+      a.style.cssText = 'text-decoration:none; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,249,249,0.35); background: rgba(0,249,249,0.10); color: var(--primary-text-color); font-weight: 800; font-size: 12px;';
+      return a;
+    };
+
+    linkRow.appendChild(makeLinkBtn(labels.telegram_button || 'Telegram Group', TELEGRAM_URL));
+    linkRow.appendChild(makeLinkBtn(labels.tiktok_button || 'TikTok Channel', TIKTOK_URL));
+    bottomWrap.appendChild(linkRow);
+
+    const fundraiserTitle = document.createElement('div');
+    fundraiserTitle.textContent = labels.fundraiser_title || 'Support';
+    fundraiserTitle.style.cssText = 'margin-top: 2px; font-weight: 800; color: var(--secondary-text-color, #ccc); font-size: 12px;';
+    bottomWrap.appendChild(fundraiserTitle);
+
+    const fundraiserWrap = document.createElement('div');
+    fundraiserWrap.style.cssText = 'position: relative; width: 300px; height: 80px; overflow: hidden; border-radius: 10px;';
+    const fundraiserFrame = document.createElement('iframe');
+    fundraiserFrame.style.cssText = 'position: absolute; top:0; left:0; bottom:0; right:0; width:100%; height:100%; border:0;';
+    fundraiserFrame.src = FUNDRAISER_URL;
+    fundraiserFrame.setAttribute('frameborder', '0');
+    fundraiserFrame.setAttribute('scrolling', 'no');
+    fundraiserFrame.title = 'Fundraiser';
+    fundraiserFrame.loading = 'lazy';
+    fundraiserWrap.appendChild(fundraiserFrame);
+    bottomWrap.appendChild(fundraiserWrap);
+
+    const customNote = document.createElement('div');
+    customNote.textContent = labels.custom_paid_note || ('For substantial changes/customizations contact ' + (labels.support_email || 'luminaenergycard@gmail.com') + ' (paid service).');
+    customNote.style.cssText = 'text-align:center; font-size: 12px; color: var(--secondary-text-color, #ccc); line-height: 1.5; max-width: 520px;';
+    bottomWrap.appendChild(customNote);
+
+    footerWrap.appendChild(bottomWrap);
+
+    // PRO features (only when active)
+    const proSchema = Array.isArray(schema) ? schema : null;
+    let proFeaturesDiv = null;
+    if (isLicenseActive && proSchema && proSchema.length > 0) {
+      proFeaturesDiv = document.createElement('div');
+      proFeaturesDiv.style.cssText = 'margin-top: 22px; padding-top: 18px; border-top: 2px solid #00f9f9;';
+      const proTitle = document.createElement('div');
+      proTitle.textContent = labels.pro_unlocked;
+      proTitle.style.cssText = 'font-size: 16px; font-weight: bold; color: #00f9f9; margin-bottom: 12px;';
+      proFeaturesDiv.appendChild(proTitle);
+      proFeaturesDiv.appendChild(this._createForm(proSchema));
+    }
+
+    // Keep footer visible even after activation:
+    // - When PRO is active and the form is long, show footer BEFORE the PRO form.
+    // - Otherwise keep it at the end.
+    if (isLicenseActive && proFeaturesDiv) {
+      container.appendChild(footerWrap);
+      container.appendChild(proFeaturesDiv);
+    } else {
+      if (proFeaturesDiv) container.appendChild(proFeaturesDiv);
+      container.appendChild(footerWrap);
+    }
+
+    return container;
   }
 
   _createForm(schema, isPro = false) {
@@ -14094,7 +15551,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       select.style.padding = '8px';
       select.style.border = '1px solid var(--divider-color)';
       select.style.borderRadius = '4px';
-      select.style.background = 'var(--card-background-color)';
+      select.style.background = 'var(--lumina-input-bg, var(--card-background-color))';
       select.style.color = 'var(--primary-text-color)';
       const localeStrings = this._getLocaleStrings();
       const opts = this._getAvailableLanguageOptions(localeStrings);
@@ -14172,13 +15629,21 @@ _createSectionDefs(localeStrings, schemaDefs) {
     }
 
     const prevDisplayUnit = (this._config && this._config.display_unit ? this._config.display_unit : this._defaults.display_unit || 'kW').toUpperCase();
+    const prevBatteryOverlayEnabled = Boolean(this._config && this._config.battery_overlay_enabled);
     const newConfig = { ...this._config };
+    // For some label fields, empty string is a meaningful value (user wants to hide the label).
+    // Keep '' instead of deleting the key, otherwise the card falls back to default labels.
+    const preserveEmptyStringFields = new Set(['car1_label', 'car2_label']);
     schema.forEach((field) => {
       if (!field.name) {
         return;
       }
       const fieldValue = value[field.name];
       const defaultVal = field.default !== undefined ? field.default : this._defaults[field.name];
+      if (fieldValue === '' && preserveEmptyStringFields.has(field.name)) {
+        newConfig[field.name] = '';
+        return;
+      }
       if (
         fieldValue === '' ||
         fieldValue === null ||
@@ -14198,21 +15663,23 @@ _createSectionDefs(localeStrings, schemaDefs) {
 
     const proPassword = newConfig.pro_password;
     const overlayEnabledChanged = (this._config.overlay_image_enabled !== newConfig.overlay_image_enabled);
+    const batteryOverlayEnabledChanged = (prevBatteryOverlayEnabled !== Boolean(newConfig.battery_overlay_enabled));
     
     if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
       const trimmed = proPassword.trim();
-      const hashHex = LUMINA_SHA256(trimmed);
+      const uid = getLuminaUID();
+      const hashHex = LUMINA_SHA256(trimmed + uid);
       
       // Use remote list for verification
       let isValid = false;
-      if (LUMINA_AUTH_LIST === null) {
+      if (LUMINA_AUTH_LIST_V2 === null) {
         // If list is still loading, try to refresh and re-render
         LUMINA_REFRESH_AUTH(() => {
           this._rendered = false;
           this.render();
         });
       } else {
-        isValid = LUMINA_AUTH_LIST.includes(hashHex);
+        isValid = LUMINA_AUTH_LIST_V2.includes(hashHex);
         // Force re-render if authorization state just changed to update PayPal button size
         const wasAuthorized = this._isAuthorized;
         this._isAuthorized = isValid;
@@ -14223,7 +15690,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         }
       }
       
-      if (!isValid && LUMINA_AUTH_LIST !== null) {
+      if (!isValid && LUMINA_AUTH_LIST_V2 !== null) {
         // Disable overlay if password is not valid (and list is loaded)
         if (newConfig.overlay_image_enabled) {
           newConfig.overlay_image_enabled = false;
@@ -14252,6 +15719,14 @@ _createSectionDefs(localeStrings, schemaDefs) {
     if (nextDisplayUnit !== prevDisplayUnit) {
       this._rendered = false;
       this.render();
+    }
+
+    // Update visibility of Battery fields + SOC Bar section when toggled
+    if (batteryOverlayEnabledChanged) {
+      const type = (newConfig && newConfig.installation_type) ? String(newConfig.installation_type) : '1';
+      requestAnimationFrame(() => {
+        try { this._updateSectionVisibility(type); } catch (e) { /* ignore */ }
+      });
     }
   }
 
@@ -14330,10 +15805,40 @@ _createSectionDefs(localeStrings, schemaDefs) {
         padding: 16px;
       }
       details.section {
-        border: 1px solid var(--divider-color);
+        border: 1px solid rgba(0, 249, 249, 0.45);
         border-radius: 10px;
-        background: var(--ha-card-background, var(--card-background-color, #fff));
+        background: rgba(0, 249, 249, 0.12);
         overflow: hidden;
+        color: #000;
+
+        /* Collapsed: cyan background + black text */
+        --primary-text-color: #000;
+        --secondary-text-color: rgba(0, 0, 0, 0.72);
+        --primary-color: #000;
+        --mdc-theme-text-primary-on-background: #000;
+        --mdc-theme-text-secondary-on-background: rgba(0, 0, 0, 0.72);
+        --mdc-theme-primary: #000;
+        --paper-item-icon-color: #000;
+
+        --lumina-input-bg: rgba(255, 255, 255, 0.75);
+        --lumina-input-border: rgba(0, 0, 0, 0.25);
+      }
+      details.section[open] {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(0, 0, 0, 0.35);
+        color: #fff;
+
+        /* Expanded: black background + white text */
+        --primary-text-color: #fff;
+        --secondary-text-color: rgba(255, 255, 255, 0.72);
+        --primary-color: #fff;
+        --mdc-theme-text-primary-on-background: #fff;
+        --mdc-theme-text-secondary-on-background: rgba(255, 255, 255, 0.72);
+        --mdc-theme-primary: #fff;
+        --paper-item-icon-color: #fff;
+
+        --lumina-input-bg: rgba(0, 0, 0, 0.22);
+        --lumina-input-border: rgba(255, 255, 255, 0.22);
       }
       details.section:not(:first-of-type) {
         margin-top: 4px;
@@ -14342,12 +15847,17 @@ _createSectionDefs(localeStrings, schemaDefs) {
         font-weight: bold;
         font-size: 1.05em;
         padding: 12px 16px;
-        color: var(--primary-color);
+        background: #00f9f9;
+        color: #000;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: space-between;
         list-style: none;
+      }
+      details.section[open] .section-summary {
+        background: rgba(0, 0, 0, 0.10);
+        color: #fff;
       }
       .section-summary::-webkit-details-marker {
         display: none;
@@ -14357,6 +15867,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         font-size: 0.9em;
         transform: rotate(90deg);
         transition: transform 0.2s ease;
+        color: currentColor;
       }
       details.section[open] .section-summary::after {
         transform: rotate(270deg);
@@ -14403,7 +15914,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       .color-picker-input {
         width: 48px;
         height: 32px;
-        border: 1px solid var(--divider-color);
+        border: 1px solid var(--lumina-input-border, var(--divider-color));
         border-radius: 4px;
         cursor: pointer;
         padding: 2px;
@@ -14411,37 +15922,15 @@ _createSectionDefs(localeStrings, schemaDefs) {
       .color-text-input {
         flex: 1;
         padding: 8px 12px;
-        border: 1px solid var(--divider-color);
+        border: 1px solid var(--lumina-input-border, var(--divider-color));
         border-radius: 4px;
-        background: var(--card-background-color);
+        background: var(--lumina-input-bg, var(--card-background-color));
         color: var(--primary-text-color);
         font-size: 0.95em;
       }
       .color-text-input:focus {
         outline: none;
-        border-color: var(--primary-color);
-      }
-      /* PRO Section specific styling */
-      details.section[data-section-id="overlay_image"] .section-summary,
-      details.section[data-section-id="overlay_image"] .section-helper,
-      details.section[data-section-id="overlay_image"] .field-helper,
-      details.section[data-section-id="overlay_image"] ha-formfield,
-      details.section[data-section-id="overlay_image"] .label,
-      details.section[data-section-id="overlay_image"] label {
-        color: #ff4444 !important;
-      }
-      details.section[data-section-id="overlay_image"] ha-form {
-        --secondary-text-color: #ff4444 !important;
-        --primary-text-color: #ff4444 !important;
-        --mdc-theme-text-primary-on-background: #ff4444 !important;
-        --paper-item-icon-color: #ff4444 !important;
-        --mdc-theme-primary: #ff4444 !important;
-        --ha-label-badge-color: #ff4444 !important;
-      }
-      /* Ensure everything inside the section content is forced to red */
-      details.section[data-section-id="overlay_image"] .section-content * {
-        --secondary-text-color: #ff4444 !important;
-        --primary-text-color: #ff4444 !important;
+        border-color: rgba(0, 249, 249, 0.85);
       }
       
       /* PayPal Button Styling */
@@ -14452,9 +15941,9 @@ _createSectionDefs(localeStrings, schemaDefs) {
         align-items: center;
         gap: 10px;
         padding: 15px;
-        border: 2px dashed #ff4444;
+        border: 2px dashed #00f9f9;
         border-radius: 12px;
-        background: rgba(255, 68, 68, 0.05);
+        background: rgba(0, 249, 249, 0.08);
         transition: all 0.3s ease;
       }
       .paypal-button-wrapper.authorized {
@@ -14512,7 +16001,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       .paypal-instruction-note {
         font-size: 1.1em;
         text-align: center;
-        color: #ff0000;
+        color: var(--primary-text-color);
         font-weight: 700;
         text-decoration: underline;
         line-height: 1.4;
