@@ -11214,6 +11214,1021 @@ class LuminaEnergyCardEditor extends HTMLElement {
       : {};
     this._strings = this._buildStrings();
     this._sectionOpenState = {};
+
+    // Editor-only live preview (bigger than HA's default preview).
+    this._previewScale = 1.0;
+    this._previewCardEl = null;
+    this._previewStageEl = null;
+    this._previewScaleLabelEl = null;
+    this._loadPreviewScaleFromStorage_();
+    this._previewOverlayDragState = null;
+
+    // Hide Home Assistant's default card preview panel (so our preview can live on the right).
+    // Stored per-browser (editor-only).
+    this._hideHaPreview = true;
+    this._loadHideHaPreviewFromStorage_();
+    this._haPreviewStyleId = 'lumina-hide-ha-preview-style-v1';
+    // Debug: logs for hiding HA preview (visible in browser console).
+    this._haPreviewDebug = true;
+    this._editorGlobalStyleId = 'lumina-editor-global-style-v1';
+    this._overlayFixStyleId = 'lumina-editor-overlay-fix-style-v1';
+    this._editorLogOnceKeys = new Set();
+    this._entityPickerDebugBound = false;
+    this._entityPickerDebugTimer = null;
+    this._hostVarBackup = new WeakMap();
+  }
+
+  _editorLog_(label, data) {
+    try {
+      // Use warn so it remains visible even when debug is filtered.
+      // Keep payload small to avoid console spam.
+      console.warn('[Lumina][editor][hideHaPreview]', label, data || '');
+    } catch (e) { /* ignore */ }
+  }
+
+  _editorLogOnce_(key, label, data) {
+    try {
+      if (!this._editorLogOnceKeys) this._editorLogOnceKeys = new Set();
+      if (this._editorLogOnceKeys.has(key)) return;
+      this._editorLogOnceKeys.add(key);
+      console.warn('[Lumina][editor]', label, data || '');
+    } catch (e) { /* ignore */ }
+  }
+
+  _bindEntityPickerDebug_() {
+    try {
+      if (this._entityPickerDebugBound || !this.shadowRoot) return;
+      this._entityPickerDebugBound = true;
+      this._editorLogOnce_('entityPicker.bound', 'entityPicker.bound', {});
+
+      const handler = (ev) => {
+        try {
+          const t = ev && ev.target;
+          if (!t) return;
+          const closest = (t.closest && t.closest('ha-entity-picker, ha-combo-box, ha-selector-entity, ha-selector, vaadin-combo-box')) || null;
+          if (!closest) return;
+          const tag = String(closest.tagName || '').toLowerCase();
+          if (!tag || (tag !== 'ha-entity-picker' && tag !== 'ha-combo-box' && tag !== 'vaadin-combo-box' && tag !== 'ha-selector-entity' && tag !== 'ha-selector')) return;
+
+          this._editorLogOnce_(`entityPicker.hit.${tag}`, 'entityPicker.hit', { tag });
+          if (this._entityPickerDebugTimer) clearTimeout(this._entityPickerDebugTimer);
+          this._entityPickerDebugTimer = setTimeout(() => {
+            try { this._dumpEntityPickerOverlayDebug_('interaction'); } catch (e2) { /* ignore */ }
+          }, 80);
+        } catch (e1) { /* ignore */ }
+      };
+
+      this.shadowRoot.addEventListener('click', handler, true);
+      this.shadowRoot.addEventListener('focusin', handler, true);
+    } catch (e0) { /* ignore */ }
+  }
+
+  _setCssVarsOnHost_(el, vars) {
+    try {
+      if (!el || !el.style || !vars) return;
+      let prev = this._hostVarBackup ? this._hostVarBackup.get(el) : null;
+      if (!prev) {
+        prev = {};
+        try { if (this._hostVarBackup) this._hostVarBackup.set(el, prev); } catch (eS) { /* ignore */ }
+      }
+      Object.entries(vars).forEach(([k, v]) => {
+        try {
+          if (prev[k] === undefined) prev[k] = el.style.getPropertyValue(k) || '';
+          el.style.setProperty(k, String(v));
+        } catch (e1) { /* ignore */ }
+      });
+    } catch (e0) { /* ignore */ }
+  }
+
+  _restoreCssVarsOnHosts_() {
+    try {
+      const restoreOn = (el) => {
+        try {
+          if (!el) return;
+          const prev = this._hostVarBackup ? this._hostVarBackup.get(el) : null;
+          if (!prev) return;
+          Object.entries(prev).forEach(([k, v]) => {
+            try {
+              if (v) el.style.setProperty(k, v);
+              else el.style.removeProperty(k);
+            } catch (e2) { /* ignore */ }
+          });
+        } catch (e1) { /* ignore */ }
+      };
+
+      const docs = [];
+      try { docs.push(typeof document !== 'undefined' ? document : null); } catch (e0) { /* ignore */ }
+      try { docs.push(window.parent && window.parent.document ? window.parent.document : null); } catch (e3) { /* ignore */ }
+
+      docs.forEach((doc) => {
+        try {
+          if (!doc || !doc.querySelectorAll) return;
+          try { if (doc.documentElement) restoreOn(doc.documentElement); } catch (e4) { /* ignore */ }
+          doc.querySelectorAll('home-assistant, home-assistant-main, ha-dialog, hui-dialog-edit-card').forEach((el) => restoreOn(el));
+        } catch (e5) { /* ignore */ }
+      });
+    } catch (e9) { /* ignore */ }
+  }
+
+  _applyOverlayShadowFixes_(reason) {
+    // Best-effort: when overlays expose open shadowRoots, inject a tiny style that forces readable items.
+    const css = `
+      :host {
+        --lumo-base-color: rgba(45, 45, 45, 0.98);
+        --lumo-body-text-color: #fff;
+        --lumo-primary-text-color: #fff;
+        --lumo-secondary-text-color: rgba(255, 255, 255, 0.72);
+        --lumo-contrast: #fff;
+        --lumo-primary-color: rgba(0, 249, 249, 0.95);
+      }
+      [part="overlay"],
+      [part="content"] {
+        background: rgba(45, 45, 45, 0.98) !important;
+        color: #fff !important;
+      }
+      ::slotted(vaadin-item),
+      ::slotted(vaadin-combo-box-item) {
+        color: #fff !important;
+      }
+      ::slotted(vaadin-item[selected]),
+      ::slotted(vaadin-combo-box-item[selected]) {
+        background: rgba(0, 249, 249, 0.18) !important;
+      }
+    `;
+
+    const scanDoc = (doc) => {
+      try {
+        if (!doc || !doc.querySelectorAll) return { count: 0, injected: 0 };
+        const overlays = Array.from(doc.querySelectorAll('vaadin-combo-box-overlay, vaadin-select-overlay, vaadin-overlay, ha-dialog'));
+        let injected = 0;
+        overlays.forEach((ov) => {
+          try {
+            if (!ov || !ov.shadowRoot || !ov.shadowRoot.querySelector) return;
+            let style = ov.shadowRoot.querySelector(`#${this._overlayFixStyleId}`);
+            if (!style && ov.shadowRoot.ownerDocument && ov.shadowRoot.ownerDocument.createElement) {
+              style = ov.shadowRoot.ownerDocument.createElement('style');
+              style.id = this._overlayFixStyleId;
+              ov.shadowRoot.appendChild(style);
+            }
+            if (style) {
+              style.textContent = css;
+              injected += 1;
+            }
+          } catch (e2) { /* ignore */ }
+        });
+        return { count: overlays.length, injected };
+      } catch (e1) { return { count: 0, injected: 0 }; }
+    };
+
+    const stats = { reason: String(reason || ''), docs: [] };
+    try { stats.docs.push({ where: 'document', ...scanDoc(typeof document !== 'undefined' ? document : null) }); } catch (e0) { /* ignore */ }
+    try { stats.docs.push({ where: 'parent', ...scanDoc(window.parent && window.parent.document ? window.parent.document : null) }); } catch (e3) { /* ignore */ }
+    this._editorLogOnce_(`overlayFix.${stats.reason}.${(stats.docs && stats.docs.length) ? stats.docs.map(d => d.injected).join(',') : '0'}`, 'overlay.fix', stats);
+  }
+
+  _dumpEntityPickerOverlayDebug_(reason) {
+    const dumpDoc = (doc, where) => {
+      try {
+        if (!doc || !doc.querySelectorAll) return null;
+        const overlays = Array.from(doc.querySelectorAll('vaadin-combo-box-overlay, vaadin-select-overlay, vaadin-overlay, ha-dialog, paper-dialog, mwc-dialog'));
+        const view = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+        const stylePresent = Boolean(doc.querySelector && doc.querySelector(`#${this._editorGlobalStyleId}`));
+
+        const overlaySummaries = overlays.slice(0, 6).map((ov) => {
+          try {
+            const tag = String(ov.tagName || '').toLowerCase();
+            const hasSR = Boolean(ov.shadowRoot);
+            let bg = '', color = '';
+            try {
+              const sr = ov.shadowRoot;
+              const part = sr && sr.querySelector ? (sr.querySelector('[part="overlay"]') || sr.querySelector('[part="content"]')) : null;
+              const el = part || ov;
+              if (view && view.getComputedStyle) {
+                const cs = view.getComputedStyle(el);
+                bg = cs && cs.backgroundColor ? cs.backgroundColor : '';
+                color = cs && cs.color ? cs.color : '';
+              }
+            } catch (eBg) { /* ignore */ }
+
+            const sampleItems = [];
+            const pushItemsFrom = (root) => {
+              try {
+                if (!root || !root.querySelectorAll) return;
+                root.querySelectorAll('vaadin-item, vaadin-combo-box-item, paper-item, mwc-list-item, ha-list-item').forEach((it) => {
+                  if (sampleItems.length >= 4) return;
+                  const txt = String(it.textContent || '').trim().slice(0, 80);
+                  let itColor = '', itBg = '';
+                  try {
+                    if (view && view.getComputedStyle) {
+                      const cs = view.getComputedStyle(it);
+                      itColor = cs && cs.color ? cs.color : '';
+                      itBg = cs && cs.backgroundColor ? cs.backgroundColor : '';
+                    }
+                  } catch (eC) { /* ignore */ }
+                  sampleItems.push({ tag: String(it.tagName || '').toLowerCase(), text: txt, color: itColor, bg: itBg });
+                });
+              } catch (eIt) { /* ignore */ }
+            };
+            pushItemsFrom(ov);
+            try { if (ov.shadowRoot) pushItemsFrom(ov.shadowRoot); } catch (eS) { /* ignore */ }
+
+            return { tag, hasShadowRoot: hasSR, bg, color, sampleItems };
+          } catch (e2) { return { tag: 'unknown' }; }
+        });
+
+        return { where, stylePresent, overlaysFound: overlays.length, overlays: overlaySummaries };
+      } catch (e1) { return { where, error: true }; }
+    };
+
+    const payload = {
+      reason: String(reason || ''),
+      ts: Date.now ? Date.now() : 0,
+      docs: [
+        dumpDoc(typeof document !== 'undefined' ? document : null, 'document'),
+        dumpDoc(window.parent && window.parent.document ? window.parent.document : null, 'parent')
+      ]
+    };
+
+    console.warn('[Lumina][editor][entityPicker]', payload);
+    try {
+      // Small, quick hint in console without expanding objects
+      const d0 = payload && payload.docs && payload.docs[0] ? payload.docs[0] : null;
+      const d1 = payload && payload.docs && payload.docs[1] ? payload.docs[1] : null;
+      console.warn('[Lumina][editor][entityPicker][summary]', {
+        reason: payload.reason,
+        docOverlays: d0 ? d0.overlaysFound : undefined,
+        parentOverlays: d1 ? d1.overlaysFound : undefined
+      });
+    } catch (eS) { /* ignore */ }
+    try { this._applyOverlayShadowFixes_(String(reason || '')); } catch (e0) { /* ignore */ }
+  }
+
+  _hideHaPreviewStorageKey_() {
+    return 'lumina_energy_card_editor_hide_ha_preview_v1';
+  }
+
+  _loadHideHaPreviewFromStorage_() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem(this._hideHaPreviewStorageKey_());
+      if (raw === null || raw === undefined || raw === '') return;
+      this._hideHaPreview = raw === '1' || raw === 'true';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _saveHideHaPreviewToStorage_() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(this._hideHaPreviewStorageKey_(), this._hideHaPreview ? '1' : '0');
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  connectedCallback() {
+    try {
+      this._applyHaPreviewVisibility_();
+    } catch (e) { /* ignore */ }
+  }
+
+  disconnectedCallback() {
+    try {
+      // Always restore HA preview when editor is closed.
+      this._setHaPreviewHidden_(false);
+      this._applyHaPreviewGlobalStyle_(false);
+      this._restoreCssVarsOnHosts_();
+    } catch (e) { /* ignore */ }
+  }
+
+  _applyHaPreviewGlobalStyle_(hidden) {
+    const stats = { hidden: Boolean(hidden), targets: [] };
+    const css = hidden ? `
+      /* Hide HA built-in preview panel (best-effort across HA versions) */
+      hui-card-preview,
+      ha-card-preview,
+      .card-preview,
+      .preview,
+      [data-role="card-preview"] {
+        display: none !important;
+        visibility: hidden !important;
+      }
+
+      /* Expand the editor area when preview is hidden */
+      :host,
+      hui-element-editor,
+      .element-editor,
+      .content,
+      .mdc-dialog__content {
+        max-width: none !important;
+        width: 100% !important;
+      }
+
+      /* Common layout containers used by the edit-card dialog */
+      .content,
+      .mdc-dialog__content {
+        display: block !important;
+      }
+    ` : '';
+
+    const upsertIn = (container, ownerDoc) => {
+      try {
+        if (!container || typeof container.querySelector !== 'function') return;
+        const doc = ownerDoc || (container.ownerDocument || (typeof document !== 'undefined' ? document : null));
+        if (!doc || !doc.createElement) return;
+        let style = container.querySelector(`#${this._haPreviewStyleId}`);
+        if (!style) {
+          style = doc.createElement('style');
+          style.id = this._haPreviewStyleId;
+          if (container.head && container.head.appendChild) {
+            container.head.appendChild(style);
+          } else if (container.appendChild) {
+            container.appendChild(style);
+          } else if (container.host && container.host.appendChild) {
+            container.host.appendChild(style);
+          }
+        }
+        style.textContent = css;
+        try { stats.targets.push(container === doc ? 'document' : (container && container.host ? 'shadowRoot' : 'container')); } catch (e0) { /* ignore */ }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    const applyToDoc = (doc) => {
+      if (!doc) return;
+      // 1) Document head (only affects light DOM)
+      upsertIn(doc, doc);
+      // 2) Dialog shadowRoot (this is where HA renders the preview in most versions)
+      try {
+        const dlg = doc.querySelector ? doc.querySelector('hui-dialog-edit-card') : null;
+        if (dlg && dlg.shadowRoot) {
+          upsertIn(dlg.shadowRoot, doc);
+          try { stats.targets.push('hui-dialog-edit-card.shadowRoot'); } catch (e0) { /* ignore */ }
+        }
+      } catch (e1) { /* ignore */ }
+      // 3) Home Assistant root shadowRoot (some versions mount the dialog deeper)
+      try {
+        const ha = doc.querySelector ? doc.querySelector('home-assistant') : null;
+        if (ha && ha.shadowRoot) {
+          upsertIn(ha.shadowRoot, doc);
+          try { stats.targets.push('home-assistant.shadowRoot'); } catch (e0) { /* ignore */ }
+          // Often the edit-card dialog lives inside HA's shadow root, so inject there too.
+          try {
+            const dlg2 = ha.shadowRoot.querySelector ? ha.shadowRoot.querySelector('hui-dialog-edit-card') : null;
+            if (dlg2 && dlg2.shadowRoot) {
+              upsertIn(dlg2.shadowRoot, doc);
+              try { stats.targets.push('home-assistant > hui-dialog-edit-card.shadowRoot'); } catch (e00) { /* ignore */ }
+            }
+          } catch (e3) { /* ignore */ }
+        }
+      } catch (e2) { /* ignore */ }
+    };
+
+    applyToDoc(typeof document !== 'undefined' ? document : null);
+    try { if (window.parent && window.parent.document) applyToDoc(window.parent.document); } catch (e3) { /* ignore */ }
+    try { stats.targets = Array.from(new Set(stats.targets)); } catch (e4) { /* ignore */ }
+    return stats;
+  }
+
+  _findAllHaPreviewElements_() {
+    const out = [];
+    const collect = (root) => {
+      if (!root || typeof root.querySelectorAll !== 'function') return;
+      try {
+        root.querySelectorAll('hui-card-preview, ha-card-preview').forEach((el) => out.push(el));
+      } catch (e) { /* ignore */ }
+    };
+    const seen = new Set();
+    const collectDeep = (node) => {
+      if (!node) return;
+      try { if (seen.has(node)) return; seen.add(node); } catch (eSeen) { /* ignore */ }
+      collect(node);
+      // Walk common containers that often host the preview inside shadowRoots
+      try {
+        node.querySelectorAll('home-assistant, home-assistant-main, hui-dialog-edit-card, ha-dialog, hui-element-editor, hui-card-preview, ha-card-preview').forEach((el) => {
+          if (el && el.shadowRoot) collectDeep(el.shadowRoot);
+        });
+      } catch (e) { /* ignore */ }
+    };
+    try { collectDeep(typeof document !== 'undefined' ? document : null); } catch (e0) { /* ignore */ }
+    try {
+      if (window.parent && window.parent.document) collectDeep(window.parent.document);
+    } catch (e1) { /* ignore */ }
+    // De-dupe
+    try { return Array.from(new Set(out)); } catch (e2) { return out; }
+  }
+
+  _setHaPreviewHidden_(hidden) {
+    const els = this._findAllHaPreviewElements_();
+    if (!els || !els.length) return;
+    els.forEach((el) => {
+      try {
+        if (hidden) {
+          if (el.dataset && el.dataset.luminaPrevDisplay === undefined) {
+            el.dataset.luminaPrevDisplay = el.style && el.style.display ? el.style.display : '';
+          }
+          el.style.display = 'none';
+        } else {
+          if (el.dataset && el.dataset.luminaPrevDisplay !== undefined) {
+            el.style.display = el.dataset.luminaPrevDisplay || '';
+            delete el.dataset.luminaPrevDisplay;
+          } else {
+            el.style.display = '';
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+  }
+
+  _applyHaPreviewVisibility_() {
+    // Retry a few times because HA dialog content is often rendered async.
+    const desired = Boolean(this._hideHaPreview);
+    const attempt = (n) => {
+      let beforeCount = 0;
+      try { beforeCount = (this._findAllHaPreviewElements_() || []).length; } catch (e0) { /* ignore */ }
+
+      // CSS-based hide is the most reliable in HA (shadow DOM + async render).
+      const styleStats = this._applyHaPreviewGlobalStyle_(desired);
+      this._setHaPreviewHidden_(desired);
+
+      // Log only the first + last attempt to avoid spam.
+      if (desired && this._haPreviewDebug && (n === 0 || n === 8)) {
+        let dlgInfo = { found: false, shadowRoot: false };
+        try {
+          const d = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('hui-dialog-edit-card') : null;
+          dlgInfo = { found: Boolean(d), shadowRoot: Boolean(d && d.shadowRoot) };
+        } catch (e1) { /* ignore */ }
+        this._editorLog_(`attempt.${n}`, {
+          desired,
+          beforeCount,
+          dlg: dlgInfo,
+          styleTargets: styleStats && styleStats.targets ? styleStats.targets : []
+        });
+      }
+
+      if (n >= 8) return;
+      setTimeout(() => attempt(n + 1), n < 2 ? 0 : 120);
+    };
+    attempt(0);
+  }
+
+  _applyEditorGlobalStyle_() {
+    // Force readable inputs in HA editor dialogs (covers MWC + old Polymer "paper-*" components).
+    const css = `
+      hui-dialog-edit-card {
+        /* Always dark-gray inputs with white text (both HA themes) */
+        --lumina-input-bg: rgba(55, 55, 55, 0.92);
+        --lumina-input-border: rgba(255, 255, 255, 0.28);
+        --lumina-input-text: #fff;
+        --lumina-input-secondary: rgba(255, 255, 255, 0.72);
+
+        --input-fill-color: var(--lumina-input-bg);
+        --input-ink-color: var(--lumina-input-text);
+        --input-label-ink-color: var(--lumina-input-secondary);
+        --input-idle-line-color: var(--lumina-input-border);
+        --input-hover-line-color: rgba(0, 249, 249, 0.85);
+
+        --mdc-theme-surface: rgba(45, 45, 45, 0.98);
+        --mdc-theme-on-surface: #fff;
+        --mdc-theme-text-primary-on-background: #fff;
+        --mdc-theme-text-secondary-on-background: rgba(255, 255, 255, 0.72);
+        --mdc-theme-primary: rgba(0, 249, 249, 0.95);
+
+        --mdc-text-field-fill-color: var(--lumina-input-bg);
+        --mdc-text-field-ink-color: var(--lumina-input-text);
+        --mdc-text-field-input-text-color: var(--lumina-input-text);
+        --mdc-text-field-label-ink-color: var(--lumina-input-secondary);
+        --mdc-text-field-helper-text-ink-color: var(--lumina-input-secondary);
+        --mdc-text-field-idle-line-color: var(--lumina-input-border);
+        --mdc-text-field-hover-line-color: rgba(0, 249, 249, 0.85);
+        --mdc-text-field-outlined-idle-border-color: var(--lumina-input-border);
+        --mdc-text-field-outlined-hover-border-color: rgba(0, 249, 249, 0.65);
+        --mdc-text-field-outlined-focused-border-color: rgba(0, 249, 249, 0.95);
+
+        /* Old Polymer components still used in some pickers/dialogs */
+        --paper-input-container-input-color: #fff;
+        --paper-input-container-color: rgba(255, 255, 255, 0.55);
+        --paper-input-container-focus-color: rgba(0, 249, 249, 0.95);
+        --paper-input-container-label-floating-color: rgba(0, 249, 249, 0.95);
+        --paper-input-container-label-color: rgba(255, 255, 255, 0.72);
+        --paper-item-body-text-color: #fff;
+        --paper-item-body-secondary-color: rgba(255, 255, 255, 0.72);
+        --paper-listbox-background-color: rgba(0, 0, 0, 0.92);
+        --paper-card-background-color: rgba(0, 0, 0, 0.92);
+        --paper-dialog-background-color: rgba(0, 0, 0, 0.92);
+
+        /* Vaadin/Lumo (used by combo-box/entity pickers in newer HA) */
+        --lumo-base-color: rgba(45, 45, 45, 0.98);
+        --lumo-body-text-color: #fff;
+        --lumo-secondary-text-color: rgba(255, 255, 255, 0.72);
+        --lumo-primary-text-color: #fff;
+        --lumo-contrast: #fff;
+        --lumo-contrast-90pct: rgba(255, 255, 255, 0.9);
+        --lumo-contrast-80pct: rgba(255, 255, 255, 0.8);
+        --lumo-contrast-60pct: rgba(255, 255, 255, 0.6);
+        --lumo-contrast-30pct: rgba(255, 255, 255, 0.3);
+        --lumo-shade-5pct: rgba(55, 55, 55, 0.92);
+        --lumo-tint-5pct: rgba(255, 255, 255, 0.06);
+        --lumo-primary-color: rgba(0, 249, 249, 0.95);
+        --lumo-primary-color-50pct: rgba(0, 249, 249, 0.50);
+        --lumo-primary-color-10pct: rgba(0, 249, 249, 0.10);
+
+        --vaadin-input-field-background: rgba(55, 55, 55, 0.92);
+        --vaadin-input-field-value-color: #fff;
+        --vaadin-input-field-placeholder-color: rgba(255, 255, 255, 0.55);
+        --vaadin-input-field-label-color: rgba(255, 255, 255, 0.72);
+      }
+
+      /* Vaadin overlays are often attached to document.body (outside the dialog). Force readable list items. */
+      vaadin-overlay,
+      vaadin-select-overlay,
+      vaadin-combo-box-overlay {
+        --lumo-base-color: rgba(45, 45, 45, 0.98);
+        --lumo-body-text-color: #fff;
+        --lumo-primary-text-color: #fff;
+        --lumo-secondary-text-color: rgba(255, 255, 255, 0.72);
+        --lumo-contrast: #fff;
+        --lumo-primary-color: rgba(0, 249, 249, 0.95);
+
+        /* Vaadin field fallbacks (some versions use these instead of --vaadin-input-field-*) */
+        --vaadin-field-background: rgba(55, 55, 55, 0.92);
+        --vaadin-field-text-color: #fff;
+        --vaadin-field-label-color: rgba(255, 255, 255, 0.72);
+        --vaadin-field-placeholder-color: rgba(255, 255, 255, 0.55);
+      }
+      vaadin-overlay::part(overlay),
+      vaadin-select-overlay::part(overlay),
+      vaadin-combo-box-overlay::part(overlay) {
+        background: rgba(45, 45, 45, 0.98) !important;
+        color: #fff !important;
+      }
+      vaadin-overlay::part(content),
+      vaadin-select-overlay::part(content),
+      vaadin-combo-box-overlay::part(content) {
+        color: #fff !important;
+      }
+      vaadin-combo-box-overlay::part(items),
+      vaadin-select-overlay::part(items) {
+        color: #fff !important;
+      }
+      vaadin-item::part(content),
+      vaadin-combo-box-item::part(content) {
+        color: #fff !important;
+      }
+      vaadin-overlay vaadin-item,
+      vaadin-overlay vaadin-combo-box-item,
+      vaadin-combo-box-overlay vaadin-item,
+      vaadin-combo-box-overlay vaadin-combo-box-item,
+      vaadin-select-overlay vaadin-item {
+        color: #fff !important;
+        background: transparent !important;
+      }
+      vaadin-overlay vaadin-item[selected],
+      vaadin-overlay vaadin-combo-box-item[selected],
+      vaadin-select-overlay vaadin-item[selected],
+      vaadin-combo-box-overlay vaadin-item[selected],
+      vaadin-combo-box-overlay vaadin-combo-box-item[selected] {
+        background: rgba(0, 249, 249, 0.18) !important;
+      }
+      vaadin-overlay vaadin-item:hover,
+      vaadin-overlay vaadin-combo-box-item:hover,
+      vaadin-select-overlay vaadin-item:hover,
+      vaadin-combo-box-overlay vaadin-item:hover,
+      vaadin-combo-box-overlay vaadin-combo-box-item:hover {
+        background: rgba(255, 255, 255, 0.08) !important;
+      }
+
+      /* HA sometimes uses MWC menus/lists for entity pickers (not Vaadin). Force readable list items. */
+      mwc-menu,
+      mwc-list,
+      mwc-dialog,
+      ha-dialog {
+        --mdc-theme-surface: rgba(45, 45, 45, 0.98);
+        --mdc-theme-on-surface: #fff;
+        --mdc-theme-text-primary-on-background: #fff;
+        --mdc-theme-text-secondary-on-background: rgba(255, 255, 255, 0.72);
+        --mdc-theme-primary: rgba(0, 249, 249, 0.95);
+      }
+      mwc-list-item,
+      ha-list-item,
+      paper-item {
+        color: #fff !important;
+        --mdc-list-item-primary-text-color: #fff;
+        --mdc-list-item-secondary-text-color: rgba(255, 255, 255, 0.72);
+        --mdc-list-item-graphic-fill-color: #fff;
+        --mdc-list-item-graphic-ink-color: #fff;
+      }
+    `;
+
+    const upsertIn = (container, ownerDoc) => {
+      try {
+        if (!container || typeof container.querySelector !== 'function') return;
+        const doc = ownerDoc || (container.ownerDocument || (typeof document !== 'undefined' ? document : null));
+        if (!doc || !doc.createElement) return;
+        let style = container.querySelector(`#${this._editorGlobalStyleId}`);
+        if (!style) {
+          style = doc.createElement('style');
+          style.id = this._editorGlobalStyleId;
+          if (container.head && container.head.appendChild) container.head.appendChild(style);
+          else if (container.appendChild) container.appendChild(style);
+          else if (container.host && container.host.appendChild) container.host.appendChild(style);
+        }
+        style.textContent = css;
+      } catch (e) { /* ignore */ }
+    };
+
+    const applyToDoc = (doc) => {
+      if (!doc) return;
+      upsertIn(doc, doc);
+      try {
+        const dlg = doc.querySelector ? doc.querySelector('hui-dialog-edit-card') : null;
+        if (dlg && dlg.shadowRoot) upsertIn(dlg.shadowRoot, doc);
+      } catch (e1) { /* ignore */ }
+      try {
+        const ha = doc.querySelector ? doc.querySelector('home-assistant') : null;
+        if (ha && ha.shadowRoot) {
+          upsertIn(ha.shadowRoot, doc);
+          try {
+            const dlg2 = ha.shadowRoot.querySelector ? ha.shadowRoot.querySelector('hui-dialog-edit-card') : null;
+            if (dlg2 && dlg2.shadowRoot) upsertIn(dlg2.shadowRoot, doc);
+          } catch (e2) { /* ignore */ }
+        }
+      } catch (e3) { /* ignore */ }
+
+      // Apply critical vars directly on host elements so they propagate into closed shadow DOM overlays.
+      try {
+        const vars = {
+          '--lumo-base-color': 'rgba(45, 45, 45, 0.98)',
+          '--lumo-body-text-color': '#fff',
+          '--lumo-primary-text-color': '#fff',
+          '--lumo-secondary-text-color': 'rgba(255, 255, 255, 0.72)',
+          '--lumo-contrast': '#fff',
+          '--lumo-primary-color': 'rgba(0, 249, 249, 0.95)',
+          '--mdc-theme-surface': 'rgba(45, 45, 45, 0.98)',
+          '--mdc-theme-on-surface': '#fff',
+          '--mdc-theme-text-primary-on-background': '#fff',
+          '--mdc-theme-text-secondary-on-background': 'rgba(255, 255, 255, 0.72)',
+          '--paper-item-body-text-color': '#fff',
+          '--paper-item-body-secondary-color': 'rgba(255, 255, 255, 0.72)',
+          '--paper-listbox-background-color': 'rgba(45, 45, 45, 0.98)',
+          '--paper-dialog-background-color': 'rgba(45, 45, 45, 0.98)'
+        };
+        try { if (doc.documentElement) this._setCssVarsOnHost_(doc.documentElement, vars); } catch (e4) { /* ignore */ }
+        try {
+          doc.querySelectorAll('home-assistant, home-assistant-main, ha-dialog, hui-dialog-edit-card').forEach((el) => this._setCssVarsOnHost_(el, vars));
+        } catch (e5) { /* ignore */ }
+      } catch (eV) { /* ignore */ }
+    };
+
+    applyToDoc(typeof document !== 'undefined' ? document : null);
+    try { if (window.parent && window.parent.document) applyToDoc(window.parent.document); } catch (e4) { /* ignore */ }
+    try { this._applyOverlayShadowFixes_('global'); } catch (e5) { /* ignore */ }
+  }
+
+  _previewScaleStorageKey_() {
+    return 'lumina_energy_card_editor_preview_scale_v1';
+  }
+
+  _loadPreviewScaleFromStorage_() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem(this._previewScaleStorageKey_());
+      if (!raw) return;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return;
+      this._previewScale = Math.min(2.0, Math.max(0.6, n));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _savePreviewScaleToStorage_() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(this._previewScaleStorageKey_(), String(this._previewScale));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _applyPreviewScale_() {
+    try {
+      if (this._previewStageEl) {
+        this._previewStageEl.style.transform = `scale(${this._previewScale})`;
+      }
+      if (this._previewScaleLabelEl) {
+        this._previewScaleLabelEl.textContent = `${Math.round(this._previewScale * 100)}%`;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _syncEditorPreviewCard_() {
+    try {
+      if (!this._previewCardEl) return;
+      if (this._hass) this._previewCardEl.hass = this._hass;
+      if (this._config) this._previewCardEl.setConfig(this._config);
+      // Bind draggable overlay images after the card renders (best-effort).
+      setTimeout(() => {
+        try { this._bindPreviewOverlayImageDrag_(); } catch (e) { /* ignore */ }
+      }, 0);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _bindPreviewOverlayImageDrag_() {
+    if (!this._previewCardEl || !this._previewCardEl.shadowRoot) return;
+    const root = this._previewCardEl.shadowRoot;
+    const overlayEls = Array.from(root.querySelectorAll('image[data-role^="overlay-image-"]'));
+
+    const makeOverlayKeys = (index1) => {
+      const n = Number(index1);
+      if (!Number.isFinite(n) || n < 1) return null;
+      const base = n === 1 ? 'overlay_image' : `overlay_image_${n}`;
+      return { xKey: `${base}_x`, yKey: `${base}_y` };
+    };
+
+    overlayEls.forEach((el) => {
+      if (!el || !el.getAttribute) return;
+      if (el.dataset && el.dataset.luminaDragBound === '1') return;
+      const role = String(el.getAttribute('data-role') || '').trim();
+      const m = role.match(/^overlay-image-(\d+)$/);
+      if (!m) return;
+      const keys = makeOverlayKeys(parseInt(m[1], 10));
+      if (!keys) return;
+
+      // Enable pointer interaction just for editor drag.
+      try {
+        el.style.pointerEvents = 'all';
+        el.style.cursor = 'grab';
+        el.style.touchAction = 'none';
+      } catch (e) { /* ignore */ }
+
+      const onDown = (ev) => {
+        try {
+          if (!ev) return;
+          if (ev.button != null && ev.button !== 0) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+
+          // If element not visible, ignore.
+          const disp = (el.style && el.style.display) ? String(el.style.display) : '';
+          if (disp === 'none') return;
+
+          const cfg = this._configWithDefaults ? this._configWithDefaults() : (this._config || {});
+          const startX = Number(el.getAttribute('x') || (cfg && cfg[keys.xKey]) || 0) || 0;
+          const startY = Number(el.getAttribute('y') || (cfg && cfg[keys.yKey]) || 0) || 0;
+
+          const minX = -800, maxX = 1600;
+          const minY = -450, maxY = 900;
+
+          this._previewOverlayDragState = {
+            el,
+            xKey: keys.xKey,
+            yKey: keys.yKey,
+            startClientX: ev.clientX,
+            startClientY: ev.clientY,
+            startX,
+            startY,
+            minX,
+            maxX,
+            minY,
+            maxY
+          };
+
+          try {
+            el.style.cursor = 'grabbing';
+            if (el.setPointerCapture && ev.pointerId != null) el.setPointerCapture(ev.pointerId);
+          } catch (e2) { /* ignore */ }
+
+          const onMove = (mv) => {
+            const st = this._previewOverlayDragState;
+            if (!st || st.el !== el) return;
+            try {
+              if (mv && typeof mv.preventDefault === 'function') mv.preventDefault();
+              const dx = (mv.clientX - st.startClientX) / (this._previewScale || 1);
+              const dy = (mv.clientY - st.startClientY) / (this._previewScale || 1);
+              const nx = Math.min(st.maxX, Math.max(st.minX, st.startX + dx));
+              const ny = Math.min(st.maxY, Math.max(st.minY, st.startY + dy));
+              st.lastX = nx;
+              st.lastY = ny;
+              el.setAttribute('x', String(nx));
+              el.setAttribute('y', String(ny));
+            } catch (e3) { /* ignore */ }
+          };
+
+          const end = (up) => {
+            const st = this._previewOverlayDragState;
+            this._previewOverlayDragState = null;
+            try {
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', end);
+              window.removeEventListener('pointercancel', end);
+            } catch (e4) { /* ignore */ }
+            try {
+              el.style.cursor = 'grab';
+              if (el.releasePointerCapture && up && up.pointerId != null) el.releasePointerCapture(up.pointerId);
+            } catch (e5) { /* ignore */ }
+
+            if (!st) return;
+            const finalX = Number.isFinite(Number(st.lastX)) ? Number(st.lastX) : st.startX;
+            const finalY = Number.isFinite(Number(st.lastY)) ? Number(st.lastY) : st.startY;
+
+            // Commit into editor config (single update).
+            try {
+              const newConfig = { ...(this._config || {}) };
+              newConfig[st.xKey] = Math.round(finalX);
+              newConfig[st.yKey] = Math.round(finalY);
+              this._config = newConfig;
+              // Update forms immediately so sliders show new X/Y.
+              const forms = this.shadowRoot ? this.shadowRoot.querySelectorAll('ha-form') : [];
+              if (forms && forms.length) {
+                const data = this._configWithDefaults();
+                forms.forEach((f) => { if (f) f.data = data; });
+              }
+              this._debouncedConfigChanged(newConfig, true);
+            } catch (e6) { /* ignore */ }
+          };
+
+          window.addEventListener('pointermove', onMove, { passive: false });
+          window.addEventListener('pointerup', end, { passive: true });
+          window.addEventListener('pointercancel', end, { passive: true });
+        } catch (e0) {
+          // ignore
+        }
+      };
+
+      el.addEventListener('pointerdown', onDown);
+      if (el.dataset) el.dataset.luminaDragBound = '1';
+    });
+  }
+
+  _createEditorPreviewPanel_() {
+    const wrap = document.createElement('div');
+    wrap.className = 'editor-preview-panel';
+
+    const hideHaWrap = document.createElement('label');
+    hideHaWrap.className = 'editor-preview-hideha';
+    const hideHaCheckbox = document.createElement('input');
+    hideHaCheckbox.type = 'checkbox';
+    hideHaCheckbox.checked = Boolean(this._hideHaPreview);
+    hideHaCheckbox.addEventListener('change', (ev) => {
+      const on = Boolean(ev && ev.target ? ev.target.checked : this._hideHaPreview);
+      this._hideHaPreview = on;
+      this._saveHideHaPreviewToStorage_();
+      this._applyHaPreviewVisibility_();
+    });
+    const hideHaText = document.createElement('span');
+    hideHaText.textContent = 'Hide HA preview';
+    hideHaWrap.appendChild(hideHaCheckbox);
+    hideHaWrap.appendChild(hideHaText);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'editor-preview-toolbar';
+
+    const left = document.createElement('div');
+    left.className = 'editor-preview-left';
+
+    const title = document.createElement('div');
+    title.className = 'editor-preview-title';
+    title.textContent = 'Preview';
+
+    // Toggle on the top-left so it is always clickable.
+    left.appendChild(hideHaWrap);
+    left.appendChild(title);
+
+    const right = document.createElement('div');
+    right.className = 'editor-preview-right';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.6';
+    slider.max = '2.0';
+    slider.step = '0.05';
+    slider.value = String(this._previewScale);
+    slider.className = 'editor-preview-scale';
+
+    const scaleLabel = document.createElement('span');
+    scaleLabel.className = 'editor-preview-scale-label';
+    scaleLabel.textContent = `${Math.round(this._previewScale * 100)}%`;
+    this._previewScaleLabelEl = scaleLabel;
+
+    slider.addEventListener('input', (ev) => {
+      const v = Number(ev && ev.target ? ev.target.value : this._previewScale);
+      if (!Number.isFinite(v)) return;
+      this._previewScale = Math.min(2.0, Math.max(0.6, v));
+      this._applyPreviewScale_();
+      this._savePreviewScaleToStorage_();
+    });
+
+    right.appendChild(slider);
+    right.appendChild(scaleLabel);
+    toolbar.appendChild(left);
+    toolbar.appendChild(right);
+
+    const viewport = document.createElement('div');
+    viewport.className = 'editor-preview-viewport';
+    // Mouse wheel zoom on preview
+    viewport.addEventListener('wheel', (ev) => {
+      try {
+        // Zoom with wheel; keep it smooth and predictable.
+        // Prevent page scroll while hovering the preview.
+        if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+        const dy = Number(ev && ev.deltaY != null ? ev.deltaY : 0);
+        const step = 0.05;
+        const dir = dy > 0 ? -1 : 1; // wheel down -> zoom out
+        const next = this._previewScale + dir * step;
+        this._previewScale = Math.min(2.0, Math.max(0.6, next));
+        // Keep slider in sync (if present)
+        const s = wrap.querySelector('.editor-preview-scale');
+        if (s) s.value = String(this._previewScale);
+        this._applyPreviewScale_();
+        this._savePreviewScaleToStorage_();
+      } catch (e) {
+        // ignore
+      }
+    }, { passive: false });
+
+    // Drag to pan (grab/hand tool)
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+    const onPointerDown = (ev) => {
+      try {
+        if (!ev || (ev.button != null && ev.button !== 0)) return;
+        // If user is dragging an overlay image, do NOT pan the viewport.
+        try {
+          const path = (typeof ev.composedPath === 'function') ? ev.composedPath() : [];
+          const isOverlayImage = path.some((n) => {
+            try {
+              if (!n || !n.getAttribute) return false;
+              const role = n.getAttribute('data-role');
+              return typeof role === 'string' && role.indexOf('overlay-image-') === 0;
+            } catch (e0) { return false; }
+          });
+          if (isOverlayImage) return;
+        } catch (e1) { /* ignore */ }
+        isDragging = true;
+        viewport.classList.add('is-dragging');
+        startX = ev.clientX;
+        startY = ev.clientY;
+        startScrollLeft = viewport.scrollLeft;
+        startScrollTop = viewport.scrollTop;
+        if (viewport.setPointerCapture) viewport.setPointerCapture(ev.pointerId);
+      } catch (e) { /* ignore */ }
+    };
+    const onPointerMove = (ev) => {
+      if (!isDragging) return;
+      try {
+        const dx = (ev.clientX - startX);
+        const dy = (ev.clientY - startY);
+        viewport.scrollLeft = startScrollLeft - dx;
+        viewport.scrollTop = startScrollTop - dy;
+      } catch (e) { /* ignore */ }
+    };
+    const endDrag = (ev) => {
+      try {
+        if (!isDragging) return;
+        isDragging = false;
+        viewport.classList.remove('is-dragging');
+        if (viewport.releasePointerCapture && ev && ev.pointerId != null) {
+          try { viewport.releasePointerCapture(ev.pointerId); } catch (e2) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    };
+    viewport.addEventListener('pointerdown', onPointerDown);
+    viewport.addEventListener('pointermove', onPointerMove);
+    viewport.addEventListener('pointerup', endDrag);
+    viewport.addEventListener('pointercancel', endDrag);
+
+    const stage = document.createElement('div');
+    stage.className = 'editor-preview-stage';
+    this._previewStageEl = stage;
+
+    const card = document.createElement('lumina-energy-card');
+    card.className = 'editor-preview-card';
+    this._previewCardEl = card;
+    // Prevent opening popups/toggles while interacting with the preview in the editor.
+    card.addEventListener('click', (ev) => { try { ev.preventDefault(); ev.stopPropagation(); } catch (e) { /* ignore */ } }, true);
+
+    stage.appendChild(card);
+    viewport.appendChild(stage);
+    wrap.appendChild(toolbar);
+    wrap.appendChild(viewport);
+
+    this._applyPreviewScale_();
+    this._syncEditorPreviewCard_();
+    this._applyHaPreviewVisibility_();
+
+    return wrap;
   }
 
   _buildStrings() {
@@ -14439,6 +15454,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
       return;
     }
     this._config = { ...config };
+    this._syncEditorPreviewCard_();
 
     // Se l'editor è già disegnato, aggiorna solo i dati senza render() che distrugge gli input.
     const forms = this.shadowRoot.querySelectorAll('ha-form');
@@ -14460,6 +15476,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
   set hass(hass) {
     this._hass = hass;
     if (!this._config || this._rendered) {
+      this._syncEditorPreviewCard_();
       return;
     }
     this.render();
@@ -14505,6 +15522,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
     if (card) {
       card.setConfig(config);
     }
+    this._syncEditorPreviewCard_();
   }
 
   _debouncedConfigChanged(newConfig, immediate = false) {
@@ -15778,10 +16796,20 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const schemaDefs = this._createSchemaDefs(localeStrings, optionDefs);
     const sections = this._createSectionDefs(localeStrings, schemaDefs);
 
+    // Two-column layout: sections on the left, preview sticky on the right
+    const left = document.createElement('div');
+    left.className = 'editor-form-column';
+
+    const right = document.createElement('div');
+    right.className = 'editor-preview-column';
+    right.appendChild(this._createEditorPreviewPanel_());
+
     sections.forEach((section) => {
-      container.appendChild(this._createSection(section));
+      left.appendChild(this._createSection(section));
     });
 
+    container.appendChild(left);
+    container.appendChild(right);
     return container;
   }
 
@@ -15799,46 +16827,114 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const style = document.createElement('style');
     style.textContent = `
       .card-config {
+        /* Split-pane editor: left scrolls, right stays visible */
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        gap: 16px;
+        padding: 16px;
+        /* Make the editor itself not scroll vertically; only the left pane scrolls. */
+        height: calc(100vh - 220px);
+        min-height: 520px;
+        overflow: hidden;
+      }
+      .editor-form-column {
+        flex: 1 1 auto;
+        min-width: 340px;
+        overflow: auto;
+        padding-right: 6px;
+      }
+      .editor-preview-column {
+        flex: 0 1 520px;
+        min-width: 320px;
+      }
+      .editor-preview-panel {
+        /* Fixed within the split pane (no need for sticky) */
+        border: 1px solid rgba(0, 249, 249, 0.35);
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.25);
+        padding: 12px;
+        height: 100%;
         display: flex;
         flex-direction: column;
+      }
+      .editor-preview-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 12px;
-        padding: 16px;
+        position: relative;
+        z-index: 2;
+      }
+      .editor-preview-left,
+      .editor-preview-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .editor-preview-title {
+        font-weight: 800;
+        color: var(--primary-text-color);
+      }
+      .editor-preview-hideha {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        user-select: none;
+        color: var(--secondary-text-color);
+        font-size: 0.9em;
+        white-space: nowrap;
+      }
+      .editor-preview-hideha input {
+        accent-color: #00f9f9;
+      }
+      .editor-preview-scale {
+        width: 200px;
+      }
+      .editor-preview-scale-label {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        opacity: 0.9;
+      }
+      .editor-preview-viewport {
+        margin-top: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.35);
+        overflow: auto;
+        /* Fill the right pane; the viewport itself scrolls */
+        flex: 1 1 auto;
+        cursor: grab;
+        user-select: none;
+      }
+      .editor-preview-viewport.is-dragging {
+        cursor: grabbing;
+      }
+      .editor-preview-stage {
+        width: 800px;
+        height: 450px;
+        transform-origin: 0 0;
+      }
+      .editor-preview-card {
+        display: block;
+        width: 800px;
+        height: 450px;
+      }
+      /* Keep horizontal even on small widths: allow horizontal scroll instead of stacking */
+      @media (max-width: 520px) {
+        .card-config { overflow-x: auto; }
       }
       details.section {
         border: 1px solid rgba(0, 249, 249, 0.45);
         border-radius: 10px;
+        /* Keep only the "main windows" cyan; do NOT override HA field theming */
         background: rgba(0, 249, 249, 0.12);
         overflow: hidden;
-        color: #000;
-
-        /* Collapsed: cyan background + black text */
-        --primary-text-color: #000;
-        --secondary-text-color: rgba(0, 0, 0, 0.72);
-        --primary-color: #000;
-        --mdc-theme-text-primary-on-background: #000;
-        --mdc-theme-text-secondary-on-background: rgba(0, 0, 0, 0.72);
-        --mdc-theme-primary: #000;
-        --paper-item-icon-color: #000;
-
-        --lumina-input-bg: rgba(255, 255, 255, 0.75);
-        --lumina-input-border: rgba(0, 0, 0, 0.25);
       }
       details.section[open] {
         border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(0, 0, 0, 0.35);
-        color: #fff;
-
-        /* Expanded: black background + white text */
-        --primary-text-color: #fff;
-        --secondary-text-color: rgba(255, 255, 255, 0.72);
-        --primary-color: #fff;
-        --mdc-theme-text-primary-on-background: #fff;
-        --mdc-theme-text-secondary-on-background: rgba(255, 255, 255, 0.72);
-        --mdc-theme-primary: #fff;
-        --paper-item-icon-color: #fff;
-
-        --lumina-input-bg: rgba(0, 0, 0, 0.22);
-        --lumina-input-border: rgba(255, 255, 255, 0.22);
+        background: rgba(0, 249, 249, 0.12);
       }
       details.section:not(:first-of-type) {
         margin-top: 4px;
@@ -15856,8 +16952,8 @@ _createSectionDefs(localeStrings, schemaDefs) {
         list-style: none;
       }
       details.section[open] .section-summary {
-        background: rgba(0, 0, 0, 0.10);
-        color: #fff;
+        background: #00f9f9;
+        color: #000;
       }
       .section-summary::-webkit-details-marker {
         display: none;
@@ -15925,7 +17021,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         border: 1px solid var(--lumina-input-border, var(--divider-color));
         border-radius: 4px;
         background: var(--lumina-input-bg, var(--card-background-color));
-        color: var(--primary-text-color);
+        color: var(--lumina-input-text, #fff);
         font-size: 0.95em;
       }
       .color-text-input:focus {
@@ -16048,7 +17144,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
     setTimeout(() => {
       this._updateSectionVisibility(installationType);
     }, 0);
-    
+
     this._rendered = true;
   }
 }
