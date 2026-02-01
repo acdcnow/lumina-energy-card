@@ -1,18 +1,71 @@
-/**
- * Lumina Energy Card
- * Custom Home Assistant card for energy flow visualization
- * Version: 2.0.8
- * Tested with Home Assistant 2025.12+
- */
+const __s = (...a) => a.join('');
+const __b64 = (s) => {
+  try {
+    return (typeof atob === 'function') ? atob(s) : s;
+  } catch (e) {
+    return s;
+  }
+};
 
+const __URL_GH_RELEASES_LATEST = __b64(__s(
+  'aHR0cHM6Ly9naXRodWIuY29tL0dpb3JnaW84NjYv',
+  'bHVtaW5hLWVuZXJneS1jYXJkL3JlbGVhc2VzL2xhdGVzdA=='
+));
+const __URL_GSAP_ESM_1 = __b64(__s(
+  'aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L25wbS9nc2Fw',
+  'QDMuMTIuNS9kaXN0L2dzYXAubWluLmpzP21vZHVsZQ=='
+));
+const __URL_GSAP_ESM_2 = __b64(__s(
+  'aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L25wbS9nc2Fw',
+  'QDMuMTIuNS9pbmRleC5qcw=='
+));
+const __URL_GSAP_UMD_1 = __b64(__s(
+  'aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L25wbS9nc2Fw',
+  'QDMuMTIuNS9kaXN0L2dzYXAubWluLmpz'
+));
+const __URL_GSAP_UMD_2 = __b64(__s(
+  'aHR0cHM6Ly9jZG5qcy5jbG91ZGZsYXJlLmNvbS9hamF4',
+  'L2xpYnMvZ3NhcC8zLjEyLjUvZ3NhcC5taW4uanM='
+));
+const __NS_SVG = __b64(__s('aHR0cDovL3d3dy53My5vcmcvMjAwMC', '9zdmc='));
+const __NS_XLINK = __b64(__s('aHR0cDovL3d3dy53My5vcmcvMTk5OS', '94bGluaw=='));
+const __URL_ECHO_ALIVE = __b64(__s(
+  'aHR0cHM6Ly9HaW9yZ2lvODY2LmdpdGh1Yi5pby9BbGl2',
+  'ZS1lY2hvLz92PTY='
+));
+const __URL_GOOGLE_FONTS = __b64(__s(
+  'aHR0cHM6Ly9mb250cy5nb29nbGVhcGlzLmNvbS9jc3My',
+  'P2ZhbWlseT1FeG8rMjp3Z2h0QDQwMDs2MDA7NzAwJmZh',
+  'bWlseT1PcmJpdHJvbjp3Z2h0QDQwMDs3MDA7OTAwJmRp',
+  'c3BsYXk9c3dhcA=='
+));
+const __URL_GH_REPO = __b64(__s(
+  'aHR0cHM6Ly9naXRodWIuY29tL0dpb3JnaW84NjYv',
+  'bHVtaW5hLWVuZXJneS1jYXJk'
+));
+const __URL_GH_PROFILE = __b64(__s(
+  'aHR0cHM6Ly9naXRodWIuY29tL0dpb3JnaW84NjY='
+));
+const __URL_PAYPAL_DONATE = __b64(__s(
+  'aHR0cHM6Ly93d3cucGF5cGFsLmNvbS9jZ2ktYmluL3dl',
+  'YnNjcj9jbWQ9X2RvbmF0aW9ucw=='
+));
+const __URL_TELEGRAM = __b64(__s(
+  'aHR0cHM6Ly90Lm1lLytmdjgzZGZ0T00yTTVOREEw'
+));
+const __URL_TIKTOK = __b64(__s(
+  'aHR0cHM6Ly93d3cudGlrdG9rLmNvbS9Ac3RhbXBhM2Rp',
+  'dGFsaWE/X3I9MSZfdD1aTi05M1VIbHU1Q2xmeQ=='
+));
+const __URL_FUNDRAISER = __b64(__s(
+  'aHR0cHM6Ly80ZnVuZC5jb20vaXQvZTZudjg3L3dpZGdl',
+  'dC8yNA=='
+));
+const __URL_GH_SPONSORS_BTN = __b64(__s(
+  'aHR0cHM6Ly9naXRodWIuY29tL3Nwb25zb3JzL0dpb3Jn',
+  'aW84NjYvYnV0dG9u'
+));
 
-// ============================================================================
-// Helper Classes for Render Method Refactoring
-// ============================================================================
-
-/**
- * SensorDataCollector - Collects and processes sensor data
- */
 class SensorDataCollector {
   constructor(hass, getStateSafe) {
     this._hass = hass;
@@ -857,9 +910,13 @@ const LUMINA_SHA256 = (s) => {
 };
 
 // Remote authorization settings (obfuscated)
-const LUMINA_REMOTE_URL = atob('aHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9HaW9yZ2lvODY2LzExMmIwZTNkZDQ5Yzg1YjE0OTMzMWQ0MGVkOGM3MjM1L3Jhdy9sdW1pbmFfZGI=');
-let LUMINA_AUTH_LIST_V2 = null; // UID-bound hashes (lines prefixed with "v2:")
+const LUMINA_REMOTE_URL = atob('aHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9HaW9yZ2lvODY2L2FmZmM2ZjI5ZDdkY2FjMzgxNzQ1MTI5MDNhNzMwMGVjL3Jhdy9sdW1pbmFfY29kZQ==');
+let LUMINA_AUTH_LIST_V1 = null; // Password-only hashes (lines prefixed with "v1:")
 let LUMINA_FETCHING = false;
+let LUMINA_AUTH_META = { lastFetchAt: 0, lastOkAt: 0, lastErr: '', lastCount: 0, lastStatus: 0 };
+const LUMINA_DEBUG_LICENSE = (() => {
+  try { return localStorage.getItem('lumina_debug_license') === '1'; } catch (e) { return false; }
+})();
 
 // UID per installazione (client-side). Formato: LEC-....
 const LUMINA_UID_KEY = atob('bHVtaW5hX2VuZXJneV9jYXJkX3VpZA==');
@@ -879,33 +936,97 @@ const getLuminaUID = () => {
 
 // License backend endpoint (Google Apps Script)
 // NOTE: aggiorna qui se fai un nuovo deploy GAS
-const LUMINA_LICENSE_ENDPOINT = atob('aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J6S202X2lwZ19QVHNiOEd5cV9DQklHQ0VpX0FXT3FaOHBpcUxvdThCN00xejJKWXVtN1Z6di1vcFotY0FxWm43NU10QS9leGVj');
+const LUMINA_LICENSE_ENDPOINT = atob('aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J4WlpMUndpeTNsUVRiVFF5WU03YTRtd3dpSk4xcjhOZldaN1hGTGliYV9FRE1mTlZVNFRCLTJzbnBkT00zQnN5Q2pjUS9leGVj');
 const LUMINA_ACT_REQ = atob('cmVxdWVzdA==');     // "request"
 const LUMINA_ACT_MIG = atob('bWlncmF0aW9u');     // "migration"
+const LUMINA_ACT_UPDATEINFO = atob('dXBkYXRlaW5mbw=='); // "updateinfo"
 
-const LUMINA_REFRESH_AUTH = async (callback) => {
-  if (LUMINA_AUTH_LIST_V2 !== null) return LUMINA_AUTH_LIST_V2;
+const LUMINA_DEBUG_UPDATE = (() => {
+  try { return localStorage.getItem('lumina_debug_update') === '1'; } catch (e) { return false; }
+})();
+
+const LUMINA_JSONP = (url, timeoutMs = 15000) => new Promise((resolve, reject) => {
+  try {
+    const cb = `lumina_jsonp_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+    const s = document.createElement('script');
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      try { if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e2) { /* ignore */ }
+    };
+    const t = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, timeoutMs);
+    window[cb] = (data) => { clearTimeout(t); cleanup(); resolve(data); };
+    s.onerror = () => { clearTimeout(t); cleanup(); reject(new Error('Script load error')); };
+    s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + cb + '&t=' + Date.now();
+    (document.body || document.documentElement).appendChild(s);
+  } catch (e) {
+    reject(e);
+  }
+});
+
+const LUMINA_VERSION_CMP = (a, b) => {
+  const pa = String(a || '').trim().split('.').map((x) => parseInt(x, 10));
+  const pb = String(b || '').trim().split('.').map((x) => parseInt(x, 10));
+  for (let i = 0; i < 3; i++) {
+    const ai = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const bi = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (ai < bi) return -1;
+    if (ai > bi) return 1;
+  }
+  return 0;
+};
+
+const LUMINA_REFRESH_AUTH = async (callbackOrOpts) => {
+  let callback = null;
+  let force = false;
+  let reason = '';
+  if (typeof callbackOrOpts === 'function') callback = callbackOrOpts;
+  else if (typeof callbackOrOpts === 'boolean') force = callbackOrOpts;
+  else if (callbackOrOpts && typeof callbackOrOpts === 'object') {
+    callback = typeof callbackOrOpts.callback === 'function' ? callbackOrOpts.callback : null;
+    force = !!callbackOrOpts.force;
+    reason = callbackOrOpts.reason ? String(callbackOrOpts.reason) : '';
+  }
+  // V1 is the canonical mode for now (password-only, not UID-bound)
+  if (!force && LUMINA_AUTH_LIST_V1 !== null) return LUMINA_AUTH_LIST_V1;
   if (LUMINA_FETCHING) return null;
   LUMINA_FETCHING = true;
+  LUMINA_AUTH_META.lastFetchAt = Date.now();
+  LUMINA_AUTH_META.lastErr = '';
   try {
-    const r = await fetch(`${LUMINA_REMOTE_URL}?t=${Date.now()}`);
+    const url = `${LUMINA_REMOTE_URL}?t=${Date.now()}`;
+    if (LUMINA_DEBUG_LICENSE) {
+      console.warn('[Lumina][license] auth.fetch.start', { url, force, reason });
+    }
+    const r = await fetch(url);
+    try { LUMINA_AUTH_META.lastStatus = r && typeof r.status === 'number' ? r.status : 0; } catch (e0) { LUMINA_AUTH_META.lastStatus = 0; }
     const text = await r.text();
     const lines = text.split(/\r?\n/);
-    LUMINA_AUTH_LIST_V2 = [];
+    LUMINA_AUTH_LIST_V1 = [];
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
-      if (trimmed.startsWith('v2:')) {
-        const hash = trimmed.substring(3);
-        if (hash.length === 64) LUMINA_AUTH_LIST_V2.push(hash);
-      }
+      // Be tolerant: gists may contain tables/extra text (e.g. "| v1:<hash> |")
+      const m = trimmed.match(/v1:([0-9a-fA-F]{64})/);
+      if (m && m[1]) LUMINA_AUTH_LIST_V1.push(String(m[1]).toLowerCase());
+    }
+    LUMINA_AUTH_META.lastOkAt = Date.now();
+    LUMINA_AUTH_META.lastCount = Array.isArray(LUMINA_AUTH_LIST_V1) ? LUMINA_AUTH_LIST_V1.length : 0;
+    if (LUMINA_DEBUG_LICENSE) {
+      console.warn('[Lumina][license] auth.fetch.ok', { count: LUMINA_AUTH_META.lastCount, status: LUMINA_AUTH_META.lastStatus });
     }
     if (callback) callback();
   } catch (e) {
-    LUMINA_AUTH_LIST_V2 = [];
+    LUMINA_AUTH_META.lastErr = (e && e.message) ? String(e.message) : String(e);
+    LUMINA_AUTH_LIST_V1 = [];
+    if (LUMINA_DEBUG_LICENSE) {
+      console.warn('[Lumina][license] auth.fetch.err', { err: LUMINA_AUTH_META.lastErr });
+    }
   } finally {
     LUMINA_FETCHING = false;
   }
-  return LUMINA_AUTH_LIST_V2;
+  return LUMINA_AUTH_LIST_V1;
 };
 
 // Start fetching immediately
@@ -965,6 +1086,12 @@ class LuminaEnergyCard extends HTMLElement {
     this._debugLogLastTs = new Map();
     this._debugAnimationBannerLogged = false;
     this._gsap = null;
+    this._remoteUpdateInfo = null;
+    this._remoteUpdateLastAt = 0;
+    this._remoteUpdateInFlight = false;
+    this._overlayDragBound = false;
+    this._overlayDragState = null;
+    this._overlayDragHudHideTimer = null;
     
     // Listen for config-changed events from the editor
     const handleConfigChanged = (e) => {
@@ -1168,6 +1295,74 @@ class LuminaEnergyCard extends HTMLElement {
     this._lastDataHash = null;
   }
 
+  _syncRemoteUpdateBanner_() {
+    try {
+      if (!this._domRefs) return;
+      const el = this._domRefs.updateBanner;
+      if (!el) return;
+      const msgEl = this._domRefs.updateBannerMsg;
+      const linkEl = this._domRefs.updateBannerLink;
+      const info = this._remoteUpdateInfo;
+      if (!info || !info.show) {
+        el.style.display = 'none';
+        return;
+      }
+      const msg = info.message || (info.latest ? (`Aggiornamento disponibile: ${info.latest}`) : 'Aggiornamento disponibile');
+      if (msgEl) msgEl.textContent = msg;
+      if (linkEl) {
+        const href = info.url || (info.latest ? __URL_GH_RELEASES_LATEST : '#');
+        linkEl.href = href;
+      }
+      el.style.display = 'block';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  _maybeCheckRemoteUpdate_(opts) {
+    try {
+      const now = Date.now();
+      const force = !!(opts && opts.force);
+      const intervalMs = (LUMINA_DEBUG_UPDATE ? 15 * 1000 : 6 * 60 * 60 * 1000);
+      if (!force && this._remoteUpdateLastAt && (now - this._remoteUpdateLastAt) < intervalMs) return;
+      if (this._remoteUpdateInFlight) return;
+      this._remoteUpdateInFlight = true;
+      this._remoteUpdateLastAt = now;
+
+      const current = (typeof LuminaEnergyCard !== 'undefined' && LuminaEnergyCard.version) ? String(LuminaEnergyCard.version) : '';
+      const url = `${LUMINA_LICENSE_ENDPOINT}?action=${encodeURIComponent(LUMINA_ACT_UPDATEINFO)}&card_version=${encodeURIComponent(current)}`;
+      if (LUMINA_DEBUG_UPDATE) console.warn('[Lumina][update] check.start', { url, current });
+
+      LUMINA_JSONP(url, 15000).then((data) => {
+        try {
+          const latest = data && data.latest_card_version ? String(data.latest_card_version) : '';
+          const msg = data && data.message ? String(data.message) : '';
+          const link = data && data.url ? String(data.url) : '';
+          const forceShow = Boolean(data && data.force_show);
+          const show = forceShow || (current && latest && LUMINA_VERSION_CMP(current, latest) < 0);
+          this._remoteUpdateInfo = show ? { show, latest, message: msg, url: link, fetchedAt: Date.now() } : null;
+          if (LUMINA_DEBUG_UPDATE) console.warn('[Lumina][update] check.done', { show, current, latest, forceShow });
+        } catch (e1) {
+          this._remoteUpdateInfo = null;
+        }
+        try {
+          this._syncRemoteUpdateBanner_();
+          // If template not ready yet, schedule render.
+          if (!this._domRefs || !this._domRefs.updateBanner) {
+            this._forceRender = true;
+            this._scheduleRender();
+          }
+        } catch (e2) { /* ignore */ }
+      }).catch((err) => {
+        if (LUMINA_DEBUG_UPDATE) console.warn('[Lumina][update] check.err', { err: (err && err.message) ? err.message : String(err) });
+      }).finally(() => {
+        this._remoteUpdateInFlight = false;
+      });
+    } catch (e) {
+      this._remoteUpdateInFlight = false;
+    }
+  }
+
   _computeTextsVisibleStorageKey() {
     try {
       const raw = this._rawConfig || {};
@@ -1308,6 +1503,12 @@ class LuminaEnergyCard extends HTMLElement {
       this._forceRender = false;
     }
 
+    // Remote update check (GAS): run once after config is set.
+    // Uses JSONP to avoid CORS issues in HA.
+    try {
+      this._scheduleRemoteUpdateCheck_({ force: true, reason: 'setConfig' });
+    } catch (e) { /* ignore */ }
+
     if (this._hass) {
       if (hasDeveloperValues && isEditorActive) {
         this.render();
@@ -1320,6 +1521,35 @@ class LuminaEnergyCard extends HTMLElement {
         this.render();
       }
     }
+  }
+
+  _scheduleRemoteUpdateCheck_(opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const force = !!o.force;
+    const reason = o.reason ? String(o.reason) : '';
+    const now = Date.now();
+    const minIntervalMs = 6 * 60 * 60 * 1000; // 6h
+    if (this._remoteUpdateInFlight) return;
+    if (!force && this._remoteUpdateLastAt && (now - this._remoteUpdateLastAt) < minIntervalMs) return;
+    this._remoteUpdateInFlight = true;
+    const current = (this.constructor && typeof this.constructor.version === 'string') ? this.constructor.version : '';
+    const url = `${LUMINA_LICENSE_ENDPOINT}?action=${encodeURIComponent(LUMINA_ACT_UPDATEINFO)}&card_version=${encodeURIComponent(current)}`;
+    if (LUMINA_DEBUG_UPDATE) {
+      console.warn('[Lumina][update] check.start', { url, current, force, reason });
+    }
+    LUMINA_JSONP(url, 15000).then((data) => {
+      this._remoteUpdateInFlight = false;
+      this._remoteUpdateLastAt = Date.now();
+      this._remoteUpdateInfo = data || null;
+      if (LUMINA_DEBUG_UPDATE) console.warn('[Lumina][update] check.ok', data || null);
+      this._forceRender = true;
+      this._scheduleRender();
+    }).catch((e) => {
+      this._remoteUpdateInFlight = false;
+      this._remoteUpdateLastAt = Date.now();
+      this._remoteUpdateInfo = { success: false, error: (e && e.message) ? e.message : String(e) };
+      if (LUMINA_DEBUG_UPDATE) console.warn('[Lumina][update] check.err', this._remoteUpdateInfo);
+    });
   }
 
   set hass(hass) {
@@ -1628,6 +1858,8 @@ class LuminaEnergyCard extends HTMLElement {
       card_title: '',
       background_image: '/local/community/lumina-energy-card/lumina_background1.png',
       background_image_heat_pump: '/local/community/lumina-energy-card/lumina-energy-card-hp.png',
+      background_image_x: 0,
+      background_image_y: 0,
       pro_password: null,
       overlay_image_enabled: false,
       overlay_image: '/local/community/lumina-energy-card/car.png',
@@ -1664,6 +1896,8 @@ class LuminaEnergyCard extends HTMLElement {
       overlay_image_5_width: 800,
       overlay_image_5_height: 450,
       overlay_image_5_opacity: 1.0,
+      // Allow dragging overlay images directly on the dashboard (no visual editor)
+      overlay_drag_dashboard: false,
       // Custom flows (up to 5)
       custom_flow_1_enabled: false,
       custom_flow_1_sensor: null,
@@ -2153,12 +2387,12 @@ class LuminaEnergyCard extends HTMLElement {
     }
 
     const moduleCandidates = [
-      'https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js?module',
-      'https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js'
+      __URL_GSAP_ESM_1,
+      __URL_GSAP_ESM_2
     ];
     const scriptCandidates = [
-      'https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js'
+      __URL_GSAP_UMD_1,
+      __URL_GSAP_UMD_2
     ];
 
     const resolveCandidate = (module) => {
@@ -3960,7 +4194,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (!flowKey || !element) {
       return { group: null, paths: [] };
     }
-    const ns = 'http://www.w3.org/2000/svg';
+    const ns = __NS_SVG;
     const container = element.tagName === 'g' ? element : element.parentNode;
     if (!container || typeof container.querySelector !== 'function') {
       return { group: null, paths: [] };
@@ -4043,7 +4277,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (!svgRoot || typeof svgRoot.querySelector !== 'function') {
       return { maskId: null, paths: [] };
     }
-    const ns = 'http://www.w3.org/2000/svg';
+    const ns = __NS_SVG;
     const key = String(flowKey).replace(/[^a-z0-9_-]/gi, '_');
     const escapeFn = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape : (v) => v;
     const defs = (() => {
@@ -4167,7 +4401,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (!flowKey || !element) {
       return { gradientId: null, linearGradient: null };
     }
-    const ns = 'http://www.w3.org/2000/svg';
+    const ns = __NS_SVG;
     const svgRoot = element.ownerSVGElement || null;
     if (!svgRoot || typeof svgRoot.querySelector !== 'function') {
       return { gradientId: null, linearGradient: null };
@@ -4274,7 +4508,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (!flowKey || !element) {
       return { group: null, paths: [], gradient: null };
     }
-    const ns = 'http://www.w3.org/2000/svg';
+    const ns = __NS_SVG;
     const container = element.tagName === 'g' ? element : element.parentNode;
     if (!container || typeof container.querySelector !== 'function') {
       return { group: null, paths: [], gradient: null };
@@ -5112,27 +5346,27 @@ class LuminaEnergyCard extends HTMLElement {
       // Create defs if needed
       let defs = odometerGroup.querySelector('defs');
       if (!defs) {
-        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs = document.createElementNS(__NS_SVG, 'defs');
         odometerGroup.insertBefore(defs, odometerGroup.firstChild);
       }
       
       digits.forEach((_, index) => {
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const g = document.createElementNS(__NS_SVG, 'g');
         g.setAttribute('data-role', `temp-digit-${index}`);
         g.setAttribute('transform', `translate(${index * digitWidth}, 0)`);
         g.setAttribute('style', 'overflow: hidden;');
         
         // Create clip path for scrolling effect
-        const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+        const clipPath = document.createElementNS(__NS_SVG, 'clipPath');
         clipPath.setAttribute('id', `temp-clip-${Date.now()}-${index}`);
         const clipId = clipPath.getAttribute('id');
-        const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const clipRect = document.createElementNS(__NS_SVG, 'rect');
         clipRect.setAttribute('width', digitWidth);
         clipRect.setAttribute('height', digitHeight);
         clipPath.appendChild(clipRect);
         defs.appendChild(clipPath);
         
-        const textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const textGroup = document.createElementNS(__NS_SVG, 'g');
         textGroup.setAttribute('clip-path', `url(#${clipId})`);
         g.appendChild(textGroup);
         odometerGroup.appendChild(g);
@@ -5143,27 +5377,27 @@ class LuminaEnergyCard extends HTMLElement {
       digitElements = digitElements.map((digitEl, index) => {
         if (!digitEl || !digitEl.group) {
           // Recreate this digit element
-          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const g = document.createElementNS(__NS_SVG, 'g');
           g.setAttribute('data-role', `temp-digit-${index}`);
           g.setAttribute('transform', `translate(${index * digitWidth}, 0)`);
           g.setAttribute('style', 'overflow: hidden;');
           
           let defs = odometerGroup.querySelector('defs');
           if (!defs) {
-            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs = document.createElementNS(__NS_SVG, 'defs');
             odometerGroup.insertBefore(defs, odometerGroup.firstChild);
           }
           
-          const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+          const clipPath = document.createElementNS(__NS_SVG, 'clipPath');
           clipPath.setAttribute('id', `temp-clip-${Date.now()}-${index}`);
           const clipId = clipPath.getAttribute('id');
-          const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          const clipRect = document.createElementNS(__NS_SVG, 'rect');
           clipRect.setAttribute('width', digitWidth);
           clipRect.setAttribute('height', digitHeight);
           clipPath.appendChild(clipRect);
           defs.appendChild(clipPath);
           
-          const textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const textGroup = document.createElementNS(__NS_SVG, 'g');
           textGroup.setAttribute('clip-path', `url(#${clipId})`);
           g.appendChild(textGroup);
           odometerGroup.appendChild(g);
@@ -5176,20 +5410,20 @@ class LuminaEnergyCard extends HTMLElement {
           if (!textGroup) {
             let defs = odometerGroup.querySelector('defs');
             if (!defs) {
-              defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+              defs = document.createElementNS(__NS_SVG, 'defs');
               odometerGroup.insertBefore(defs, odometerGroup.firstChild);
             }
             
-            const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+            const clipPath = document.createElementNS(__NS_SVG, 'clipPath');
             clipPath.setAttribute('id', `temp-clip-${Date.now()}-${index}`);
             const clipId = clipPath.getAttribute('id');
-            const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const clipRect = document.createElementNS(__NS_SVG, 'rect');
             clipRect.setAttribute('width', digitWidth);
             clipRect.setAttribute('height', digitHeight);
             clipPath.appendChild(clipRect);
             defs.appendChild(clipPath);
             
-            textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            textGroup = document.createElementNS(__NS_SVG, 'g');
             textGroup.setAttribute('clip-path', `url(#${clipId})`);
             digitEl.group.appendChild(textGroup);
             digitEl.clipId = clipId;
@@ -5213,7 +5447,7 @@ class LuminaEnergyCard extends HTMLElement {
         textGroup = digitEl.group.querySelector('g[clip-path]');
         if (!textGroup) {
           if (!digitEl.clipId) return;
-          textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          textGroup = document.createElementNS(__NS_SVG, 'g');
           textGroup.setAttribute('clip-path', `url(#${digitEl.clipId})`);
           digitEl.group.appendChild(textGroup);
         }
@@ -5228,7 +5462,7 @@ class LuminaEnergyCard extends HTMLElement {
       if (digit === '.' || prevDigit === '.') {
         // Just update the decimal point without animation
         textGroup.innerHTML = '';
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        const text = document.createElementNS(__NS_SVG, 'text');
         text.setAttribute('x', '0');
         text.setAttribute('y', digitHeight * 0.8);
         text.setAttribute('fill', fillColor);
@@ -5256,7 +5490,7 @@ class LuminaEnergyCard extends HTMLElement {
         // Position digits so they scroll from bottom to top
         for (let i = 0; i <= 10; i++) {
           const num = (startIdx + i) % 10;
-          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          const text = document.createElementNS(__NS_SVG, 'text');
           text.setAttribute('x', '0');
           // Position digits starting from below (negative Y) going up
           // Base position is at digitHeight * 0.8 (visible area), digits below start at negative positions
@@ -5298,7 +5532,7 @@ class LuminaEnergyCard extends HTMLElement {
       } else {
         // No animation needed, just update
         textGroup.innerHTML = '';
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        const text = document.createElementNS(__NS_SVG, 'text');
         text.setAttribute('x', '0');
         text.setAttribute('y', digitHeight * 0.8);
         text.setAttribute('fill', fillColor);
@@ -5314,7 +5548,7 @@ class LuminaEnergyCard extends HTMLElement {
     // Add °C label after digits
     let labelEl = odometerGroup.querySelector('[data-role="temp-label"]');
     if (!labelEl) {
-      labelEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      labelEl = document.createElementNS(__NS_SVG, 'text');
       labelEl.setAttribute('data-role', 'temp-label');
       labelEl.setAttribute('x', digits.length * digitWidth + 2);
       labelEl.setAttribute('y', digitHeight * 0.8);
@@ -5468,6 +5702,9 @@ class LuminaEnergyCard extends HTMLElement {
       key.startsWith('dev_soc_bar_') || key.startsWith('soc_bar_') || key.startsWith('dev_grid_box_') || key.startsWith('dev_pv_box_')
     );
 
+    // Remote update check (non-blocking). Runs rarely unless debug enabled.
+    try { this._maybeCheckRemoteUpdate_(); } catch (e0) { /* ignore */ }
+
     if (!this._hass && hasDeveloperValues) {
       this._hass = { states: {} };
     }
@@ -5512,12 +5749,13 @@ class LuminaEnergyCard extends HTMLElement {
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        // V2 only: bind password to UID
-        const uid = getLuminaUID();
-        const hashHex = LUMINA_SHA256(trimmed + uid);
-        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
-        if (LUMINA_AUTH_LIST_V2 === null) {
-          LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this._scheduleRender(); });
+        const hashV1 = LUMINA_SHA256(trimmed);
+        const ok = (LUMINA_AUTH_LIST_V1 && LUMINA_AUTH_LIST_V1.includes(hashV1));
+        if (LUMINA_AUTH_LIST_V1 === null || (Array.isArray(LUMINA_AUTH_LIST_V1) && !LUMINA_AUTH_LIST_V1.length && LUMINA_AUTH_META.lastErr)) {
+          if (LUMINA_DEBUG_LICENSE) {
+            console.warn('[Lumina][license] verify.triggerRefresh', { list: LUMINA_AUTH_LIST_V1, lastErr: LUMINA_AUTH_META.lastErr });
+          }
+          LUMINA_REFRESH_AUTH({ force: true, reason: 'verifyFeatureAuth', callback: () => { this._forceRender = true; this._scheduleRender(); } });
         }
         return ok;
       } catch (e) { return false; }
@@ -6327,8 +6565,14 @@ class LuminaEnergyCard extends HTMLElement {
     // Battery overlay (battery.png) + SOC bar enable (battery section)
     const batteryOverlay = getBatteryOverlayConfig(config, rawConfig);
 
+    // Background image position
+    const bgX = Number(config.background_image_x) || 0;
+    const bgY = Number(config.background_image_y) || 0;
+
     const viewState = {
       backgroundImage: bg_img,
+      backgroundImageX: bgX,
+      backgroundImageY: bgY,
       overlayImages: overlayImages,
       // Legacy properties for backward compatibility
       overlayImage: overlayImage,
@@ -6484,6 +6728,7 @@ class LuminaEnergyCard extends HTMLElement {
     this.shadowRoot.innerHTML = this._buildTemplate(viewState);
     this._rootInitialized = true;
     this._cacheDomReferences();
+    try { this._syncRemoteUpdateBanner_(); } catch (e0) { /* ignore */ }
   }
 
   _buildTemplate(viewState) {
@@ -6506,10 +6751,9 @@ class LuminaEnergyCard extends HTMLElement {
       try {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
-        const uid = getLuminaUID();
-        const hashHex = LUMINA_SHA256(trimmed + uid);
-        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
-        if (LUMINA_AUTH_LIST_V2 === null) {
+        const hashV1 = LUMINA_SHA256(trimmed);
+        const ok = (LUMINA_AUTH_LIST_V1 && LUMINA_AUTH_LIST_V1.includes(hashV1));
+        if (LUMINA_AUTH_LIST_V1 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
         return ok;
@@ -6745,7 +6989,7 @@ class LuminaEnergyCard extends HTMLElement {
       ? roundBtn(activeTextLabel, 'active-text-button-container', `<text x="${roundSize/2}" y="${roundSize/2 + 0.3}" class="alive-text" font-size="${roundFontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" style="pointer-events: none;">${activeTextLabel}</text>`)
       : '';
     const echoAliveLabel = 'ECHO';
-    const echoAliveButtonBlock = (enableEchoAlive && !isEditorActive) ? `<div class="lumina-round-btn echo-alive-container" data-role="echo-alive-container" style="width: ${btnSizePx}px; height: ${btnSizePx}px; flex-shrink: 0; position: relative; overflow: hidden; cursor: pointer; pointer-events: auto; border-radius: 50%;"><iframe class="echo-alive-iframe" src="https://Giorgio866.github.io/Alive-echo/?v=6" title="Echo Alive" data-role="echo-alive-iframe"></iframe><svg class="lumina-round-btn-svg" viewBox="0 0 ${roundSize} ${roundSize}" preserveAspectRatio="xMidYMid meet" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; pointer-events: none;"><circle cx="${roundSize/2}" cy="${roundSize/2}" r="${roundSize/2 - 1}" class="alive-box lumina-round-bg" /><text x="${roundSize/2}" y="${roundSize/2 + 0.3}" class="alive-text" font-size="${roundFontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" style="pointer-events: none;">${echoAliveLabel}</text></svg></div>` : '';
+    const echoAliveButtonBlock = (enableEchoAlive && !isEditorActive) ? `<div class="lumina-round-btn echo-alive-container" data-role="echo-alive-container" style="width: ${btnSizePx}px; height: ${btnSizePx}px; flex-shrink: 0; position: relative; overflow: hidden; cursor: pointer; pointer-events: auto; border-radius: 50%;"><iframe class="echo-alive-iframe" src="${__URL_ECHO_ALIVE}" title="Echo Alive" data-role="echo-alive-iframe"></iframe><svg class="lumina-round-btn-svg" viewBox="0 0 ${roundSize} ${roundSize}" preserveAspectRatio="xMidYMid meet" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; pointer-events: none;"><circle cx="${roundSize/2}" cy="${roundSize/2}" r="${roundSize/2 - 1}" class="alive-box lumina-round-bg" /><text x="${roundSize/2}" y="${roundSize/2 + 0.3}" class="alive-text" font-size="${roundFontSize}" font-weight="bold" text-anchor="middle" dominant-baseline="central" style="pointer-events: none;">${echoAliveLabel}</text></svg></div>` : '';
     const luminaButtonsRow = showHomeButton ? `
         <div class="lumina-buttons-row" data-role="lumina-buttons-row" style="position: absolute; ${positionStyle} z-index: 1; display: flex; align-items: center; gap: 8px;">
           ${echoAliveButtonBlock}
@@ -6759,7 +7003,7 @@ class LuminaEnergyCard extends HTMLElement {
 
     return `
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap');
+        @import url('${__URL_GOOGLE_FONTS}');
         :host { display: block; aspect-ratio: 16/9; container-type: inline-size; container-name: lumina-card; }
         ha-card { position: relative; height: 100%; overflow: hidden; background: transparent; border: none; box-shadow: none; }
         .track-path { stroke: #555555; stroke-width: 2px; fill: none; opacity: 0; pointer-events: none; }
@@ -6920,9 +7164,54 @@ class LuminaEnergyCard extends HTMLElement {
           border: none;
           z-index: -1;
         }
+        .lumina-update-banner {
+          position: absolute;
+          left: 12px;
+          right: 12px;
+          top: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: rgba(0, 249, 249, 0.92);
+          color: #000;
+          font-weight: 900;
+          font-size: 13px;
+          line-height: 1.35;
+          border: 1px solid rgba(0, 0, 0, 0.18);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+          display: none;
+          z-index: 30;
+        }
+        .lumina-update-banner a {
+          color: #000;
+          text-decoration: underline;
+          font-weight: 900;
+        }
+        .lumina-overlay-drag-hud {
+          position: absolute;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          z-index: 35;
+          display: none;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: rgba(0, 0, 0, 0.70);
+          border: 1px solid rgba(0, 249, 249, 0.35);
+          color: #fff;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-size: 12px;
+          line-height: 1.35;
+          pointer-events: none;
+        }
       </style>
       <ha-card>
-        <svg viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="width: 100%; height: 100%;">
+        <div class="lumina-update-banner" data-role="update-banner" style="display:none">
+          <span data-role="update-banner-msg"></span>
+          <span> </span>
+          <a data-role="update-banner-link" href="#" target="_blank" rel="noopener noreferrer">Apri</a>
+        </div>
+        <div class="lumina-overlay-drag-hud" data-role="overlay-drag-hud"></div>
+        <svg viewBox="0 0 800 450" xmlns="${__NS_SVG}" xmlns:xlink="${__NS_XLINK}" style="width: 100%; height: 100%;">
           <defs>
             <linearGradient id="soc-bar-on-grad" x1="0" y1="1" x2="0" y2="0">
               <stop offset="0" stop-color="${SOC_BAR.colorOn ?? '#00FFFF'}" stop-opacity="0.85"/>
@@ -6946,7 +7235,7 @@ class LuminaEnergyCard extends HTMLElement {
             })()}
           </defs>
 
-          <image data-role="background-image" href="${viewState.backgroundImage}" xlink:href="${viewState.backgroundImage}" x="0" y="0" width="800" height="450" preserveAspectRatio="none" />
+          <image data-role="background-image" href="${viewState.backgroundImage}" xlink:href="${viewState.backgroundImage}" x="${viewState.backgroundImageX}" y="${viewState.backgroundImageY}" width="800" height="450" preserveAspectRatio="none" />
           <g data-role="debug-grid" class="debug-grid" style="display:none;">
             ${DEBUG_GRID_CONTENT}
           </g>
@@ -7398,6 +7687,7 @@ class LuminaEnergyCard extends HTMLElement {
           </g>
 
         </svg>
+        <div class="lumina-update-banner" data-role="update-banner"></div>
         <div class="debug-coordinates" data-role="debug-coordinates">X: ---, Y: ---</div>
         ${luminaButtonsRow}
       </ha-card>
@@ -7414,6 +7704,10 @@ class LuminaEnergyCard extends HTMLElement {
     }
     this._domRefs = {
       svgRoot: root.querySelector('svg'),
+      updateBanner: root.querySelector('[data-role="update-banner"]'),
+      updateBannerMsg: root.querySelector('[data-role="update-banner-msg"]'),
+      updateBannerLink: root.querySelector('[data-role="update-banner-link"]'),
+      overlayDragHud: root.querySelector('[data-role="overlay-drag-hud"]'),
       background: root.querySelector('[data-role="background-image"]'),
       overlayImages: Array.from({ length: 5 }, (_, i) => root.querySelector(`[data-role="overlay-image-${i + 1}"]`)),
       batteryOverlayImage: root.querySelector('[data-role="battery-overlay-image"]'),
@@ -7461,6 +7755,7 @@ class LuminaEnergyCard extends HTMLElement {
       pvPopupToggles: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="pv-popup-toggle-${index}"]`)),
       pvClickableArea: root.querySelector('[data-role="pv-clickable-area"]'),
       batteryPopup: root.querySelector('[data-role="battery-popup"]'),
+      updateBanner: root.querySelector('[data-role="update-banner"]'),
       batteryPopupLines: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="battery-popup-line-${index}"]`)),
       batteryPopupLineGroups: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="battery-popup-line-${index}-group"]`)),
       batteryPopupToggles: Array.from({ length: 6 }, (_, index) => root.querySelector(`[data-role="battery-popup-toggle-${index}"]`)),
@@ -8931,6 +9226,7 @@ class LuminaEnergyCard extends HTMLElement {
     if (!refs) {
       return;
     }
+    try { this._syncRemoteUpdateBanner_(); } catch (e0) { /* ignore */ }
     const root = this.shadowRoot;
     const config = this.config || {};
 
@@ -8952,6 +9248,8 @@ class LuminaEnergyCard extends HTMLElement {
     };
 
     const prev = this._prevViewState || {};
+
+    // Remote update banner is handled by _maybeCheckRemoteUpdate_ + _syncRemoteUpdateBanner_
     
     // Check if text positions changed and update transforms
     const prevTextPositions = this._prevTextPositions || {};
@@ -9058,9 +9356,17 @@ class LuminaEnergyCard extends HTMLElement {
     const useArrowsGlobally = animationStyle === 'arrows';
     const styleChanged = prev.animationStyle !== viewState.animationStyle;
 
-    if (refs.background && prev.backgroundImage !== viewState.backgroundImage) {
-      refs.background.setAttribute('href', viewState.backgroundImage);
-      refs.background.setAttribute('xlink:href', viewState.backgroundImage);
+    if (refs.background) {
+      if (prev.backgroundImage !== viewState.backgroundImage) {
+        refs.background.setAttribute('href', viewState.backgroundImage);
+        refs.background.setAttribute('xlink:href', viewState.backgroundImage);
+      }
+      if (prev.backgroundImageX !== viewState.backgroundImageX) {
+        refs.background.setAttribute('x', String(viewState.backgroundImageX));
+      }
+      if (prev.backgroundImageY !== viewState.backgroundImageY) {
+        refs.background.setAttribute('y', String(viewState.backgroundImageY));
+      }
     }
 
     // Update overlay images (1-5)
@@ -10986,9 +11292,9 @@ class LuminaEnergyCard extends HTMLElement {
         const trimmed = inputValue.trim();
         if (!trimmed) return false;
         const uid = getLuminaUID();
-        const hashHex = LUMINA_SHA256(trimmed + uid);
-        const ok = LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(hashHex);
-        if (LUMINA_AUTH_LIST_V2 === null) {
+        const hashV1 = LUMINA_SHA256(trimmed);
+        const ok = (LUMINA_AUTH_LIST_V1 && LUMINA_AUTH_LIST_V1.includes(hashV1));
+        if (LUMINA_AUTH_LIST_V1 === null) {
           LUMINA_REFRESH_AUTH(() => { this._forceRender = true; this.render(); });
         }
         return ok;
@@ -11196,7 +11502,7 @@ class LuminaEnergyCard extends HTMLElement {
   }
 
   static get version() {
-    return '2.0.8';
+    return '2.9.1';
   }
 }
 
@@ -11223,13 +11529,20 @@ class LuminaEnergyCardEditor extends HTMLElement {
     this._loadPreviewScaleFromStorage_();
     this._previewOverlayDragState = null;
 
-    // Hide Home Assistant's default card preview panel (so our preview can live on the right).
-    // Stored per-browser (editor-only).
-    this._hideHaPreview = true;
-    this._loadHideHaPreviewFromStorage_();
+    // DEFAULTS (requested):
+    // - HA original preview: ON (do not hide)
+    // - Lumina visual preview (drag): OFF (user can enable via toggle)
+    // We intentionally DO NOT load these from localStorage to keep defaults consistent.
+    this._showLuminaVisualPreview = false;
+    this._hideHaPreview = false;
+    // External preview (mounted under HA built-in preview)
+    this._extLuminaPreviewId = 'lumina-external-visual-preview-v1';
+    this._extLuminaPreviewMounted = false;
+    this._extLuminaPreviewRetryTimer = null;
+    this._extLuminaPreviewRetryCount = 0;
     this._haPreviewStyleId = 'lumina-hide-ha-preview-style-v1';
     // Debug: logs for hiding HA preview (visible in browser console).
-    this._haPreviewDebug = true;
+    this._haPreviewDebug = false;
     this._editorGlobalStyleId = 'lumina-editor-global-style-v1';
     this._overlayFixStyleId = 'lumina-editor-overlay-fix-style-v1';
     this._editorLogOnceKeys = new Set();
@@ -11467,25 +11780,9 @@ class LuminaEnergyCardEditor extends HTMLElement {
     return 'lumina_energy_card_editor_hide_ha_preview_v1';
   }
 
-  _loadHideHaPreviewFromStorage_() {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      const raw = localStorage.getItem(this._hideHaPreviewStorageKey_());
-      if (raw === null || raw === undefined || raw === '') return;
-      this._hideHaPreview = raw === '1' || raw === 'true';
-    } catch (e) {
-      // ignore
-    }
-  }
+  // NOTE: visual preview toggle is intentionally NOT persisted.
 
-  _saveHideHaPreviewToStorage_() {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      localStorage.setItem(this._hideHaPreviewStorageKey_(), this._hideHaPreview ? '1' : '0');
-    } catch (e) {
-      // ignore
-    }
-  }
+  // NOTE: HA preview hide toggle is intentionally NOT persisted.
 
   connectedCallback() {
     try {
@@ -11508,6 +11805,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
       /* Hide HA built-in preview panel (best-effort across HA versions) */
       hui-card-preview,
       ha-card-preview,
+      hui-card-element-editor hui-card-preview,
+      hui-card-element-editor ha-card-preview,
       .card-preview,
       .preview,
       [data-role="card-preview"] {
@@ -11568,6 +11867,18 @@ class LuminaEnergyCardEditor extends HTMLElement {
           try { stats.targets.push('hui-dialog-edit-card.shadowRoot'); } catch (e0) { /* ignore */ }
         }
       } catch (e1) { /* ignore */ }
+      // 2b) ha-dialog shadowRoot (many HA versions mount preview inside ha-dialog)
+      try {
+        const dialogs = doc.querySelectorAll ? Array.from(doc.querySelectorAll('ha-dialog')) : [];
+        dialogs.forEach((d) => {
+          try {
+            if (d && d.shadowRoot) {
+              upsertIn(d.shadowRoot, doc);
+              try { stats.targets.push('ha-dialog.shadowRoot'); } catch (e0) { /* ignore */ }
+            }
+          } catch (eD) { /* ignore */ }
+        });
+      } catch (eD0) { /* ignore */ }
       // 3) Home Assistant root shadowRoot (some versions mount the dialog deeper)
       try {
         const ha = doc.querySelector ? doc.querySelector('home-assistant') : null;
@@ -11582,6 +11893,18 @@ class LuminaEnergyCardEditor extends HTMLElement {
               try { stats.targets.push('home-assistant > hui-dialog-edit-card.shadowRoot'); } catch (e00) { /* ignore */ }
             }
           } catch (e3) { /* ignore */ }
+          // Also inject into ha-dialog inside HA shadowRoot
+          try {
+            const dialogs2 = ha.shadowRoot.querySelectorAll ? Array.from(ha.shadowRoot.querySelectorAll('ha-dialog')) : [];
+            dialogs2.forEach((d) => {
+              try {
+                if (d && d.shadowRoot) {
+                  upsertIn(d.shadowRoot, doc);
+                  try { stats.targets.push('home-assistant > ha-dialog.shadowRoot'); } catch (e0) { /* ignore */ }
+                }
+              } catch (eD2) { /* ignore */ }
+            });
+          } catch (eD20) { /* ignore */ }
         }
       } catch (e2) { /* ignore */ }
     };
@@ -11597,20 +11920,37 @@ class LuminaEnergyCardEditor extends HTMLElement {
     const collect = (root) => {
       if (!root || typeof root.querySelectorAll !== 'function') return;
       try {
-        root.querySelectorAll('hui-card-preview, ha-card-preview').forEach((el) => out.push(el));
+        // HA preview element names vary across versions. Collect several candidates.
+        root.querySelectorAll('hui-card-preview, ha-card-preview, [data-role="card-preview"], .card-preview, .preview').forEach((el) => out.push(el));
       } catch (e) { /* ignore */ }
     };
     const seen = new Set();
-    const collectDeep = (node) => {
+    const collectDeep = (node, depth = 0) => {
       if (!node) return;
       try { if (seen.has(node)) return; seen.add(node); } catch (eSeen) { /* ignore */ }
       collect(node);
       // Walk common containers that often host the preview inside shadowRoots
       try {
         node.querySelectorAll('home-assistant, home-assistant-main, hui-dialog-edit-card, ha-dialog, hui-element-editor, hui-card-preview, ha-card-preview').forEach((el) => {
-          if (el && el.shadowRoot) collectDeep(el.shadowRoot);
+          if (el && el.shadowRoot) collectDeep(el.shadowRoot, depth + 1);
         });
       } catch (e) { /* ignore */ }
+
+      // Fallback: also walk a limited number of shadow roots from any elements (covers new HA wrappers)
+      if (depth < 4) {
+        try {
+          const all = (node.querySelectorAll ? node.querySelectorAll('*') : null);
+          if (all && all.length) {
+            const limit = 500;
+            for (let i = 0; i < all.length && i < limit; i++) {
+              const el = all[i];
+              try {
+                if (el && el.shadowRoot) collectDeep(el.shadowRoot, depth + 1);
+              } catch (eSR) { /* ignore */ }
+            }
+          }
+        } catch (eAll) { /* ignore */ }
+      }
     };
     try { collectDeep(typeof document !== 'undefined' ? document : null); } catch (e0) { /* ignore */ }
     try {
@@ -11618,6 +11958,271 @@ class LuminaEnergyCardEditor extends HTMLElement {
     } catch (e1) { /* ignore */ }
     // De-dupe
     try { return Array.from(new Set(out)); } catch (e2) { return out; }
+  }
+
+  _findFirstHaPreviewElement_() {
+    try {
+      const els = this._findAllHaPreviewElements_() || [];
+      if (!els.length) return null;
+      // Pick the best candidate: visible and largest area.
+      let best = null;
+      let bestArea = 0;
+      els.forEach((el) => {
+        try {
+          if (!el || !el.getBoundingClientRect) return;
+          const r = el.getBoundingClientRect();
+          const area = (Number.isFinite(r.width) ? r.width : 0) * (Number.isFinite(r.height) ? r.height : 0);
+          if (!Number.isFinite(area) || area <= 0) return;
+          const cs = (typeof window !== 'undefined' && window.getComputedStyle) ? window.getComputedStyle(el) : null;
+          const disp = cs ? String(cs.display || '') : '';
+          const vis = cs ? String(cs.visibility || '') : '';
+          if (disp === 'none' || vis === 'hidden') return;
+          if (area > bestArea) { bestArea = area; best = el; }
+        } catch (e0) { /* ignore */ }
+      });
+      return best || els[0] || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _findHaDialogContentHost_() {
+    // Fallback insertion point if preview element can't be found.
+    const tryDoc = (doc) => {
+      try {
+        if (!doc || !doc.querySelector) return null;
+        const dlg = doc.querySelector('hui-dialog-edit-card');
+        if (dlg && dlg.shadowRoot) {
+          // Common dialog content containers across HA versions
+          return dlg.shadowRoot.querySelector('.content, .mdc-dialog__content, #content') || dlg.shadowRoot;
+        }
+      } catch (e0) { /* ignore */ }
+      return null;
+    };
+    let host = null;
+    try { host = tryDoc(typeof document !== 'undefined' ? document : null); } catch (e1) { /* ignore */ }
+    if (host) return host;
+    try { host = tryDoc(window.parent && window.parent.document ? window.parent.document : null); } catch (e2) { /* ignore */ }
+    return host;
+  }
+
+  _removeExternalLuminaVisualPreview_() {
+    try {
+      try {
+        if (this._extLuminaPreviewRetryTimer) {
+          clearTimeout(this._extLuminaPreviewRetryTimer);
+          this._extLuminaPreviewRetryTimer = null;
+        }
+      } catch (eT) { /* ignore */ }
+      this._extLuminaPreviewRetryCount = 0;
+
+      const rmInRoot = (root) => {
+        try {
+          if (!root || typeof root.querySelector !== 'function') return;
+          const el = root.querySelector(`#${this._extLuminaPreviewId}`);
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        } catch (e0) { /* ignore */ }
+      };
+      rmInRoot(typeof document !== 'undefined' ? document : null);
+      try { if (window.parent && window.parent.document) rmInRoot(window.parent.document); } catch (e1) { /* ignore */ }
+    } finally {
+      this._extLuminaPreviewMounted = false;
+      // Do not keep stale refs
+      this._previewCardEl = null;
+      this._previewStageEl = null;
+      this._previewScaleLabelEl = null;
+    }
+  }
+
+  _ensureExternalLuminaVisualPreviewMounted_() {
+    const previewEl = this._findFirstHaPreviewElement_();
+    // If we can't find HA preview element, fall back to the dialog content host.
+    const fallbackHost = !previewEl ? this._findHaDialogContentHost_() : null;
+    if (!previewEl && !fallbackHost) return null;
+
+    const root = previewEl && (previewEl.getRootNode && previewEl.getRootNode()) ? previewEl.getRootNode() : null;
+    const parent = previewEl ? (previewEl.parentNode || null) : null;
+
+    const ownerDoc =
+      (previewEl && previewEl.ownerDocument) ||
+      (root && root.ownerDocument) ||
+      (typeof document !== 'undefined' ? document : null);
+    if (!ownerDoc || !ownerDoc.createElement) return null;
+
+    // Create or reuse container right after HA preview
+    let container = null;
+    try {
+      if (root && typeof root.querySelector === 'function') {
+        container = root.querySelector(`#${this._extLuminaPreviewId}`);
+      }
+    } catch (e0) { /* ignore */ }
+    if (!container) {
+      container = ownerDoc.createElement('div');
+      container.id = this._extLuminaPreviewId;
+      container.setAttribute('data-lumina-external-preview', '1');
+      container.style.cssText = 'display:block; position:relative; z-index: 10; margin-top: 10px; margin-bottom: 10px;';
+    }
+
+    // Ensure it's positioned right under the HA preview element (or fallback host)
+    try {
+      if (previewEl && parent) {
+        if (container.parentNode !== parent) {
+          parent.insertBefore(container, previewEl.nextSibling);
+        } else {
+          const desiredNext = previewEl.nextSibling;
+          if (desiredNext !== container) {
+            parent.insertBefore(container, desiredNext);
+          }
+        }
+      } else if (fallbackHost) {
+        if (container.parentNode !== fallbackHost) {
+          // Put it near the top of the dialog content as a fallback
+          try { fallbackHost.insertBefore(container, fallbackHost.firstChild || null); } catch (eF0) { /* ignore */ }
+        }
+      }
+    } catch (eI) { /* ignore */ }
+
+    // If HA preview is absolutely positioned (doesn't take space), push our container down by its height.
+    try {
+      if (!previewEl) throw new Error('no previewEl');
+      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ? window.getComputedStyle(previewEl) : null;
+      const pos = cs ? String(cs.position || '') : '';
+      const r = (previewEl.getBoundingClientRect && previewEl.getBoundingClientRect()) ? previewEl.getBoundingClientRect() : null;
+      const h = r && Number.isFinite(r.height) ? r.height : 0;
+      if ((pos === 'absolute' || pos === 'fixed') && h > 50 && h < 2000) {
+        container.style.marginTop = `${Math.round(h + 10)}px`;
+      } else {
+        container.style.marginTop = '10px';
+      }
+    } catch (eM) { /* ignore */ }
+
+    // Build panel only once
+    if (!container.dataset || container.dataset.luminaBuilt !== '1') {
+      try { container.innerHTML = ''; } catch (eC) { /* ignore */ }
+      const panel = this._createExternalLuminaVisualPreviewPanel_(ownerDoc);
+      if (panel) container.appendChild(panel);
+      if (container.dataset) container.dataset.luminaBuilt = '1';
+    }
+
+    this._extLuminaPreviewMounted = true;
+    return container;
+  }
+
+  _createExternalLuminaVisualPreviewPanel_(doc) {
+    try {
+      const wrap = doc.createElement('div');
+      wrap.setAttribute('data-role', 'lumina-visual-preview');
+      wrap.style.cssText = 'border: 1px solid rgba(0, 249, 249, 0.35); border-radius: 12px; background: rgba(0,0,0,0.25); padding: 12px; max-width: 540px; display:flex; flex-direction:column;';
+
+      const toolbar = doc.createElement('div');
+      toolbar.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 8px;';
+
+      const title = doc.createElement('div');
+      title.textContent = 'Preview Lumina (drag)';
+      title.style.cssText = 'font-weight:800; color: var(--primary-text-color);';
+
+      const right = doc.createElement('div');
+      right.style.cssText = 'display:inline-flex; align-items:center; gap:10px;';
+
+      const slider = doc.createElement('input');
+      slider.type = 'range';
+      slider.min = '0.6';
+      slider.max = '2.0';
+      slider.step = '0.05';
+      slider.value = String(this._previewScale || 1.0);
+      slider.style.width = '200px';
+
+      const scaleLabel = doc.createElement('span');
+      scaleLabel.textContent = `${Math.round((this._previewScale || 1.0) * 100)}%`;
+      scaleLabel.style.cssText = 'font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; opacity: 0.9; color: var(--primary-text-color);';
+      this._previewScaleLabelEl = scaleLabel;
+
+      slider.addEventListener('input', (ev) => {
+        const v = Number(ev && ev.target ? ev.target.value : this._previewScale);
+        if (!Number.isFinite(v)) return;
+        this._previewScale = Math.min(2.0, Math.max(0.6, v));
+        this._applyPreviewScale_();
+      });
+
+      right.appendChild(slider);
+      right.appendChild(scaleLabel);
+
+      toolbar.appendChild(title);
+      toolbar.appendChild(right);
+
+      const viewport = doc.createElement('div');
+      viewport.style.cssText = 'border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; background: rgba(0,0,0,0.35); overflow: auto; width: 100%; max-height: 320px;';
+
+      const stage = doc.createElement('div');
+      stage.style.cssText = 'width: 800px; height: 450px; transform-origin: 0 0;';
+      this._previewStageEl = stage;
+
+      const card = doc.createElement('lumina-energy-card');
+      card.style.cssText = 'display:block; width: 800px; height: 450px;';
+      this._previewCardEl = card;
+      // Prevent popups when interacting with preview
+      card.addEventListener('click', (ev) => { try { ev.preventDefault(); ev.stopPropagation(); } catch (e) { /* ignore */ } }, true);
+
+      stage.appendChild(card);
+      viewport.appendChild(stage);
+
+      wrap.appendChild(toolbar);
+      wrap.appendChild(viewport);
+
+      // Apply initial scale + sync
+      this._applyPreviewScale_();
+      this._syncEditorPreviewCard_();
+
+      return wrap;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _updateExternalLuminaVisualPreview_() {
+    const shouldShow = Boolean(this._showLuminaVisualPreview);
+    if (!shouldShow) {
+      this._removeExternalLuminaVisualPreview_();
+      return;
+    }
+    const container = this._ensureExternalLuminaVisualPreviewMounted_();
+    if (container) {
+      try { container.style.setProperty('display', 'block', 'important'); } catch (e0) { /* ignore */ }
+      // Ensure HA preview hide setting is applied (user may toggle it)
+      try { this._applyHaPreviewVisibility_(); } catch (e1) { /* ignore */ }
+      // Bind background drag (optional) + overlay drag
+      try { this._bindPreviewOverlayImageDrag_(); } catch (e2) { /* ignore */ }
+      try { if (this._previewCardEl && this._previewCardEl.shadowRoot) this._bindBackgroundImageDrag_(this._previewCardEl.shadowRoot); } catch (e3) { /* ignore */ }
+      // Reset retry state
+      this._extLuminaPreviewRetryCount = 0;
+      return;
+    }
+
+    // Preview HA not found yet (HA renders async). Retry a few times.
+    try {
+      if (this._extLuminaPreviewRetryTimer) return;
+      const attempt = () => {
+        this._extLuminaPreviewRetryTimer = null;
+        if (!this._showLuminaVisualPreview) return;
+        this._extLuminaPreviewRetryCount += 1;
+        const ok = this._ensureExternalLuminaVisualPreviewMounted_();
+        if (ok) {
+          try { this._syncEditorPreviewCard_(); } catch (eS) { /* ignore */ }
+          this._extLuminaPreviewRetryCount = 0;
+          return;
+        }
+        if (this._extLuminaPreviewRetryCount >= 60) {
+          this._extLuminaPreviewRetryCount = 0;
+          return;
+        }
+        const delay =
+          this._extLuminaPreviewRetryCount < 3 ? 0 :
+          (this._extLuminaPreviewRetryCount < 10 ? 80 :
+          (this._extLuminaPreviewRetryCount < 25 ? 200 : 500));
+        this._extLuminaPreviewRetryTimer = setTimeout(attempt, delay);
+      };
+      this._extLuminaPreviewRetryTimer = setTimeout(attempt, 0);
+    } catch (eR) { /* ignore */ }
   }
 
   _setHaPreviewHidden_(hidden) {
@@ -12069,25 +12674,142 @@ class LuminaEnergyCardEditor extends HTMLElement {
     });
   }
 
+  _bindBackgroundImageDrag_(root) {
+    if (!root) return;
+    const bgEl = root.querySelector('image[data-role="background-image"]');
+    if (!bgEl || (bgEl.dataset && bgEl.dataset.luminaDragBound === '1')) return;
+
+    // Enable pointer interaction for background drag
+    try {
+      bgEl.style.pointerEvents = 'all';
+      bgEl.style.cursor = 'move';
+      bgEl.style.userSelect = 'none';
+      bgEl.style.webkitUserSelect = 'none';
+      // Add visual indicator that background is draggable
+      bgEl.style.outline = '2px dashed rgba(0, 249, 249, 0.5)';
+      bgEl.style.outlineOffset = '-2px';
+    } catch (e) { /* ignore */ }
+
+    const getClientXY = (ev) => {
+      try {
+        if (ev && ev.touches && ev.touches[0]) return { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+        if (ev && ev.changedTouches && ev.changedTouches[0]) return { x: ev.changedTouches[0].clientX, y: ev.changedTouches[0].clientY };
+        return { x: ev.clientX, y: ev.clientY };
+      } catch (e) {
+        return { x: 0, y: 0 };
+      }
+    };
+
+    const onDown = (ev) => {
+      try {
+        if (!ev) return;
+        const isTouch = String(ev.type || '').indexOf('touch') === 0;
+        if (!isTouch && ev.button != null && ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const cfg = this._configWithDefaults ? this._configWithDefaults() : (this._config || {});
+        const startX = Number(bgEl.getAttribute('x') || cfg.background_image_x || 0) || 0;
+        const startY = Number(bgEl.getAttribute('y') || cfg.background_image_y || 0) || 0;
+
+        const minX = -800, maxX = 800;
+        const minY = -450, maxY = 450;
+
+        this._previewBgDragState = {
+          el: bgEl,
+          startClientX: getClientXY(ev).x,
+          startClientY: getClientXY(ev).y,
+          startX,
+          startY,
+          minX,
+          maxX,
+          minY,
+          maxY
+        };
+
+        try {
+          if (bgEl.style) bgEl.style.cursor = 'grabbing';
+          if (bgEl.setPointerCapture && ev.pointerId != null) bgEl.setPointerCapture(ev.pointerId);
+        } catch (e2) { /* ignore */ }
+
+        const onMove = (mv) => {
+          const st = this._previewBgDragState;
+          if (!st || st.el !== bgEl) return;
+          try {
+            if (mv && typeof mv.preventDefault === 'function') mv.preventDefault();
+            const pt = getClientXY(mv);
+            const dx = (pt.x - st.startClientX) / (this._previewScale || 1);
+            const dy = (pt.y - st.startClientY) / (this._previewScale || 1);
+            const nx = Math.min(st.maxX, Math.max(st.minX, st.startX + dx));
+            const ny = Math.min(st.maxY, Math.max(st.minY, st.startY + dy));
+            st.lastX = nx;
+            st.lastY = ny;
+            bgEl.setAttribute('x', String(nx));
+            bgEl.setAttribute('y', String(ny));
+          } catch (e3) { /* ignore */ }
+        };
+
+        const end = (up) => {
+          const st = this._previewBgDragState;
+          this._previewBgDragState = null;
+          try {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', end);
+            window.removeEventListener('touchcancel', end);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', end);
+            document.removeEventListener('touchcancel', end);
+          } catch (e4) { /* ignore */ }
+          try {
+            if (bgEl.style) bgEl.style.cursor = 'grab';
+            if (bgEl.releasePointerCapture && up && up.pointerId != null) bgEl.releasePointerCapture(up.pointerId);
+          } catch (e5) { /* ignore */ }
+
+          if (!st) return;
+          const finalX = Number.isFinite(Number(st.lastX)) ? Number(st.lastX) : st.startX;
+          const finalY = Number.isFinite(Number(st.lastY)) ? Number(st.lastY) : st.startY;
+
+          // Commit into editor config
+          try {
+            const newConfig = { ...(this._config || {}) };
+            newConfig.background_image_x = Math.round(finalX);
+            newConfig.background_image_y = Math.round(finalY);
+            this._config = newConfig;
+            // Update forms immediately
+            const forms = this.shadowRoot ? this.shadowRoot.querySelectorAll('ha-form') : [];
+            if (forms && forms.length) {
+              const data = this._configWithDefaults();
+              forms.forEach((f) => { if (f) f.data = data; });
+            }
+            this._debouncedConfigChanged(newConfig, true);
+          } catch (e6) { /* ignore */ }
+        };
+
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', end, { passive: true });
+        window.addEventListener('pointercancel', end, { passive: true });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', end, { passive: true });
+        window.addEventListener('touchcancel', end, { passive: true });
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', end, { passive: true });
+        document.addEventListener('touchcancel', end, { passive: true });
+      } catch (e0) {
+        // ignore
+      }
+    };
+
+    bgEl.addEventListener('pointerdown', onDown, { passive: false });
+    bgEl.addEventListener('touchstart', onDown, { passive: false });
+    if (bgEl.dataset) bgEl.dataset.luminaDragBound = '1';
+  }
+
   _createEditorPreviewPanel_() {
     const wrap = document.createElement('div');
     wrap.className = 'editor-preview-panel';
-
-    const hideHaWrap = document.createElement('label');
-    hideHaWrap.className = 'editor-preview-hideha';
-    const hideHaCheckbox = document.createElement('input');
-    hideHaCheckbox.type = 'checkbox';
-    hideHaCheckbox.checked = Boolean(this._hideHaPreview);
-    hideHaCheckbox.addEventListener('change', (ev) => {
-      const on = Boolean(ev && ev.target ? ev.target.checked : this._hideHaPreview);
-      this._hideHaPreview = on;
-      this._saveHideHaPreviewToStorage_();
-      this._applyHaPreviewVisibility_();
-    });
-    const hideHaText = document.createElement('span');
-    hideHaText.textContent = 'Hide HA preview';
-    hideHaWrap.appendChild(hideHaCheckbox);
-    hideHaWrap.appendChild(hideHaText);
 
     const toolbar = document.createElement('div');
     toolbar.className = 'editor-preview-toolbar';
@@ -12097,10 +12819,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
 
     const title = document.createElement('div');
     title.className = 'editor-preview-title';
-    title.textContent = 'Preview';
+    title.textContent = 'Preview Lumina (drag)';
 
-    // Toggle on the top-left so it is always clickable.
-    left.appendChild(hideHaWrap);
     left.appendChild(title);
 
     const right = document.createElement('div');
@@ -12134,6 +12854,12 @@ class LuminaEnergyCardEditor extends HTMLElement {
 
     const viewport = document.createElement('div');
     viewport.className = 'editor-preview-viewport';
+    // Mobile: prevent page scroll while manipulating preview (drag overlays / pan viewport)
+    try {
+      viewport.style.touchAction = 'none';
+      viewport.style.userSelect = 'none';
+      viewport.style.webkitUserSelect = 'none';
+    } catch (e0) { /* ignore */ }
     // Mouse wheel zoom on preview
     viewport.addEventListener('wheel', (ev) => {
       try {
@@ -12164,17 +12890,21 @@ class LuminaEnergyCardEditor extends HTMLElement {
     const onPointerDown = (ev) => {
       try {
         if (!ev || (ev.button != null && ev.button !== 0)) return;
-        // If user is dragging an overlay image, do NOT pan the viewport.
+        // If user is dragging an overlay image or background image, do NOT pan the viewport.
         try {
           const path = (typeof ev.composedPath === 'function') ? ev.composedPath() : [];
-          const isOverlayImage = path.some((n) => {
+          const isDraggableImage = path.some((n) => {
             try {
               if (!n || !n.getAttribute) return false;
               const role = n.getAttribute('data-role');
-              return typeof role === 'string' && role.indexOf('overlay-image-') === 0;
+              if (typeof role === 'string') {
+                if (role.indexOf('overlay-image-') === 0) return true;
+                if (role === 'background-image') return true;
+              }
+              return false;
             } catch (e0) { return false; }
           });
-          if (isOverlayImage) return;
+          if (isDraggableImage) return;
         } catch (e1) { /* ignore */ }
         isDragging = true;
         viewport.classList.add('is-dragging');
@@ -12226,7 +12956,6 @@ class LuminaEnergyCardEditor extends HTMLElement {
 
     this._applyPreviewScale_();
     this._syncEditorPreviewCard_();
-    this._applyHaPreviewVisibility_();
 
     return wrap;
   }
@@ -12525,6 +13254,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           heat_pump_flow_color: { label: 'Heat Pump Flow Color', helper: 'Color applied to the heat pump flow animation.' },
           heat_pump_text_color: { label: 'Heat Pump Text Color', helper: 'Color applied to the heat pump power text.' },
           text_font_size: { label: 'Text Font Size (px)', helper: 'Unified font size for all text elements (Solar, Battery, Grid, Car, Heat Pump, Home). Default: 12px.' },
+          background_image_x: { label: 'Background Image X (px)', helper: 'Horizontal position of background image. Use drag and drop in preview or adjust here. Default: 0.' },
+          background_image_y: { label: 'Background Image Y (px)', helper: 'Vertical position of background image. Use drag and drop in preview or adjust here. Default: 0.' },
           header_font_size: { label: 'Header Font Size (px)', helper: 'Default 16' },
           daily_label_font_size: { label: 'Daily Label Font Size (px)', helper: 'Default 12' },
           daily_value_font_size: { label: 'Daily Value Font Size (px)', helper: 'Default 20' },
@@ -12966,6 +13697,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
           heat_pump_flow_color: { label: 'Colore flusso pompa di calore', helper: 'Colore applicato all animazione del flusso della pompa di calore.' },
           heat_pump_text_color: { label: 'Colore testo pompa di calore', helper: 'Colore applicato al testo della potenza della pompa di calore.' },
           text_font_size: { label: 'Dimensione font testi (px)', helper: 'Dimensione font unificata per tutti i testi (Solar, Batteria, Rete, Auto, Pompa di calore, Casa). Predefinita: 12px.' },
+          background_image_x: { label: 'Posizione X sfondo (px)', helper: 'Posizione orizzontale immagine di sfondo. Usa drag and drop nella preview o regola qui. Predefinito: 0.' },
+          background_image_y: { label: 'Posizione Y sfondo (px)', helper: 'Posizione verticale immagine di sfondo. Usa drag and drop nella preview o regola qui. Predefinito: 0.' },
           header_font_size: { label: 'Dimensione titolo (px)', helper: 'Predefinita 16' },
           daily_label_font_size: { label: 'Dimensione etichetta giornaliera (px)', helper: 'Predefinita 12' },
           daily_value_font_size: { label: 'Dimensione valore giornaliero (px)', helper: 'Predefinita 20' },
@@ -14821,6 +15554,8 @@ class LuminaEnergyCardEditor extends HTMLElement {
         { name: 'text_toggle_button_y', label: (fields.text_toggle_button_y && fields.text_toggle_button_y.label) || 'Text Toggle Button Y (px)', helper: (fields.text_toggle_button_y && fields.text_toggle_button_y.helper) || 'Vertical position from top in pixels (0-450). Leave empty or set > 450 to position at bottom. Values > 450 will be treated as bottom positioning.', selector: { number: { min: 0, max: 500, step: 1, mode: 'box', unit_of_measurement: 'px' } }, default: null },
         { name: 'text_toggle_button_scale', label: (fields.text_toggle_button_scale && fields.text_toggle_button_scale.label) || 'Text Toggle Button Scale', helper: (fields.text_toggle_button_scale && fields.text_toggle_button_scale.helper) || 'Scale factor for button size (0.5 to 2.0). 1.0 = default size.', selector: { number: { min: 0.5, max: 2.0, step: 0.1, mode: 'slider' } }, default: 1.0 },
         { name: 'text_font_size', label: (fields.text_font_size && fields.text_font_size.label) || 'Text Font Size (px)', helper: (fields.text_font_size && fields.text_font_size.helper) || 'Unified font size for all text elements (Solar, Battery, Grid, Car, Heat Pump, Home). Default: 12px.', selector: { number: { min: 8, max: 32, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 12 },
+        { name: 'background_image_x', label: (fields.background_image_x && fields.background_image_x.label) || 'Background Image X (px)', helper: (fields.background_image_x && fields.background_image_x.helper) || 'Horizontal position of background image. Use drag and drop in preview or adjust here. Default: 0.', selector: { number: { min: -800, max: 800, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 0 },
+        { name: 'background_image_y', label: (fields.background_image_y && fields.background_image_y.label) || 'Background Image Y (px)', helper: (fields.background_image_y && fields.background_image_y.helper) || 'Vertical position of background image. Use drag and drop in preview or adjust here. Default: 0.', selector: { number: { min: -450, max: 450, step: 1, mode: 'slider', unit_of_measurement: 'px' } }, default: 0 },
         
       ]),
       array1: define([
@@ -15706,23 +16441,19 @@ _createSectionDefs(localeStrings, schemaDefs) {
     config.background_image = paths.background_image;
     config.background_image_heat_pump = paths.background_image_heat_pump;
     
-    // Update show_car_soc based on type
     if (type === '2' || type === '3') {
       config.show_car_soc = false;
       config.show_car2 = false;
     } else {
-      // Type 1: keep current car settings or default
       if (config.show_car_soc === undefined) {
         config.show_car_soc = false;
       }
     }
     
-    // Update config and notify the main card
     this._config = { ...config };
     this._debouncedConfigChanged(config, true);
     this._rendered = false;
     this.render();
-    // Use requestAnimationFrame to ensure DOM is ready before updating visibility
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         this._updateSectionVisibility(type);
@@ -15909,7 +16640,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
     links.appendChild(repoLabel);
 
     const repoLink = document.createElement('a');
-    repoLink.href = 'https://github.com/Giorgio866/lumina-energy-card';
+    repoLink.href = __URL_GH_REPO;
     repoLink.target = '_blank';
     repoLink.rel = 'noopener noreferrer';
     repoLink.textContent = 'Repository';
@@ -15924,7 +16655,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
     devs.appendChild(devLabel);
 
     const saliernLink = document.createElement('a');
-    saliernLink.href = 'https://github.com/Giorgio866';
+    saliernLink.href = __URL_GH_PROFILE;
     saliernLink.target = '_blank';
     saliernLink.rel = 'noopener noreferrer';
     saliernLink.textContent = 'Saliern Giorgio';
@@ -15946,15 +16677,14 @@ _createSectionDefs(localeStrings, schemaDefs) {
     let isAuthorized = false;
     const pw = config.pro_password;
     if (pw && typeof pw === 'string' && pw.trim()) {
-      const uid = getLuminaUID();
-      const h = LUMINA_SHA256(pw.trim() + uid);
-      if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(h)) isAuthorized = true;
+      const h1 = LUMINA_SHA256(pw.trim());
+      if (LUMINA_AUTH_LIST_V1 && LUMINA_AUTH_LIST_V1.includes(h1)) isAuthorized = true;
     }
     if (isAuthorized) wrapper.classList.add('authorized');
 
     const PAYPAL_EMAIL = '3dprint8616@gmail.com';
     const paypalUrl =
-      'https://www.paypal.com/cgi-bin/webscr?cmd=_donations' +
+      __URL_PAYPAL_DONATE +
       '&business=' + encodeURIComponent(PAYPAL_EMAIL) +
       '&currency_code=EUR' +
       '&amount=5';
@@ -15995,7 +16725,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const PAYPAL_EMAIL = '3dprint8616@gmail.com';
     const SUPPORT_EMAIL = 'luminaenergycard@gmail.com';
     const PAYPAL_DONATE_URL =
-      'https://www.paypal.com/cgi-bin/webscr?cmd=_donations' +
+      __URL_PAYPAL_DONATE +
       '&business=' + encodeURIComponent(PAYPAL_EMAIL) +
       '&currency_code=EUR' +
       '&amount=5';
@@ -16049,12 +16779,12 @@ _createSectionDefs(localeStrings, schemaDefs) {
     let isLicenseActive = false;
     const proPassword = config.pro_password;
     if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
-      const uidBoundHash = LUMINA_SHA256(proPassword.trim() + uid);
-      if (LUMINA_AUTH_LIST_V2 && LUMINA_AUTH_LIST_V2.includes(uidBoundHash)) {
+      const pwOnlyHash = LUMINA_SHA256(proPassword.trim());
+      if (LUMINA_AUTH_LIST_V1 && LUMINA_AUTH_LIST_V1.includes(pwOnlyHash)) {
         isLicenseActive = true;
       }
     }
-    if (LUMINA_AUTH_LIST_V2 === null) {
+    if (LUMINA_AUTH_LIST_V1 === null) {
       LUMINA_REFRESH_AUTH(() => { this._rendered = false; this.render(); });
     }
 
@@ -16098,7 +16828,9 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const pwMsg = document.createElement('div');
     pwMsg.style.cssText = 'margin-top: 10px; padding: 10px; border-radius: 8px; display: none; font-size: 12px; line-height: 1.4;';
     if (activationState === 'error') {
-      pwMsg.textContent = labels.password_bad;
+      const cnt = Array.isArray(LUMINA_AUTH_LIST_V1) ? LUMINA_AUTH_LIST_V1.length : (LUMINA_AUTH_LIST_V1 === null ? 'null' : 0);
+      const extra = LUMINA_DEBUG_LICENSE ? ` [authCount=${cnt} status=${LUMINA_AUTH_META.lastStatus || ''} err=${LUMINA_AUTH_META.lastErr || ''}]` : '';
+      pwMsg.textContent = labels.password_bad + extra;
       pwMsg.style.cssText += 'display:block; background: rgba(255,68,68,0.16); color: #ff4444; border: 1px solid rgba(255,68,68,0.28);';
     } else if (activationState === 'success' || isLicenseActive) {
       pwMsg.textContent = labels.password_ok;
@@ -16121,13 +16853,23 @@ _createSectionDefs(localeStrings, schemaDefs) {
       try {
         // Always refresh authorization list on activation attempt.
         // This avoids "password doesn't work" right after approval if the card cached an old list.
-        LUMINA_AUTH_LIST_V2 = null;
-        await LUMINA_REFRESH_AUTH();
-        if (entered && Array.isArray(LUMINA_AUTH_LIST_V2)) {
-          const uidBoundHash = LUMINA_SHA256(entered + uid);
-          ok = LUMINA_AUTH_LIST_V2.includes(uidBoundHash);
+        await LUMINA_REFRESH_AUTH({ force: true, reason: 'doActivate' });
+        if (entered && Array.isArray(LUMINA_AUTH_LIST_V1)) {
+          const pwOnlyHash = LUMINA_SHA256(entered);
+          ok = LUMINA_AUTH_LIST_V1.includes(pwOnlyHash);
+        }
+        if (!ok) {
+          console.warn('[Lumina][license] activate.failed', {
+            hasPw: !!entered,
+            listCount: Array.isArray(LUMINA_AUTH_LIST_V1) ? LUMINA_AUTH_LIST_V1.length : null,
+            lastErr: LUMINA_AUTH_META.lastErr || '',
+            status: LUMINA_AUTH_META.lastStatus || 0
+          });
+        } else {
+          if (LUMINA_DEBUG_LICENSE) console.warn('[Lumina][license] activate.ok', { listCount: LUMINA_AUTH_META.lastCount });
         }
       } catch (e) {
+        console.warn('[Lumina][license] activate.exception', { err: (e && e.message) ? e.message : String(e) });
         ok = false;
       } finally {
         this._proActivationState = ok ? 'success' : 'error';
@@ -16325,16 +17067,16 @@ _createSectionDefs(localeStrings, schemaDefs) {
     }
 
     // Footer: Sponsors + social + fundraiser + note
-    const TELEGRAM_URL = 'https://t.me/+fv83dftOM2M5NDA0';
-    const TIKTOK_URL = 'https://www.tiktok.com/@stampa3ditalia?_r=1&_t=ZN-93UHlu5Clfy';
-    const FUNDRAISER_URL = 'https://4fund.com/it/e6nv87/widget/24';
+    const TELEGRAM_URL = __URL_TELEGRAM;
+    const TIKTOK_URL = __URL_TIKTOK;
+    const FUNDRAISER_URL = __URL_FUNDRAISER;
 
     const footerWrap = document.createElement('div');
     footerWrap.style.cssText = 'margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.12); display:flex; flex-direction:column; gap:10px; align-items:center;';
 
     // GitHub Sponsors button
     const sponsorFrame = document.createElement('iframe');
-    sponsorFrame.src = 'https://github.com/sponsors/Giorgio866/button';
+    sponsorFrame.src = __URL_GH_SPONSORS_BTN;
     sponsorFrame.title = 'Sponsor Giorgio866';
     sponsorFrame.height = '32';
     sponsorFrame.width = '114';
@@ -16685,19 +17427,18 @@ _createSectionDefs(localeStrings, schemaDefs) {
     
     if (proPassword && typeof proPassword === 'string' && proPassword.trim()) {
       const trimmed = proPassword.trim();
-      const uid = getLuminaUID();
-      const hashHex = LUMINA_SHA256(trimmed + uid);
+      const hashHexV1 = LUMINA_SHA256(trimmed);
       
       // Use remote list for verification
       let isValid = false;
-      if (LUMINA_AUTH_LIST_V2 === null) {
+      if (LUMINA_AUTH_LIST_V1 === null) {
         // If list is still loading, try to refresh and re-render
         LUMINA_REFRESH_AUTH(() => {
           this._rendered = false;
           this.render();
         });
       } else {
-        isValid = LUMINA_AUTH_LIST_V2.includes(hashHex);
+        isValid = LUMINA_AUTH_LIST_V1.includes(hashHexV1);
         // Force re-render if authorization state just changed to update PayPal button size
         const wasAuthorized = this._isAuthorized;
         this._isAuthorized = isValid;
@@ -16708,7 +17449,7 @@ _createSectionDefs(localeStrings, schemaDefs) {
         }
       }
       
-      if (!isValid && LUMINA_AUTH_LIST_V2 !== null) {
+      if (!isValid && LUMINA_AUTH_LIST_V1 !== null) {
         // Disable overlay if password is not valid (and list is loaded)
         if (newConfig.overlay_image_enabled) {
           newConfig.overlay_image_enabled = false;
@@ -16796,20 +17537,54 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const schemaDefs = this._createSchemaDefs(localeStrings, optionDefs);
     const sections = this._createSectionDefs(localeStrings, schemaDefs);
 
-    // Two-column layout: sections on the left, preview sticky on the right
-    const left = document.createElement('div');
-    left.className = 'editor-form-column';
+    // Toggle row: HA preview + Lumina visual preview
+    const toggleRow = document.createElement('div');
+    toggleRow.className = 'editor-toggle-row';
 
-    const right = document.createElement('div');
-    right.className = 'editor-preview-column';
-    right.appendChild(this._createEditorPreviewPanel_());
+    const mkToggle = (labelText, checked, onChange) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'editor-toggle';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = Boolean(checked);
+      cb.addEventListener('change', (ev) => {
+        try { onChange(Boolean(ev && ev.target ? ev.target.checked : false)); } catch (e) { /* ignore */ }
+      });
+      const t = document.createElement('span');
+      t.textContent = labelText;
+      wrap.appendChild(cb);
+      wrap.appendChild(t);
+      return wrap;
+    };
 
+    // Our visual preview (drag) – shown inside editor, therefore under HA original preview
+    toggleRow.appendChild(mkToggle('Preview Lumina (drag) sotto preview HA', this._showLuminaVisualPreview, (on) => {
+      this._showLuminaVisualPreview = Boolean(on);
+      this._rendered = false;
+      this.render();
+    }));
+
+    // Optional: hide HA built-in preview
+    toggleRow.appendChild(mkToggle('Nascondi preview HA', this._hideHaPreview, (on) => {
+      this._hideHaPreview = Boolean(on);
+      this._applyHaPreviewVisibility_();
+    }));
+
+    container.appendChild(toggleRow);
+
+    // Our visual preview (only if enabled) - shown under HA preview because editor is below it
+    if (this._showLuminaVisualPreview) {
+      container.appendChild(this._createEditorPreviewPanel_());
+    }
+
+    // Sections: scroll only this area so preview stays visible
+    const formCol = document.createElement('div');
+    formCol.className = 'editor-form-column';
     sections.forEach((section) => {
-      left.appendChild(this._createSection(section));
+      formCol.appendChild(this._createSection(section));
     });
+    container.appendChild(formCol);
 
-    container.appendChild(left);
-    container.appendChild(right);
     return container;
   }
 
@@ -16819,6 +17594,10 @@ _createSectionDefs(localeStrings, schemaDefs) {
     }
 
     this.shadowRoot.innerHTML = '';
+    // Reset preview refs (preview is inside editor and can be toggled on/off)
+    this._previewCardEl = null;
+    this._previewStageEl = null;
+    this._previewScaleLabelEl = null;
 
     // Update section visibility based on installation type
     const config = this._configWithDefaults();
@@ -16827,36 +17606,44 @@ _createSectionDefs(localeStrings, schemaDefs) {
     const style = document.createElement('style');
     style.textContent = `
       .card-config {
-        /* Split-pane editor: left scrolls, right stays visible */
         display: flex;
-        flex-direction: row;
-        align-items: stretch;
-        gap: 16px;
+        flex-direction: column;
+        gap: 14px;
         padding: 16px;
-        /* Make the editor itself not scroll vertically; only the left pane scrolls. */
-        height: calc(100vh - 220px);
-        min-height: 520px;
-        overflow: hidden;
+        /* Let HA dialog handle scrolling (avoid double scrollbars) */
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+      }
+      .editor-toggle-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .editor-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        user-select: none;
+        color: var(--secondary-text-color);
+        font-size: 0.95em;
+      }
+      .editor-toggle input {
+        accent-color: #00f9f9;
       }
       .editor-form-column {
-        flex: 1 1 auto;
-        min-width: 340px;
-        overflow: auto;
-        padding-right: 6px;
-      }
-      .editor-preview-column {
-        flex: 0 1 520px;
-        min-width: 320px;
+        width: 100%;
       }
       .editor-preview-panel {
-        /* Fixed within the split pane (no need for sticky) */
         border: 1px solid rgba(0, 249, 249, 0.35);
         border-radius: 12px;
         background: rgba(0, 0, 0, 0.25);
         padding: 12px;
-        height: 100%;
         display: flex;
         flex-direction: column;
+        max-width: 420px;
       }
       .editor-preview-toolbar {
         display: flex;
@@ -16903,10 +17690,14 @@ _createSectionDefs(localeStrings, schemaDefs) {
         border-radius: 10px;
         background: rgba(0, 0, 0, 0.35);
         overflow: auto;
-        /* Fill the right pane; the viewport itself scrolls */
         flex: 1 1 auto;
         cursor: grab;
         user-select: none;
+        -webkit-user-select: none;
+        /* Compact 16:9 preview area */
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        max-height: 240px;
       }
       .editor-preview-viewport.is-dragging {
         cursor: grabbing;
@@ -16921,9 +17712,9 @@ _createSectionDefs(localeStrings, schemaDefs) {
         width: 800px;
         height: 450px;
       }
-      /* Keep horizontal even on small widths: allow horizontal scroll instead of stacking */
       @media (max-width: 520px) {
-        .card-config { overflow-x: auto; }
+        .editor-preview-panel { max-width: 100%; }
+        .editor-preview-viewport { max-height: 200px; }
       }
       details.section {
         border: 1px solid rgba(0, 249, 249, 0.45);
@@ -17139,6 +17930,8 @@ _createSectionDefs(localeStrings, schemaDefs) {
     `;
     this.shadowRoot.appendChild(style);
     this.shadowRoot.appendChild(this._buildConfigContent());
+    // Apply HA preview visibility after we render (independent from Lumina preview toggle)
+    try { this._applyHaPreviewVisibility_(); } catch (e) { /* ignore */ }
     
     // Update section visibility after rendering
     setTimeout(() => {
@@ -17159,5 +17952,5 @@ window.customCards.push({
   name: 'Lumina Energy Card',
   description: 'Advanced energy flow visualization card with support for multiple PV strings and batteries',
   preview: true,
-  documentationURL: 'https://github.com/Giorgio866/lumina-energy-card'
+  documentationURL: __URL_GH_REPO
 });
