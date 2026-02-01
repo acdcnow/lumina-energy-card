@@ -1,7 +1,7 @@
 # Lumina Energy Card
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-![Version](https://img.shields.io/badge/version-2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.9.1-blue.svg)
 
 Repository: [https://github.com/Giorgio866/lumina-energy-card](https://github.com/Giorgio866/lumina-energy-card)
 
@@ -107,11 +107,28 @@ Use the card’s visual editor (Edit → Lumina) to configure entities, colors, 
 
 ---
 
+#### 5b. Battery SOC “grid” (6‑segment bar) + toggle
+
+- **What it is:** a 6‑segment SOC bar shown on the battery overlay (looks like a “grid” on the battery).
+- **Toggle:** enable/disable from the editor with **`battery_overlay_enabled`** (it also enables the battery overlay image).
+- **Position/size:** `battery_overlay_x`, `battery_overlay_y`, `battery_overlay_width`, `battery_overlay_height`, `battery_overlay_opacity`.
+
+---
+
 #### 6. Animation style (shimmer, dashes, dots, arrows)
 
 - **`animation_style`** (in **Colori flussi** / Flow colors, or **Stili animazioni**):  
   **`shimmer`** (default), **`dashes`**, **`dots`**, **`arrows`**.
 - **`animation_speed_factor`:** Adjust speed (e.g. `1` = normal, `2` = faster). Use `0` to pause animations.
+
+---
+
+#### 6b. Performance mode (General Settings)
+
+- In **General Settings** you can choose the performance profile with **`performance_mode`**:
+  - `auto` (default): balanced
+  - `low`: lower CPU usage (lighter animations)
+  - `high`: smoothest animations (more CPU)
 
 ---
 
@@ -138,6 +155,14 @@ PRO features require a **PRO password** (`pro_password`), unlocked via the edito
 - **Overlay images:**  
   Add up to **5 transparent PNGs** over the main background (e.g. second car, pool, wind turbine). Configure **`overlay_image`** … **`overlay_image_5`**, position, size, and opacity in the PRO section.
 
+---
+
+#### Visual editor: Drag & Drop (overlay images + background)
+
+- Enable the Lumina visual preview: turn on **“Preview Lumina (drag)”** in the editor.
+- **Overlay images (PRO):** drag inside the preview to update X/Y (`overlay_image_x`, `overlay_image_y`, and images 2–5).
+- **Background:** drag inside the preview to update `background_image_x` / `background_image_y`.
+
 - **Custom flows:**  
   Up to **5 custom energy flows** with their own sensor, path, color, and direction. Use **`custom_flow_1_enabled`**, **`custom_flow_1_sensor`**, **`custom_flow_1_path`** (or preset), **`custom_flow_1_color`**, etc.
 
@@ -157,7 +182,9 @@ PRO features require a **PRO password** (`pro_password`), unlocked via the edito
 | Interactive popups | **Popup** options (`sensor_popup_*`) | PV, Battery, Grid, House, Inverter popups with toggles |
 | Echo Alive | **`enable_echo_alive`** | Keeps dashboard alive on Echo Show |
 | Text toggle | **`enable_text_toggle_button`** | Show/hide all texts (clean mode) |
+| Performance mode | **General Settings** → **`performance_mode`** | Choose `auto` / `low` / `high` performance profile |
 | Battery mode | **`battery_power_mode`** | `flow` or `charge_discharge` |
+| Battery SOC grid | **`battery_overlay_enabled`** | Toggle battery overlay + 6‑segment SOC grid |
 | Animation style | **`animation_style`** | `shimmer`, `dashes`, `dots`, `arrows` |
 | Solar forecast | **PRO** section | Estimated solar production + holographic sun |
 | PRO (motion, overlay, etc.) | **PRO** section + **`pro_password`** | Motion-based text, overlay images, custom flows/text |
@@ -263,11 +290,28 @@ Usa l’**editor visivo** della scheda (Modifica → Lumina) per configurare ent
 
 ---
 
+#### 5b. Griglia SOC batteria (barra a 6 segmenti) + toggle
+
+- **Cos’è:** una barra SOC a 6 segmenti sulla batteria (sembra una “griglia” sulla batteria).
+- **Toggle:** abilita/disabilita dall’editor con **`battery_overlay_enabled`** (attiva anche l’immagine overlay batteria).
+- **Posizione/dimensione:** `battery_overlay_x`, `battery_overlay_y`, `battery_overlay_width`, `battery_overlay_height`, `battery_overlay_opacity`.
+
+---
+
 #### 6. Stile animazioni (shimmer, tratteggi, punti, frecce)
 
 - **`animation_style`** (in **Colori flussi** o **Stili animazioni**):  
   **`shimmer`** (predefinito), **`dashes`**, **`dots`**, **`arrows`**.
 - **`animation_speed_factor`:** Regola la velocità (es. `1` = normale, `2` = più veloce). Con `0` le animazioni sono in pausa.
+
+---
+
+#### 6b. Prestazioni (Impostazioni generali)
+
+- Nella sezione **Impostazioni generali** puoi scegliere il profilo prestazioni con **`performance_mode`**:
+  - `auto` (predefinito): bilanciato
+  - `low`: riduce l’uso CPU (animazioni più leggere)
+  - `high`: animazioni più fluide (più CPU)
 
 ---
 
@@ -294,6 +338,14 @@ Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dal
 - **Overlay immagini:**  
   Fino a **5 PNG trasparenti** sopra lo sfondo principale (es. seconda auto, piscina, pala eolica). Configura **`overlay_image`** … **`overlay_image_5`**, posizione, dimensione e opacità nella sezione PRO.
 
+---
+
+#### Editor visivo: Drag & Drop (overlay immagini + sfondo)
+
+- Attiva la preview Lumina: abilita **“Preview Lumina (drag)”** nell’editor.
+- **Overlay immagini (PRO):** trascina nella preview per aggiornare X/Y (`overlay_image_x`, `overlay_image_y` e immagini 2–5).
+- **Sfondo:** trascina nella preview per aggiornare `background_image_x` / `background_image_y`.
+
 - **Flussi personalizzati:**  
   Fino a **5 flussi energetici** custom con sensore, percorso, colore e direzione propri. Usa **`custom_flow_1_enabled`**, **`custom_flow_1_sensor`**, **`custom_flow_1_path`** (o preset), **`custom_flow_1_color`**, ecc.
 
@@ -313,7 +365,9 @@ Le funzioni PRO richiedono la **password PRO** (`pro_password`), sbloccabile dal
 | Popup interattivi | Opzioni **Popup** (`sensor_popup_*`) | Popup PV, Batteria, Rete, Casa, Inverter con toggle |
 | Echo Alive | **`enable_echo_alive`** | Mantiene la dashboard attiva su Echo Show |
 | Toggle testi | **`enable_text_toggle_button`** | Mostra/nascondi tutti i testi (modalità pulita) |
+| Prestazioni | **Impostazioni generali** → **`performance_mode`** | Scegli profilo `auto` / `low` / `high` |
 | Modalità batteria | **`battery_power_mode`** | `flow` o `charge_discharge` |
+| Griglia SOC batteria | **`battery_overlay_enabled`** | Toggle overlay batteria + griglia SOC a 6 segmenti |
 | Stile animazioni | **`animation_style`** | `shimmer`, `dashes`, `dots`, `arrows` |
 | Previsione solare | Sezione **PRO** | Produzione stimata + sole olografico |
 | PRO (movimento, overlay, ecc.) | Sezione **PRO** + **`pro_password`** | Testi su movimento, overlay, flussi/testi custom |
